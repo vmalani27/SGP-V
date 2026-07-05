@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-ibm-plex-sans), 'IBM Plex Sans', sans-serif;
+  background: #020617;
+}
+
+h1,
+h2,
+h3,
+h4,
+.hero-font {
+  font-family: var(--font-space-grotesk), 'Space Grotesk', sans-serif;
+}
+
+::selection {
+  background: rgba(96, 165, 250, 0.28);
+  color: #ffffff;
+}
