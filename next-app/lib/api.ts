@@ -1,0 +1,106 @@
+import { auth } from './firebase';
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+async function getIdToken(): Promise<string | null> {
+  if (!auth) return null;
+  const user = auth.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
+}
+
+export async function apiFetch<T = unknown>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token = await getIdToken();
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers,
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+// --- Typed API helpers ---
+
+export interface Course {
+  id: string;
+  title: string;
+  description: string;
+  slug: string;
+  modules: number;
+  labs: number;
+  level: string;
+  createdAt?: string;
+}
+
+export interface UserSyncResult {
+  uid: string;
+  email: string;
+  displayName: string;
+  enrolledCourses: string[];
+  profileComplete: boolean;
+  isNew: boolean;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  enrolledCourses: string[];
+  profileComplete: boolean;
+  createdAt?: string;
+  lastLogin?: string;
+}
+
+export interface Enrollment {
+  userId: string;
+  courseId: string;
+  enrolledAt: string;
+  progress: Record<string, unknown>;
+  lastAccessed: string;
+  status: string;
+}
+
+export const api = {
+  users: {
+    sync: () => apiFetch<UserSyncResult>('/api/v1/users/sync', { method: 'POST' }),
+    me: () => apiFetch<UserProfile>('/api/v1/users/me'),
+    updateProfile: (data: { displayName?: string; profileComplete?: boolean }) =>
+      apiFetch<UserProfile>('/api/v1/users/me', {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    enrollments: () => apiFetch<Enrollment[]>('/api/v1/users/me/enrollments'),
+  },
+  courses: {
+    list: () => apiFetch<Course[]>('/api/v1/courses'),
+    get: (id: string) => apiFetch<Course>(`/api/v1/courses/${id}`),
+    enroll: (id: string) =>
+      apiFetch<{ status: string; courseId: string }>(`/api/v1/courses/${id}/enroll`, {
+        method: 'POST',
+      }),
+    progress: (id: string) =>
+      apiFetch<Enrollment>(`/api/v1/courses/${id}/progress`),
+  },
+};
