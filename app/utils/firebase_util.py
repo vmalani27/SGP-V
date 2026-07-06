@@ -19,7 +19,7 @@ async def verify_firebase_token(authorization: str | None = Header(None)):
     logging.info("Token extracted. Attempting to verify with Firebase Admin...")
 
     try:
-        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=120)
+        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=60)
         logging.info(f"Token verification succeeded. UID: {decoded_token.get('uid')}")
         return decoded_token
     except Exception as e:

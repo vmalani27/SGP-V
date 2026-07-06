@@ -1,0 +1,77 @@
+{
+  "id": "docker-mastery",
+  "title": "Docker Mastery",
+  "description": "Docker solves a problem that every developer has encountered: an application that works on one machine but fails on another. Docker eliminates this variability by packaging an application together with everything it needs to run into a single portable unit called a container. This module takes you from running your first container to building multi-stage images and publishing them.",
+  "level": "intermediate",
+  "totalLabs": 10,
+  "estimatedHours": 8,
+  "modules": [
+    {
+      "id": "module-1",
+      "title": "Docker Fundamentals",
+      "description": "From running your first container to multi-stage builds, registries, and a complete containerization workflow.",
+      "labs": [
+        {
+          "id": "lab-1",
+          "title": "Installing Docker and Running Your First Container",
+          "duration": "15 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-1-hello-world.md"
+        },
+        {
+          "id": "lab-2",
+          "title": "Understanding Images and the Container Lifecycle",
+          "duration": "20 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-2-images.md"
+        },
+        {
+          "id": "lab-3",
+          "title": "Environment Variables and Container Configuration",
+          "duration": "20 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-3-env-vars.md"
+        },
+        {
+          "id": "lab-4",
+          "title": "Volumes and Persistent Data",
+          "duration": "20 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-4-volumes.md"
+        },
+        {
+          "id": "lab-5",
+          "title": "Writing Your First Dockerfile",
+          "duration": "30 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-5-dockerfile.md"
+        },
+        {
+          "id": "lab-6",
+          "title": "Debugging Running Containers",
+          "duration": "20 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-6-debugging.md"
+        },
+        {
+          "id": "lab-7",
+          "title": "Container Networking",
+          "duration": "25 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-7-networking.md"
+        },
+        {
+          "id": "lab-8",
+          "title": "Multi-Stage Builds",
+          "duration": "25 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-8-multi-stage.md"
+        },
+        {
+          "id": "lab-9",
+          "title": "Publishing Images to a Registry",
+          "duration": "20 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-9-publishing.md"
+        },
+        {
+          "id": "lab-10",
+          "title": "A Complete Containerization Workflow",
+          "duration": "45 min",
+          "contentPath": "courses/docker-mastery/module-1/lab-10-workflow.md"
+        }
+      ]
+    }
+  ]
+}

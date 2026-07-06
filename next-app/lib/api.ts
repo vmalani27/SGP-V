@@ -43,7 +43,7 @@ export async function apiFetch<T = unknown>(
 
 // --- Typed API helpers ---
 
-export interface Course {
+export interface CourseMeta {
   id: string;
   title: string;
   description: string;
@@ -80,6 +80,18 @@ export interface Enrollment {
   progress: Record<string, unknown>;
   lastAccessed: string;
   status: string;
+  percentage?: number;
+  completedLabs?: number;
+  totalLabs?: number;
+}
+
+export interface CompleteLabResult {
+  status: string;
+  labId: string;
+  progress: Record<string, unknown>;
+  percentage: number;
+  completedLabs: number;
+  totalLabs: number;
 }
 
 export const api = {
@@ -94,13 +106,17 @@ export const api = {
     enrollments: () => apiFetch<Enrollment[]>('/api/v1/users/me/enrollments'),
   },
   courses: {
-    list: () => apiFetch<Course[]>('/api/v1/courses'),
-    get: (id: string) => apiFetch<Course>(`/api/v1/courses/${id}`),
+    list: () => apiFetch<CourseMeta[]>('/api/v1/courses'),
+    get: (id: string) => apiFetch<CourseMeta>(`/api/v1/courses/${id}`),
     enroll: (id: string) =>
       apiFetch<{ status: string; courseId: string }>(`/api/v1/courses/${id}/enroll`, {
         method: 'POST',
       }),
     progress: (id: string) =>
       apiFetch<Enrollment>(`/api/v1/courses/${id}/progress`),
+    completeLab: (courseId: string, labId: string) =>
+      apiFetch<CompleteLabResult>(`/api/v1/courses/${courseId}/labs/${labId}/complete`, {
+        method: 'POST',
+      }),
   },
 };

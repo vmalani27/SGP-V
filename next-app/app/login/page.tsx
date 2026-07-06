@@ -28,7 +28,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      router.push('/dashboard');
+      router.push('/onboarding');
     }
   }, [isAuthenticated, authLoading, router]);
 
@@ -37,7 +37,7 @@ export default function LoginPage() {
     setError('');
     try {
       await login(email, password);
-      router.push('/dashboard');
+      router.push('/onboarding');
     } catch (err: unknown) {
       const firebaseError = err as { code?: string };
       if (firebaseError.code) {

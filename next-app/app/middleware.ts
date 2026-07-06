@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const session = request.cookies.get('session');
 
-  if (pathname.startsWith('/dashboard') || pathname.startsWith('/onboarding')) {
+  if (pathname.startsWith('/courses') || pathname.startsWith('/dashboard') || pathname.startsWith('/onboarding')) {
     if (!session) {
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('redirect', pathname);
@@ -14,12 +14,12 @@ export function middleware(request: NextRequest) {
   }
 
   if (session && (pathname === '/login' || pathname === '/register')) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+    return NextResponse.redirect(new URL('/onboarding', request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/onboarding/:path*', '/login', '/register'],
+  matcher: ['/courses/:path*', '/dashboard/:path*', '/onboarding/:path*', '/login', '/register'],
 };

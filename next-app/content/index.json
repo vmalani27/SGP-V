@@ -1,0 +1,20 @@
+{
+  "courses": [
+    {
+      "id": "git-fundamentals",
+      "title": "Git Fundamentals",
+      "description": "From your first commit to advanced branching strategies and CI/CD integration.",
+      "level": "beginner",
+      "totalLabs": 10,
+      "estimatedHours": 8
+    },
+    {
+      "id": "docker-mastery",
+      "title": "Docker Mastery",
+      "description": "Containers, multi-stage builds, Docker Compose, and production-ready deployments.",
+      "level": "intermediate",
+      "totalLabs": 10,
+      "estimatedHours": 8
+    }
+  ]
+}

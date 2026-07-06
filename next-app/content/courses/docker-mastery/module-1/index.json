@@ -1,0 +1,7 @@
+{
+  "id": "module-1",
+  "title": "Docker Fundamentals",
+  "description": "From running your first container to multi-stage builds, registries, and a complete containerization workflow.",
+  "totalLabs": 10,
+  "estimatedHours": 8
+}

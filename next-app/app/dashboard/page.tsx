@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, type Course, type Enrollment } from '@/lib/api';
+import Navbar from '@/components/Navbar';
+import { api, type CourseMeta, type Enrollment } from '@/lib/api';
 
 export default function DashboardPage() {
   const { user, isAuthenticated, loading, logout, enrolledCourses, refreshEnrollments } = useAuth();
   const router = useRouter();
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [courses, setCourses] = useState<CourseMeta[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [fetching, setFetching] = useState(true);
 
@@ -68,22 +69,9 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-bg">
-      <header className="flex items-center justify-between border-b border-line px-6 py-4">
-        <Link href="/" className="hero-font text-lg font-bold tracking-tight text-text">
-          LabOps
-        </Link>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-muted">{user?.email}</span>
-          <button
-            onClick={logout}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:border-accent/50 hover:text-text"
-          >
-            Log Out
-          </button>
-        </div>
-      </header>
+      <Navbar />
 
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-6 py-10 pt-20">
         <h1 className="hero-font text-3xl font-bold">
           Welcome back, {user?.displayName?.replace(/\b\w/g, c => c.toUpperCase()) || 'Developer'}
         </h1>
@@ -121,6 +109,12 @@ export default function DashboardPage() {
                       style={{ width: `${getProgress(course.id)}%` }}
                     />
                   </div>
+                  <Link
+                    href={`/courses/${course.id}`}
+                    className="mt-4 inline-block rounded-lg border border-accent/30 px-4 py-1.5 text-sm text-accent transition hover:bg-accent/10"
+                  >
+                    Continue
+                  </Link>
                 </div>
               ))}
             </div>

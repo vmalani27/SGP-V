@@ -6,12 +6,12 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import TerminalDemo from '@/components/TerminalDemo';
 import { useAuth } from '@/lib/auth-context';
-import { api, type Course } from '@/lib/api';
+import { api, type CourseMeta } from '@/lib/api';
 
 export default function HomePage() {
   const { isAuthenticated, loading, enrolledCourses } = useAuth();
   const router = useRouter();
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [courses, setCourses] = useState<CourseMeta[]>([]);
 
   useEffect(() => {
     api.courses.list().then(setCourses).catch(() => {});

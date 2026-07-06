@@ -1,0 +1,77 @@
+{
+  "id": "git-fundamentals",
+  "title": "Git Fundamentals",
+  "description": "Version control is the foundation of every software project. This module begins with the concepts that explain why Git was designed the way it was, and then moves through the day-to-day workflows a developer uses. By the end, you will be comfortable working alone on a personal project, collaborating with a team, recovering from mistakes, and managing parallel lines of work through branches.",
+  "level": "beginner",
+  "totalLabs": 10,
+  "estimatedHours": 8,
+  "modules": [
+    {
+      "id": "module-1",
+      "title": "Git Basics",
+      "description": "Understanding version control fundamentals — from configuration to branching, merging, remotes, and a complete end-to-end workflow.",
+      "labs": [
+        {
+          "id": "lab-1",
+          "title": "Setting Up Git",
+          "duration": "15 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-1-setup.md"
+        },
+        {
+          "id": "lab-2",
+          "title": "Initializing a Repository and Making Your First Commit",
+          "duration": "20 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-2-init.md"
+        },
+        {
+          "id": "lab-3",
+          "title": "Staging Selectively and Understanding the Working Tree",
+          "duration": "20 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-3-staging.md"
+        },
+        {
+          "id": "lab-4",
+          "title": "Undoing Mistakes",
+          "duration": "20 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-4-undo.md"
+        },
+        {
+          "id": "lab-5",
+          "title": "Branches",
+          "duration": "25 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-5-branches.md"
+        },
+        {
+          "id": "lab-6",
+          "title": "Merging and Resolving Conflicts",
+          "duration": "30 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-6-merging.md"
+        },
+        {
+          "id": "lab-7",
+          "title": "Working with Remote Repositories",
+          "duration": "25 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-7-remotes.md"
+        },
+        {
+          "id": "lab-8",
+          "title": "Stashing Work in Progress",
+          "duration": "20 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-8-stash.md"
+        },
+        {
+          "id": "lab-9",
+          "title": "Viewing and Searching History",
+          "duration": "20 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-9-history.md"
+        },
+        {
+          "id": "lab-10",
+          "title": "A Complete Git Workflow",
+          "duration": "45 min",
+          "contentPath": "courses/git-fundamentals/module-1/lab-10-workflow.md"
+        }
+      ]
+    }
+  ]
+}

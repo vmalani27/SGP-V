@@ -13,11 +13,6 @@ export default function Navbar() {
           LabOps
         </Link>
 
-        <div className="hidden items-center gap-8 text-sm text-muted md:flex">
-          <Link href="/#curriculum" className="transition hover:text-text">Curriculum</Link>
-          <Link href="/#pricing" className="transition hover:text-text">Pricing</Link>
-        </div>
-
         <div className="flex items-center gap-3">
           {user ? (
             <>
