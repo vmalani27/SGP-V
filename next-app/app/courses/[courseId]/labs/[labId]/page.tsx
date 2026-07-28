@@ -1,216 +1,291 @@
-import { notFound } from 'next/navigation';
-import Link from 'next/link';
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import LabTerminal from '@/components/LabTerminal';
 import Navbar from '@/components/Navbar';
-import { getCourse, getLabContent, getCourseCatalog } from '@/lib/content-server';
-import MarkCompleteButton from '@/components/MarkCompleteButton';
 
-export async function generateStaticParams() {
-  const catalog = await getCourseCatalog();
-  const paths: { courseId: string; labId: string }[] = [];
-  for (const entry of catalog) {
-    const course = await getCourse(entry.id);
-    if (course) {
-      for (const mod of course.modules) {
-        for (const lab of mod.labs) {
-          paths.push({ courseId: course.id, labId: lab.id });
-        }
-      }
-    }
-  }
-  return paths;
+interface LabInfo {
+  labId: string;
+  title: string;
+  moduleId: string;
+  chapterId: string;
+  instructions: string;
 }
 
-export default async function LabPage({
-  params,
-}: {
-  params: Promise<{ courseId: string; labId: string }>;
-}) {
-  const { courseId, labId } = await params;
-  const course = await getCourse(courseId);
-  if (!course) return notFound();
+interface LabState {
+  sessionId: string;
+  wsUrl: string;
+  containerName: string;
+  status: string;
+}
 
-  let currentLab = null;
-  let prevLab: { id: string; title: string; module?: string } | null = null;
-  let nextLab: { id: string; title: string; module?: string } | null = null;
-  let currentModuleTitle = '';
+type LabPhase = 'intro' | 'provisioning' | 'running' | 'error';
 
-  const allLabs = course.modules.flatMap((m) =>
-    m.labs.map(lab => ({ ...lab, moduleName: m.title }))
-  );
+export default function LabPage() {
+  const params = useParams();
+  const router = useRouter();
+  const { isAuthenticated, loading: authLoading } = useAuth();
 
-  const idx = allLabs.findIndex((l) => l.id === labId);
-  if (idx === -1) return notFound();
+  const courseId = params.courseId as string;
+  const labId = params.labId as string;
 
-  currentLab = allLabs[idx];
-  currentModuleTitle = currentLab.moduleName || '';
+  const [labInfo, setLabInfo] = useState<LabInfo | null>(null);
+  const [labState, setLabState] = useState<LabState | null>(null);
+  const [phase, setPhase] = useState<LabPhase>('intro');
+  const [error, setError] = useState<string | null>(null);
+  const [destroying, setDestroying] = useState(false);
 
-  if (idx > 0) {
-    prevLab = allLabs[idx - 1];
+  // Fetch lab instructions on mount
+  useEffect(() => {
+    if (!isAuthenticated || !courseId || !labId) return;
+
+    api.content.getLabInstructions(courseId, labId).then((data) => {
+      setLabInfo({
+        labId: data.lab_id,
+        title: data.title,
+        moduleId: data.module_id,
+        chapterId: data.chapter_id,
+        instructions: data.instructions || '',
+      });
+    }).catch(() => {
+      // If instructions not found, still allow starting
+      setLabInfo({ labId, title: labId, moduleId: '', chapterId: '', instructions: '' });
+    });
+  }, [isAuthenticated, courseId, labId]);
+
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/login');
+    }
+  }, [authLoading, isAuthenticated, router]);
+
+  const handleStart = useCallback(async () => {
+    setPhase('provisioning');
+    setError(null);
+    try {
+      const result = await api.labs.start(courseId, labId);
+      setLabState({
+        sessionId: result.session_id,
+        wsUrl: result.ws_url,
+        containerName: result.container_name,
+        status: result.status,
+      });
+      setPhase('running');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to start lab';
+      setError(msg);
+      setPhase('error');
+    }
+  }, [courseId, labId]);
+
+  const handleStop = async () => {
+    if (!labState) return;
+    try {
+      await api.labs.stop(courseId, labId, labState.sessionId);
+      setLabState({ ...labState, status: 'stopped' });
+    } catch (e) {
+      console.error('Failed to stop lab:', e);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!labState) return;
+    try {
+      await api.labs.resume(courseId, labId, labState.sessionId);
+      setLabState({ ...labState, status: 'running' });
+    } catch (e) {
+      console.error('Failed to resume lab:', e);
+    }
+  };
+
+  const handleDestroy = async () => {
+    if (!labState) return;
+    setDestroying(true);
+    try {
+      await api.labs.destroy(courseId, labId, labState.sessionId);
+      setLabState(null);
+      setPhase('intro');
+      setDestroying(false);
+    } catch (e) {
+      console.error('Failed to destroy lab:', e);
+      setDestroying(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0f1419]">
+        <div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto" />
+      </div>
+    );
   }
-  if (idx < allLabs.length - 1) {
-    nextLab = allLabs[idx + 1];
-  }
-
-  const content = await getLabContent(currentLab.contentPath);
-  if (!content) return notFound();
-
-  const progress = ((idx + 1) / allLabs.length) * 100;
 
   return (
-    <main className="min-h-screen bg-bg text-text pt-16">
-      <Navbar />
+    <div className="min-h-screen flex flex-col bg-[#0f1419]">
+      <Navbar
+        breadcrumb={[
+          { label: 'Dashboard', href: '/dashboard' },
+          { label: courseId, href: `/courses/${courseId}` },
+          { label: labInfo?.title || labId },
+        ]}
+      />
 
-      {/* Top Navigation Bar */}
-      <div className="border-b border-line bg-panel/50 backdrop-blur">
-        <div className="mx-auto max-w-7xl px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link
-                href={`/courses/${courseId}`}
-                className="text-sm font-medium text-muted hover:text-accent"
-              >
-                {course.title}
-              </Link>
-              <span className="text-line">/</span>
-              <span className="text-sm font-medium text-text">{currentLab.title}</span>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <span className="text-xs text-muted">
-                {idx + 1} of {allLabs.length}
+      {/* ── Intro phase ───────────────────────────────────────────────── */}
+      {phase === 'intro' && (
+        <div className="flex-1 max-w-3xl mx-auto w-full px-6 py-10">
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-400">
+                Lab
               </span>
-              <div className="h-2 w-32 rounded-full bg-line">
-                <div
-                  className="h-full rounded-full bg-accent transition-all"
-                  style={{ width: `${progress}%` }}
-                />
+              {labInfo?.moduleId && (
+                <span className="text-xs text-muted">{labInfo.moduleId}</span>
+              )}
+            </div>
+            <h1 className="text-2xl font-bold text-text mb-2">
+              {labInfo?.title || labId}
+            </h1>
+          </div>
+
+          {/* Lab instructions markdown */}
+          {labInfo?.instructions && (
+            <div className="prose prose-invert prose-sm max-w-none mb-10">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {labInfo.instructions}
+              </ReactMarkdown>
+            </div>
+          )}
+
+          {!labInfo?.instructions && (
+            <div className="text-muted text-sm mb-10">
+              <p>No written instructions for this lab. Start the environment and follow the tasks in the terminal.</p>
+            </div>
+          )}
+
+          {/* Start button */}
+          <button
+            onClick={handleStart}
+            className="flex items-center gap-3 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+            </svg>
+            Start Lab
+          </button>
+
+          <p className="mt-3 text-xs text-muted">
+            A containerized environment will be provisioned for you. This may take 30-60 seconds.
+          </p>
+        </div>
+      )}
+
+      {/* ── Provisioning phase ────────────────────────────────────────── */}
+      {phase === 'provisioning' && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-gray-300 text-sm">Provisioning lab environment...</p>
+            <p className="text-gray-500 text-xs">Pulling image, creating container, installing packages</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Running phase ─────────────────────────────────────────────── */}
+      {phase === 'running' && labState && (
+        <>
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-4 py-2 bg-[#161b22] border-b border-gray-800">
+            <div className="flex items-center gap-3">
+              <div className={`w-2 h-2 rounded-full ${
+                labState.status === 'running' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+              }`} />
+              <span className="text-sm text-gray-300 font-mono">{labState.containerName}</span>
+              <span className="text-xs text-gray-500">Session: {labState.sessionId}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {labState.status === 'running' && (
+                <button
+                  onClick={handleStop}
+                  className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded text-xs font-medium transition-colors"
+                >
+                  Pause
+                </button>
+              )}
+              {labState.status === 'stopped' && (
+                <button
+                  onClick={handleResume}
+                  className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded text-xs font-medium transition-colors"
+                >
+                  Resume
+                </button>
+              )}
+              <button
+                onClick={handleDestroy}
+                disabled={destroying}
+                className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded text-xs font-medium transition-colors disabled:opacity-50"
+              >
+                {destroying ? 'Destroying...' : 'Destroy'}
+              </button>
+            </div>
+          </div>
+
+          {/* Terminal */}
+          <div className="flex-1 p-2">
+            {labState.status === 'running' && labState.wsUrl && (
+              <LabTerminal
+                wsUrl={labState.wsUrl}
+                className="h-full rounded-lg overflow-hidden border border-gray-800"
+              />
+            )}
+            {labState.status === 'stopped' && (
+              <div className="flex items-center justify-center h-[600px]">
+                <div className="text-center space-y-3">
+                  <p className="text-gray-400">Lab is paused</p>
+                  <button
+                    onClick={handleResume}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Resume Lab
+                  </button>
+                </div>
               </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Error phase ───────────────────────────────────────────────── */}
+      {phase === 'error' && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4 max-w-md">
+            <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
+              <span className="text-red-400 text-xl">!</span>
+            </div>
+            <h2 className="text-lg font-semibold text-white">Lab Failed to Start</h2>
+            <p className="text-gray-400 text-sm">{error}</p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={handleStart}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => router.push(`/courses/${courseId}`)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg text-sm font-medium transition-colors"
+              >
+                Back to Course
+              </button>
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          {/* Main Content */}
-          <div className="lg:col-span-9">
-            {/* Lab Header */}
-            <div className="mb-6">
-              <div className="mb-2 text-sm font-medium text-accent">
-                {currentModuleTitle}
-              </div>
-              <h1 className="text-3xl font-bold text-text">
-                {currentLab.title}
-              </h1>
-            </div>
-
-            {/* Lab Content */}
-            <div className="rounded-xl border border-line bg-panel p-8">
-              <article className="prose prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {content}
-                </ReactMarkdown>
-              </article>
-            </div>
-
-            {/* Mark Complete */}
-            <div className="mt-6 flex justify-center">
-              <MarkCompleteButton courseId={courseId} labId={labId} />
-            </div>
-
-            {/* Pagination Navigation */}
-            <div className="mt-8 flex items-center justify-between border-t border-line pt-8">
-              {prevLab ? (
-                <Link
-                  href={`/courses/${courseId}/labs/${prevLab.id}`}
-                  className="group flex max-w-md items-center gap-4 rounded-lg border border-line p-4 transition hover:border-accent/50 hover:bg-panel/50"
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-line/20 text-accent transition group-hover:bg-accent/20">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m15 19-7-7 7-7" />
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted">Previous Lab</div>
-                    <div className="font-medium text-text group-hover:text-accent">{prevLab.title}</div>
-                  </div>
-                </Link>
-              ) : (
-                <div />
-              )}
-
-              {nextLab ? (
-                <Link
-                  href={`/courses/${courseId}/labs/${nextLab.id}`}
-                  className="group flex max-w-md items-center gap-4 rounded-lg border border-line p-4 transition hover:border-accent/50 hover:bg-panel/50"
-                >
-                  <div className="text-right">
-                    <div className="text-xs text-muted">Next Lab</div>
-                    <div className="font-medium text-text group-hover:text-accent">{nextLab.title}</div>
-                  </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-line/20 text-accent transition group-hover:bg-accent/20">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
-                    </svg>
-                  </div>
-                </Link>
-              ) : (
-                <Link
-                  href={`/courses/${courseId}`}
-                  className="rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-bg transition hover:bg-accent/90"
-                >
-                  Complete Course
-                </Link>
-              )}
-            </div>
-          </div>
-
-          {/* Sidebar - Table of Contents */}
-          <div className="lg:col-span-3">
-            <div className="sticky top-24 rounded-xl border border-line bg-panel p-6">
-              <h3 className="mb-4 text-sm font-semibold text-text">Course Content</h3>
-              <div className="space-y-4">
-                {course.modules.map((module, modIdx) => (
-                  <div key={module.id}>
-                    <div className="mb-2 text-xs font-semibold text-muted">
-                      Module {modIdx + 1}: {module.title}
-                    </div>
-                    <div className="space-y-1">
-                      {module.labs.map((lab) => {
-                        const isCurrent = lab.id === labId;
-                        const isCompleted = false;
-
-                        return (
-                          <Link
-                            key={lab.id}
-                            href={`/courses/${courseId}/labs/${lab.id}`}
-                            className={`flex items-center gap-2 rounded px-3 py-2 text-sm transition ${
-                              isCurrent
-                                ? 'bg-accent/10 text-accent'
-                                : 'text-muted hover:bg-panel/50 hover:text-text'
-                            }`}
-                          >
-                            {isCompleted ? (
-                              <svg className="h-4 w-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m9 12.75 1.214-1.215a3 3 0 0 1 4.243 0l.179.178a3 3 0 0 1 0 4.243l-2.65 2.65a3 3 0 0 1-4.243 0l-.179-.178a3 3 0 0 1 0-4.243Z" />
-                              </svg>
-                            ) : (
-                              <div className={`h-2 w-2 rounded-full ${isCurrent ? 'bg-accent' : 'bg-line'}`} />
-                            )}
-                            <span className="truncate">{lab.title}</span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
+      )}
+    </div>
   );
 }

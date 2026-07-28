@@ -48,9 +48,10 @@ export interface CourseMeta {
   title: string;
   description: string;
   slug: string;
-  modules: number;
-  labs: number;
+  modules: { id: string; title: string; chapters: unknown[]; labs: unknown[] }[];
   level: string;
+  totalChapters: number;
+  totalLabs: number;
   createdAt?: string;
 }
 
@@ -81,17 +82,6 @@ export interface Enrollment {
   lastAccessed: string;
   status: string;
   percentage?: number;
-  completedLabs?: number;
-  totalLabs?: number;
-}
-
-export interface CompleteLabResult {
-  status: string;
-  labId: string;
-  progress: Record<string, unknown>;
-  percentage: number;
-  completedLabs: number;
-  totalLabs: number;
 }
 
 export const api = {
@@ -114,9 +104,61 @@ export const api = {
       }),
     progress: (id: string) =>
       apiFetch<Enrollment>(`/api/v1/courses/${id}/progress`),
-    completeLab: (courseId: string, labId: string) =>
-      apiFetch<CompleteLabResult>(`/api/v1/courses/${courseId}/labs/${labId}/complete`, {
+    updateProgress: (id: string, moduleId: string, chapterId: string, status = 'completed') =>
+      apiFetch<{ status: string; progress: Record<string, unknown> }>(
+        `/api/v1/courses/${id}/progress`,
+        { method: 'PUT', body: JSON.stringify({ moduleId, chapterId, status }) },
+      ),
+  },
+  content: {
+    getChapterContent: (courseId: string, chapterId: string) =>
+      apiFetch<{ chapter: object; content: string | null }>(
+        `/api/v1/content/courses/${courseId}/chapters/${chapterId}`
+      ),
+    getLabInstructions: (courseId: string, labId: string) =>
+      apiFetch<{
+        lab_id: string;
+        title: string;
+        module_id: string;
+        chapter_id: string;
+        instructions: string | null;
+      }>(`/api/v1/content/courses/${courseId}/labs/${labId}/instructions`),
+  },
+  labs: {
+    start: (courseId: string, labId: string) =>
+      apiFetch<{
+        session_id: string;
+        lab_id: string;
+        container_name: string;
+        status: string;
+        ws_token: string;
+        ws_url: string;
+      }>(`/api/v1/labs/courses/${courseId}/labs/${labId}/start`, {
         method: 'POST',
       }),
+    status: (courseId: string, labId: string, sessionId: string) =>
+      apiFetch<{ session_id: string; status: string; container_name: string }>(
+        `/api/v1/labs/courses/${courseId}/labs/${labId}/status/${sessionId}`
+      ),
+    stop: (courseId: string, labId: string, sessionId: string) =>
+      apiFetch<{ detail: string }>(
+        `/api/v1/labs/courses/${courseId}/labs/${labId}/stop/${sessionId}`,
+        { method: 'POST' }
+      ),
+    resume: (courseId: string, labId: string, sessionId: string) =>
+      apiFetch<{ detail: string }>(
+        `/api/v1/labs/courses/${courseId}/labs/${labId}/resume/${sessionId}`,
+        { method: 'POST' }
+      ),
+    destroy: (courseId: string, labId: string, sessionId: string) =>
+      apiFetch<{ detail: string }>(
+        `/api/v1/labs/courses/${courseId}/labs/${labId}/${sessionId}`,
+        { method: 'DELETE' }
+      ),
+    token: (courseId: string, labId: string, sessionId: string) =>
+      apiFetch<{ ws_token: string; ws_url: string }>(
+        `/api/v1/labs/courses/${courseId}/labs/${labId}/token/${sessionId}`,
+        { method: 'POST' }
+      ),
   },
 };

@@ -1,0 +1,117 @@
+environment:
+  base_image: "sgp-lab-docker:latest"
+  pre_pull:
+    - nginx:alpine
+    - alpine:latest
+
+phases:
+  - id: "phase-0"
+    title: "Environment Setup"
+    type: "setup"
+    steps:
+      - id: "install-docker"
+        command: "apt-get update && apt-get install -y docker.io"
+        description: "Install Docker Engine"
+      - id: "start-docker"
+        command: "service docker start"
+        description: "Start Docker daemon"
+      - id: "pull-images"
+        command: "docker pull nginx:alpine && docker pull alpine:latest"
+        description: "Pull required images"
+
+  - id: "phase-1"
+    title: "Docker Fundamentals"
+    labs:
+      - id: "lab-1"
+        title: "Hello World Container"
+        order: 1
+        tasks:
+          - id: "task-1"
+            prompt: "How many images are currently available locally?"
+            type: "multiple_choice"
+            options_source: "dynamic"
+            validation:
+              command: "docker images -q | wc -l | tr -d ' '"
+              match_type: "exact"
+            error_message: "Unexpected image count."
+            hint: "Run 'docker images' to see what's available."
+
+          - id: "task-2"
+            prompt: "Run an nginx container named 'web' in detached mode."
+            type: "terminal_action"
+            validation:
+              command: "docker ps --format '{{.Names}}'"
+              match_type: "contains"
+              expected_output: "web"
+            error_message: "No running container named 'web' found."
+            hint: "docker run -d --name web nginx:alpine"
+
+          - id: "task-3"
+            prompt: "How many containers are now running?"
+            type: "multiple_choice"
+            options_source: "dynamic"
+            validation:
+              command: "docker ps -q | wc -l | tr -d ' '"
+              match_type: "exact"
+            error_message: "Unexpected container count."
+            hint: "docker ps shows running containers."
+
+      - id: "lab-2"
+        title: "Working with Images"
+        order: 2
+        setup:
+          - command: "docker rm -f web || true"
+        tasks:
+          - id: "task-1"
+            prompt: "List all local images. How many are there now?"
+            type: "multiple_choice"
+            options_source: "dynamic"
+            validation:
+              command: "docker images -q | wc -l | tr -d ' '"
+              match_type: "exact"
+            error_message: "Unexpected image count."
+            hint: "Run docker images to list them."
+
+          - id: "task-2"
+            prompt: "Inspect the nginx image. What is its size?"
+            type: "terminal_action"
+            validation:
+              command: "docker images nginx:alpine --format '{{.Size}}'"
+              match_type: "contains"
+              expected_output: "MB"
+            error_message: "Could not determine nginx image size."
+            hint: "docker images shows size info."
+
+          - id: "task-3"
+            prompt: "Remove the alpine:latest image."
+            type: "terminal_action"
+            validation:
+              command: "docker images alpine:latest -q | wc -l | tr -d ' '"
+              match_type: "exact"
+              expected_output: "0"
+            error_message: "alpine:latest still exists."
+            hint: "docker rmi removes an image."
+
+      - id: "lab-3"
+        title: "Environment Variables"
+        order: 3
+        tasks:
+          - id: "task-1"
+            prompt: "Run an alpine container that prints the value of MY_VAR='hello' when it starts."
+            type: "terminal_action"
+            validation:
+              command: "docker run --rm -e MY_VAR=hello alpine printenv MY_VAR"
+              match_type: "exact"
+              expected_output: "hello"
+            error_message: "Container did not print the expected environment variable."
+            hint: "Use -e to pass environment variables to a container."
+
+          - id: "task-2"
+            prompt: "Map host port 9090 to an nginx container's port 80."
+            type: "terminal_action"
+            validation:
+              command: "docker port $(docker ps -q | head -1) 2>/dev/null | head -1"
+              match_type: "contains"
+              expected_output: "9090"
+            error_message: "Port 9090 not mapped."
+            hint: "docker run -p 9090:80 nginx:alpine"

@@ -13,6 +13,10 @@ export function middleware(request: NextRequest) {
     }
   }
 
+  if (session && pathname === '/') {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
   if (session && (pathname === '/login' || pathname === '/register')) {
     return NextResponse.redirect(new URL('/onboarding', request.url));
   }
@@ -21,5 +25,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/courses/:path*', '/dashboard/:path*', '/onboarding/:path*', '/login', '/register'],
+  matcher: ['/', '/courses/:path*', '/dashboard/:path*', '/onboarding/:path*', '/login', '/register'],
 };

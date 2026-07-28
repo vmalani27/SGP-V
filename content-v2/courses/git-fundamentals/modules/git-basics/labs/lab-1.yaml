@@ -1,0 +1,112 @@
+environment:
+  base_image: "sgp-lab-ubuntu:latest"
+  apt_packages:
+    - git
+
+phases:
+  - id: "phase-1"
+    title: "Git Basics"
+    labs:
+      - id: "lab-1"
+        title: "Setting Up Git"
+        order: 1
+        tasks:
+          - id: "task-1"
+            prompt: "Check the installed Git version."
+            type: "terminal_action"
+            validation:
+              command: "git --version"
+              match_type: "contains"
+              expected_output: "git version"
+            error_message: "Git does not appear to be installed."
+            hint: "What command shows the installed version of a program?"
+
+          - id: "task-2"
+            prompt: "Configure your Git user name to 'Student'."
+            type: "terminal_action"
+            validation:
+              command: "git config --global user.name"
+              match_type: "exact"
+              expected_output: "Student"
+            error_message: "Git user name is not set to 'Student'."
+            hint: "Use git config --global user.name to set it."
+
+          - id: "task-3"
+            prompt: "Configure your Git email to 'student@example.com'."
+            type: "terminal_action"
+            validation:
+              command: "git config --global user.email"
+              match_type: "exact"
+              expected_output: "student@example.com"
+            error_message: "Git email is not set correctly."
+            hint: "Use git config --global user.email to set it."
+
+      - id: "lab-2"
+        title: "Your First Repository"
+        order: 2
+        tasks:
+          - id: "task-1"
+            prompt: "Create a new directory called 'my-project' and initialize a Git repository inside it."
+            type: "terminal_action"
+            validation:
+              command: "test -d my-project/.git && echo 'exists'"
+              match_type: "exact"
+              expected_output: "exists"
+            error_message: "No .git directory found in my-project."
+            hint: "Use mkdir to create the directory, then git init inside it."
+
+          - id: "task-2"
+            prompt: "Create a file called 'README.md' with the content 'Hello Git' inside my-project."
+            type: "file_check"
+            validation:
+              path: "my-project/README.md"
+              contains: "Hello Git"
+              match_type: "contains"
+            error_message: "README.md not found or missing expected content."
+            hint: "Use echo or a text editor to create the file."
+
+          - id: "task-3"
+            prompt: "Stage and commit the README.md file with the message 'Initial commit'."
+            type: "terminal_action"
+            validation:
+              command: "cd my-project && git log --oneline --format='%s' | head -1"
+              match_type: "exact"
+              expected_output: "Initial commit"
+            error_message: "No commit found with message 'Initial commit'."
+            hint: "Use git add then git commit."
+
+      - id: "lab-3"
+        title: "Controlling What Gets Saved"
+        order: 3
+        setup:
+          - command: "cd my-project 2>/dev/null || true"
+        tasks:
+          - id: "task-1"
+            prompt: "Create a .gitignore file that ignores all .log files."
+            type: "file_check"
+            validation:
+              path: "my-project/.gitignore"
+              contains: "*.log"
+              match_type: "contains"
+            error_message: ".gitignore not found or missing *.log pattern."
+            hint: "What pattern matches all files ending in .log?"
+
+          - id: "task-2"
+            prompt: "Create a file called 'debug.log' inside my-project."
+            type: "terminal_action"
+            validation:
+              command: "test -f my-project/debug.log && echo 'exists'"
+              match_type: "exact"
+              expected_output: "exists"
+            error_message: "debug.log not found."
+            hint: "Use touch or echo to create the file."
+
+          - id: "task-3"
+            prompt: "Check that debug.log is NOT being tracked by Git."
+            type: "terminal_action"
+            validation:
+              command: "cd my-project && git status --short debug.log"
+              match_type: "exact"
+              expected_output: ""
+            error_message: "debug.log appears to be tracked by Git."
+            hint: "If .gitignore is working, untracked ignored files won't show in git status."

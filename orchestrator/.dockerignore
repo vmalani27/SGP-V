@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.dockerignore
+Dockerfile
+Dockerfile.dev
+README.md
+TEST_API.md
+doc.md
+postman_collection.json
+schemas/

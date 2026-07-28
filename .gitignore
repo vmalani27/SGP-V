@@ -1,3 +1,13 @@
 node_modules/
 .next/
 *.local
+
+# Secrets — global catch-all
+.env
+.env.*
+!.env.sample
+!.env.*.sample
+credentials.json
+service-account*.json
+*.pem
+*.key

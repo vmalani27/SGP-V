@@ -1,0 +1,23 @@
+# ──────────────────────────────────────────────────────────────
+# sgp-lab-git — Git lab image
+# ──────────────────────────────────────────────────────────────
+# Ubuntu 22.04 with systemd + Git pre-installed.
+# Used by: git-fundamentals
+#
+# Build:
+#   docker build -t sgp-lab-git:latest -f Dockerfile.git .
+#
+# Note: git-fundamentals can also use sgp-lab-ubuntu with
+# apt_packages: [git] in the lab YAML. This image just
+# avoids the runtime apt install.
+# ──────────────────────────────────────────────────────────────
+
+FROM sgp-lab-ubuntu:latest
+
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /home/student
+
+ENTRYPOINT ["/sbin/init"]

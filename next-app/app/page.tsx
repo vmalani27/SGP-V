@@ -1,40 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import TerminalDemo from '@/components/TerminalDemo';
-import { useAuth } from '@/lib/auth-context';
 import { api, type CourseMeta } from '@/lib/api';
 
 export default function HomePage() {
-  const { isAuthenticated, loading, enrolledCourses } = useAuth();
-  const router = useRouter();
   const [courses, setCourses] = useState<CourseMeta[]>([]);
 
   useEffect(() => {
     api.courses.list().then(setCourses).catch(() => {});
   }, []);
-
-  const handleStartLearning = () => {
-    if (loading) return;
-    if (!isAuthenticated) {
-      router.push('/register');
-    } else if (enrolledCourses.length === 0) {
-      router.push('/register');
-    } else {
-      router.push('/dashboard');
-    }
-  };
-
-  const buttonText = loading
-    ? 'Loading…'
-    : !isAuthenticated
-      ? 'Start Learning for Free'
-      : enrolledCourses.length === 0
-        ? 'Start Learning for Free'
-        : 'Continue Learning';
 
   return (
     <main className="min-h-screen bg-bg text-text">
@@ -51,13 +28,12 @@ export default function HomePage() {
             in-browser terminal environments.
           </p>
           <div className="flex flex-wrap gap-4">
-            <button
-              onClick={handleStartLearning}
-              disabled={loading}
-              className="rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-bg transition hover:bg-accent/90 disabled:opacity-50"
+            <Link
+              href="/register"
+              className="rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-bg transition hover:bg-accent/90"
             >
-              {buttonText}
-            </button>
+              Start Learning for Free
+            </Link>
             <a
               href="#curriculum"
               className="rounded-lg border border-line px-6 py-3 text-sm font-semibold text-muted transition hover:border-accent/50 hover:text-text"
@@ -66,7 +42,6 @@ export default function HomePage() {
             </a>
           </div>
         </div>
-        <TerminalDemo />
       </section>
 
       {/* Value Props */}
@@ -99,7 +74,7 @@ export default function HomePage() {
             <h3 className="hero-font mb-2 text-lg font-semibold">Instant Feedback</h3>
             <p className="text-sm leading-relaxed text-muted">
               Automated grading validates your lab work so you know immediately when
-              you've solved it correctly.
+              you&apos;ve solved it correctly.
             </p>
           </div>
         </div>
@@ -124,9 +99,7 @@ export default function HomePage() {
                   <h3 className="hero-font mb-2 text-xl font-bold">{course.title}</h3>
                   <p className="mb-4 text-sm text-muted">{course.description}</p>
                   <div className="flex items-center gap-4 text-xs text-muted">
-                    <span>{course.modules} {course.modules === 1 ? 'Module' : 'Modules'}</span>
-                    <span className="text-line">|</span>
-                    <span>{course.labs} Labs</span>
+                    <span>{course.modules.length} {course.modules.length === 1 ? 'Module' : 'Modules'}</span>
                     <span className="text-line">|</span>
                     <span className="capitalize">{course.level}</span>
                   </div>
@@ -145,8 +118,6 @@ export default function HomePage() {
                   <div className="flex items-center gap-4 text-xs text-muted">
                     <span>1 Module</span>
                     <span className="text-line">|</span>
-                    <span>10 Labs</span>
-                    <span className="text-line">|</span>
                     <span className="capitalize">beginner</span>
                   </div>
                 </div>
@@ -160,8 +131,6 @@ export default function HomePage() {
                   </p>
                   <div className="flex items-center gap-4 text-xs text-muted">
                     <span>1 Module</span>
-                    <span className="text-line">|</span>
-                    <span>10 Labs</span>
                     <span className="text-line">|</span>
                     <span className="capitalize">intermediate</span>
                   </div>

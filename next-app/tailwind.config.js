@@ -10,14 +10,14 @@ const config = {
   theme: {
     extend: {
       colors: {
-        bg: '#07111f',
-        panel: '#0d1a2d',
-        panelSoft: '#10233d',
-        line: 'rgba(148, 163, 184, 0.14)',
+        bg: '#0f1419',
+        panel: '#1a2332',
+        panelSoft: '#22303f',
+        line: 'rgba(148, 163, 184, 0.18)',
         accent: '#60a5fa',
-        accentStrong: '#60a5fa',
-        text: '#e8f1ff',
-        muted: '#9fb2cc',
+        accentStrong: '#93c5fd',
+        text: '#e2e8f0',
+        muted: '#94a3b8',
       },
       boxShadow: {},
       backgroundImage: {},

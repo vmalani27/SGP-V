@@ -5,13 +5,12 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
-import { api, type CourseMeta, type Enrollment } from '@/lib/api';
+import { api, type CourseMeta } from '@/lib/api';
 
 export default function DashboardPage() {
-  const { user, isAuthenticated, loading, logout, enrolledCourses, refreshEnrollments } = useAuth();
+  const { user, isAuthenticated, loading, logout, enrolledCourses, enrollments, refreshEnrollments } = useAuth();
   const router = useRouter();
   const [courses, setCourses] = useState<CourseMeta[]>([]);
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
@@ -20,15 +19,12 @@ export default function DashboardPage() {
       router.push('/login');
       return;
     }
-    Promise.all([
-      api.courses.list(),
-      api.users.enrollments(),
-    ])
-      .then(([c, e]) => {
+    api.courses.list()
+      .then((c) => {
+        console.log('[Dashboard] Courses fetched:', c.length, 'courses');
         setCourses(c);
-        setEnrollments(e);
       })
-      .catch(() => {})
+      .catch((err) => console.error('[Dashboard] Fetch failed:', err))
       .finally(() => setFetching(false));
   }, [isAuthenticated, loading, router]);
 
@@ -36,8 +32,6 @@ export default function DashboardPage() {
     try {
       await api.courses.enroll(courseId);
       await refreshEnrollments();
-      const updated = await api.users.enrollments();
-      setEnrollments(updated);
     } catch {
       // silent
     }
@@ -62,9 +56,7 @@ export default function DashboardPage() {
 
   const getProgress = (courseId: string): number => {
     const enrollment = enrollments.find((e) => e.courseId === courseId);
-    if (!enrollment?.progress) return 0;
-    const pct = (enrollment.progress as { percentage?: number }).percentage;
-    return pct ?? 0;
+    return enrollment?.percentage ?? 0;
   };
 
   return (
@@ -99,8 +91,6 @@ export default function DashboardPage() {
                   <h3 className="hero-font mt-4 text-lg font-bold">{course.title}</h3>
                   <p className="mt-1 text-sm text-muted">{course.description}</p>
                   <div className="mt-4 flex items-center gap-4 text-xs text-muted">
-                    <span>{course.labs} Labs</span>
-                    <span className="text-line">|</span>
                     <span className="capitalize">{course.level}</span>
                   </div>
                   <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-line">
@@ -136,8 +126,6 @@ export default function DashboardPage() {
                   <h3 className="hero-font mt-4 text-lg font-bold">{course.title}</h3>
                   <p className="mt-1 text-sm text-muted">{course.description}</p>
                   <div className="mt-4 flex items-center gap-4 text-xs text-muted">
-                    <span>{course.labs} Labs</span>
-                    <span className="text-line">|</span>
                     <span className="capitalize">{course.level}</span>
                   </div>
                   <button

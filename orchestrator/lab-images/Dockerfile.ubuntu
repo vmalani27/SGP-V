@@ -1,0 +1,51 @@
+# ──────────────────────────────────────────────────────────────
+# sgp-lab-ubuntu — Base lab image
+# ──────────────────────────────────────────────────────────────
+# Ubuntu 22.04 with systemd (PID 1), student user, and sudo.
+# Used by: git-fundamentals, linux-fundamentals
+#
+# Build:
+#   docker build -t sgp-lab-ubuntu:latest -f Dockerfile.ubuntu .
+#
+# The lab YAML can install additional packages via apt_packages:
+#   environment:
+#     base_image: "sgp-lab-ubuntu:latest"
+#     apt_packages: [git, vim, curl]
+# ──────────────────────────────────────────────────────────────
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV container=docker
+
+RUN apt-get update && apt-get install -y \
+    systemd \
+    systemd-sysv \
+    sudo \
+    curl \
+    wget \
+    git \
+    vim \
+    nano \
+    less \
+    man-db \
+    locales \
+    tmux \
+    && rm -rf /var/lib/apt/lists/* \
+    && locale-gen en_US.UTF-8
+
+# Enable systemd services
+RUN systemctl set-default multi-user.target
+
+# Create student user (UID 1000) with passwordless sudo
+RUN useradd -m -s /bin/bash -u 1000 student \
+    && echo "student:student" | chpasswd \
+    && usermod -aG sudo student \
+    && echo "student ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/student
+
+# Allow student to start systemd services
+RUN mkdir -p /run/dbus && chown student:student /run/dbus
+
+WORKDIR /home/student
+
+ENTRYPOINT ["/sbin/init"]

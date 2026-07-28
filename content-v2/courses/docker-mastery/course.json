@@ -1,0 +1,179 @@
+{
+  "id": "docker-mastery",
+  "title": "Docker Mastery",
+  "description": "Containers, multi-stage builds, Docker Compose, and production-ready deployments.",
+  "level": "intermediate",
+  "estimatedHours": 8,
+  "modules": [
+    {
+      "id": "docker-fundamentals",
+      "title": "Docker Fundamentals",
+      "description": "Learn the core concepts behind containerization and get hands-on with Docker.",
+      "order": 1,
+      "chapters": [
+        {
+          "id": "chapter-1",
+          "title": "Why Containers Exist",
+          "description": "Understand how containers differ from VMs and why they matter.",
+          "order": 1
+        },
+        {
+          "id": "chapter-2",
+          "title": "Your First Container",
+          "description": "Run, inspect, and stop containers with Docker CLI.",
+          "order": 2
+        },
+        {
+          "id": "chapter-3",
+          "title": "Configuring Containers",
+          "description": "Use environment variables, volumes, and port mapping.",
+          "order": 3
+        }
+      ],
+      "labs": [
+        {
+          "id": "lab-1",
+          "title": "Hello World Container",
+          "description": "Run your first Docker container.",
+          "chapterId": "chapter-1",
+          "order": 1
+        },
+        {
+          "id": "lab-2",
+          "title": "Working with Images",
+          "description": "Pull, list, and inspect Docker images.",
+          "chapterId": "chapter-2",
+          "order": 2
+        },
+        {
+          "id": "lab-3",
+          "title": "Environment Variables",
+          "description": "Configure containers with env vars and ports.",
+          "chapterId": "chapter-3",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "id": "building-images",
+      "title": "Building Custom Images",
+      "description": "Master Dockerfile creation, multi-stage builds, and image optimization.",
+      "order": 2,
+      "chapters": [
+        {
+          "id": "chapter-4",
+          "title": "Writing Dockerfiles",
+          "description": "Create your first Dockerfile and build an image.",
+          "order": 1
+        },
+        {
+          "id": "chapter-5",
+          "title": "Multi-Stage Builds",
+          "description": "Reduce image size with multi-stage builds.",
+          "order": 2
+        },
+        {
+          "id": "chapter-6",
+          "title": "Optimizing Images",
+          "description": "Use .dockerignore, layer caching, and Alpine base images.",
+          "order": 3
+        }
+      ],
+      "labs": [
+        {
+          "id": "lab-4",
+          "title": "Building with Dockerfiles",
+          "description": "Write and build a Dockerfile.",
+          "chapterId": "chapter-4",
+          "order": 1
+        },
+        {
+          "id": "lab-5",
+          "title": "Multi-Stage Builds",
+          "description": "Create a multi-stage Dockerfile.",
+          "chapterId": "chapter-5",
+          "order": 2
+        },
+        {
+          "id": "lab-6",
+          "title": "Image Debugging",
+          "description": "Debug and optimize image layers.",
+          "chapterId": "chapter-6",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "id": "container-networking",
+      "title": "Container Networking",
+      "description": "Understand how containers communicate and orchestrate multi-container apps.",
+      "order": 3,
+      "chapters": [
+        {
+          "id": "chapter-7",
+          "title": "How Containers Talk",
+          "description": "Docker networking drivers, bridge networks, and DNS.",
+          "order": 1
+        },
+        {
+          "id": "chapter-8",
+          "title": "Composing Multi-Container Apps",
+          "description": "Define and run multi-container apps with Docker Compose.",
+          "order": 2
+        }
+      ],
+      "labs": [
+        {
+          "id": "lab-7",
+          "title": "Container Networking",
+          "description": "Create networks and connect containers.",
+          "chapterId": "chapter-7",
+          "order": 1
+        },
+        {
+          "id": "lab-8",
+          "title": "Docker Compose",
+          "description": "Build a multi-service application.",
+          "chapterId": "chapter-8",
+          "order": 2
+        }
+      ]
+    },
+    {
+      "id": "persistent-storage",
+      "title": "Persistent Storage",
+      "description": "Learn to manage data persistence with volumes and production storage patterns.",
+      "order": 4,
+      "chapters": [
+        {
+          "id": "chapter-9",
+          "title": "Why Data Dies When Containers Stop",
+          "description": "Understand ephemeral storage and Docker volumes.",
+          "order": 1
+        },
+        {
+          "id": "chapter-10",
+          "title": "Production Storage Patterns",
+          "description": "Backups, HEALTHCHECK, and restart policies.",
+          "order": 2
+        }
+      ],
+      "labs": [
+        {
+          "id": "lab-9",
+          "title": "Volume Publishing",
+          "description": "Create and manage Docker volumes.",
+          "chapterId": "chapter-9",
+          "order": 1
+        },
+        {
+          "id": "lab-10",
+          "title": "Production Workflow",
+          "description": "Deploy with health checks and restart policies.",
+          "chapterId": "chapter-10",
+          "order": 2
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+services:
+  frontend:
+    build:
+      context: ./next-app
+    container_name: sgp-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./next-app:/app
+      - frontend_next:/app/.next
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - NEXT_TELEMETRY_DISABLED=1
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      - BACKEND_API_URL=http://backend:8000
+    depends_on:
+      - backend
+      - orchestrator
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: sgp-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./content-v2:/app/content:ro
+    environment:
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+      - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON:-}
+      - CONTENT_DIR=/app/content
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+      - WS_ORCHESTRATOR_URL=ws://localhost:8001
+      - JWT_SECRET=${JWT_SECRET:-dev-only-change-in-production}
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+    container_name: sgp-orchestrator
+    ports:
+      - "8001:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./orchestrator:/app
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LAB_PREFIX=sgp-lab
+      - JWT_SECRET=${JWT_SECRET:-dev-only-change-in-production}
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./worker
+    container_name: sgp-worker
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./worker:/app
+      - ./content-v2:/app/content:ro
+      - ./backend/app/core/credentials.json:/app/credentials.json:ro
+    environment:
+      - CONTENT_DIR=/app/content
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+      - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - SYNC_INTERVAL_SECONDS=300
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  frontend_next:

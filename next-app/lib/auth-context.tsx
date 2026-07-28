@@ -10,7 +10,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth } from './firebase';
-import { api } from './api';
+import { api, type Enrollment } from './api';
 
 const SESSION_COOKIE = 'session';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 14;
@@ -29,6 +29,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   profileComplete: boolean;
   enrolledCourses: string[];
+  enrollments: Enrollment[];
+  getEnrollment: (courseId: string) => Enrollment | undefined;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -43,6 +45,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profileComplete, setProfileComplete] = useState(false);
   const [enrolledCourses, setEnrolledCourses] = useState<string[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+
+  const fetchEnrollments = useCallback(async () => {
+    try {
+      const data = await api.users.enrollments();
+      setEnrollments(data);
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const getEnrollment = useCallback(
+    (courseId: string) => enrollments.find((e) => e.courseId === courseId),
+    [enrollments],
+  );
 
   const syncUser = useCallback(async () => {
     try {
@@ -52,7 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Backend may not be running — fail silently
     }
-  }, []);
+    fetchEnrollments();
+  }, [fetchEnrollments]);
 
   useEffect(() => {
     if (!auth) {
@@ -68,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearSessionCookie();
         setEnrolledCourses([]);
         setProfileComplete(false);
+        setEnrollments([]);
       }
       setLoading(false);
     });
@@ -92,7 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // silent
     }
-  }, []);
+    fetchEnrollments();
+  }, [fetchEnrollments]);
 
   const login = useCallback(async (email: string, password: string) => {
     if (!auth) throw new Error('Firebase not configured');
@@ -118,6 +138,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         profileComplete,
         enrolledCourses,
+        enrollments,
+        getEnrollment,
         login,
         register,
         logout,

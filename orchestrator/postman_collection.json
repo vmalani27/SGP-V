@@ -1,0 +1,441 @@
+{
+  "info": {
+    "name": "LabOps API",
+    "description": "Test suite for LabOps. Backend proxy endpoints (primary) and orchestrator internal endpoints (debugging).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "backendUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "orchestratorUrl",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "sessionId",
+      "value": ""
+    },
+    {
+      "key": "courseId",
+      "value": "docker-mastery"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health (backend)",
+          "request": {
+            "method": "GET",
+            "url": "{{backendUrl}}/health",
+            "description": "Backend health check"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /health (orchestrator)",
+          "request": {
+            "method": "GET",
+            "url": "{{orchestratorUrl}}/health",
+            "description": "Orchestrator health check (internal)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Lab Lifecycle (via backend)",
+      "description": "Start, manage, and destroy lab containers through the backend proxy. The backend reads the lab YAML and forwards the config to the orchestrator.",
+      "item": [
+        {
+          "name": "Start Docker Lab",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status is running', () => {",
+                  "    pm.expect(json.status).to.eql('running');",
+                  "});",
+                  "pm.test('Has session_id', () => {",
+                  "    pm.expect(json).to.have.property('session_id');",
+                  "});",
+                  "pm.test('Has lab_id', () => {",
+                  "    pm.expect(json).to.have.property('lab_id');",
+                  "    pm.expect(json.lab_id).to.eql('lab-1');",
+                  "});",
+                  "pm.collectionVariables.set('sessionId', json.session_id);",
+                  "console.log('Session ID: ' + json.session_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/start",
+            "header": [],
+            "description": "Start a Docker lab — backend reads YAML, sends image to orchestrator"
+          },
+          "response": []
+        },
+        {
+          "name": "Start Git Lab",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status is running', () => {",
+                  "    pm.expect(json.status).to.eql('running');",
+                  "});",
+                  "pm.collectionVariables.set('gitSessionId', json.session_id);",
+                  "console.log('Git Session ID: ' + json.session_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/git-fundamentals/labs/lab-1/start",
+            "header": [],
+            "description": "Start a Git lab"
+          },
+          "response": []
+        },
+        {
+          "name": "Start Lab — Lab not found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404', () => {",
+                  "    pm.expect(pm.response.code).to.eql(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-999/start",
+            "header": [],
+            "description": "Should return 404 for non-existent lab"
+          },
+          "response": []
+        },
+        {
+          "name": "Start Lab — Course not found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404', () => {",
+                  "    pm.expect(pm.response.code).to.eql(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/nonexistent/labs/lab-1/start",
+            "header": [],
+            "description": "Should return 404 for non-existent course"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Session Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Returns session with required fields', () => {",
+                  "    pm.expect(json).to.have.property('session_id');",
+                  "    pm.expect(json).to.have.property('status');",
+                  "    pm.expect(json).to.have.property('lab_id');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/status/{{sessionId}}",
+            "header": [],
+            "description": "Get session status from orchestrator via backend"
+          },
+          "response": []
+        },
+        {
+          "name": "Stop Lab",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status is stopped', () => {",
+                  "    pm.expect(json.status).to.eql('stopped');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/stop/{{sessionId}}",
+            "header": [],
+            "description": "Stop a lab container"
+          },
+          "response": []
+        },
+        {
+          "name": "Resume Lab",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status is running', () => {",
+                  "    pm.expect(json.status).to.eql('running');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/resume/{{sessionId}}",
+            "header": [],
+            "description": "Resume a stopped lab container"
+          },
+          "response": []
+        },
+        {
+          "name": "Destroy Lab",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Returns destroyed message', () => {",
+                  "    pm.expect(json.detail).to.include('destroyed');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/{{sessionId}}",
+            "header": [],
+            "description": "Destroy a lab container"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Command Execution (via backend)",
+      "description": "Run commands inside lab containers through the backend proxy.",
+      "item": [
+        {
+          "name": "Exec — whoami",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Returns output', () => {",
+                  "    pm.expect(json).to.have.property('output');",
+                  "});",
+                  "pm.test('Exit code is 0', () => {",
+                  "    pm.expect(json.exit_code).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/exec/{{sessionId}}",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"command\": \"whoami\", \"user\": \"student\"}"
+            },
+            "description": "Run whoami as student"
+          },
+          "response": []
+        },
+        {
+          "name": "Exec — docker images",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Returns output', () => {",
+                  "    pm.expect(json).to.have.property('output');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/exec/{{sessionId}}",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"command\": \"docker images -q | wc -l\", \"user\": \"student\"}"
+            },
+            "description": "Count local Docker images"
+          },
+          "response": []
+        },
+        {
+          "name": "Exec — as root",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Returns output', () => {",
+                  "    pm.expect(json).to.have.property('output');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/exec/{{sessionId}}",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"command\": \"whoami\", \"user\": \"root\"}"
+            },
+            "description": "Run command as root"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Orchestrator (Internal)",
+      "description": "Direct orchestrator endpoints for debugging. Frontend should NOT call these — use the backend proxy instead.",
+      "item": [
+        {
+          "name": "Start Lab (internal)",
+          "request": {
+            "method": "POST",
+            "url": "{{orchestratorUrl}}/labs",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"lab_id\": \"lab-1\", \"image\": \"sgp-lab-docker:latest\"}"
+            },
+            "description": "Direct orchestrator start — for debugging only"
+          },
+          "response": []
+        },
+        {
+          "name": "List Labs",
+          "request": {
+            "method": "GET",
+            "url": "{{orchestratorUrl}}/labs",
+            "header": [],
+            "description": "List all lab containers managed by orchestrator"
+          },
+          "response": []
+        },
+        {
+          "name": "Exec (internal)",
+          "request": {
+            "method": "POST",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/exec",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"command\": \"whoami\", \"user\": \"student\"}"
+            },
+            "description": "Direct exec — for debugging only"
+          },
+          "response": []
+        },
+        {
+          "name": "Validate (legacy)",
+          "request": {
+            "method": "POST",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/validate",
+            "header": [],
+            "description": "Run legacy validator.sh"
+          },
+          "response": []
+        },
+        {
+          "name": "Inspect",
+          "request": {
+            "method": "POST",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/inspect",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"path\": \"/etc/passwd\", \"check\": \"exists\"}"
+            },
+            "description": "Check if file exists"
+          },
+          "response": []
+        },
+        {
+          "name": "Get JSON Schema",
+          "request": {
+            "method": "GET",
+            "url": "{{orchestratorUrl}}/schemas/yaml",
+            "header": [],
+            "description": "Lab YAML JSON Schema"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Sample YAML",
+          "request": {
+            "method": "GET",
+            "url": "{{orchestratorUrl}}/schemas/sample",
+            "header": [],
+            "description": "Sample lab YAML file"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

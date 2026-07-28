@@ -1,0 +1,36 @@
+# ──────────────────────────────────────────────────────────────
+# sgp-lab-docker — Docker-in-Docker lab image
+# ──────────────────────────────────────────────────────────────
+# Ubuntu 22.04 with systemd + Docker daemon pre-installed.
+# Used by: docker-mastery
+#
+# Build:
+#   docker build -t sgp-lab-docker:latest -f Dockerfile.docker .
+#
+# The Docker daemon starts automatically via systemd.
+# Student can run docker commands immediately.
+# ──────────────────────────────────────────────────────────────
+
+FROM sgp-lab-ubuntu:latest
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu jammy stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    && apt-get update && apt-get install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ensure docker daemon starts with systemd
+RUN systemctl enable docker.service
+
+WORKDIR /home/student
+
+ENTRYPOINT ["/sbin/init"]
