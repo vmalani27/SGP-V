@@ -26,6 +26,7 @@ export default function LabTerminal({
   const fitRef = useRef<FitAddon | null>(null);
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectionGen = useRef(0);
   const [state, setState] = useState<ConnectionState>('connecting');
   const wsUrlRef = useRef(wsUrl);
 
@@ -55,6 +56,9 @@ export default function LabTerminal({
     cleanup();
     setState('connecting');
 
+    connectionGen.current += 1;
+    const gen = connectionGen.current;
+
     const ws = new WebSocket(wsUrlRef.current);
     wsRef.current = ws;
 
@@ -83,6 +87,8 @@ export default function LabTerminal({
         return;
       }
 
+      if (gen !== connectionGen.current) return;
+
       setState('reconnecting');
       onDisconnect?.();
 
@@ -91,6 +97,7 @@ export default function LabTerminal({
       reconnectAttempt.current = attempt + 1;
 
       reconnectTimer.current = setTimeout(() => {
+        if (gen !== connectionGen.current) return;
         connect();
       }, delay);
     };
@@ -153,16 +160,25 @@ export default function LabTerminal({
   // Send resize events to backend
   useEffect(() => {
     const term = termRef.current;
-    const ws = wsRef.current;
-    if (!term || !ws) return;
+    if (!term) return;
 
     const disposable = term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'resize', cols, rows }));
       }
     });
 
     return () => disposable.dispose();
+  }, [state]);
+
+  // Re-fit and send initial terminal size when WebSocket connects
+  useEffect(() => {
+    if (state !== 'connected') return;
+    requestAnimationFrame(() => {
+      const fit = fitRef.current;
+      if (fit) fit.fit();
+    });
   }, [state]);
 
   // Connect on mount, cleanup on unmount

@@ -125,6 +125,15 @@ export const api = {
       }>(`/api/v1/content/courses/${courseId}/labs/${labId}/instructions`),
   },
   labs: {
+    active: (courseId: string, labId: string) =>
+      apiFetch<{
+        session_id: string;
+        lab_id: string;
+        container_name: string;
+        status: string;
+        ws_token: string;
+        ws_url: string;
+      } | null>(`/api/v1/labs/courses/${courseId}/labs/${labId}/active`),
     start: (courseId: string, labId: string) =>
       apiFetch<{
         session_id: string;

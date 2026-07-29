@@ -23,6 +23,7 @@ sessions: dict[str, LabSession] = {}
 class StartLabRequest(BaseModel):
     lab_id: str
     image: str
+    user_id: str = ""
     apt_packages: list[str] = []
     pre_pull: list[str] = []
 
@@ -45,7 +46,7 @@ class ExecRequest(BaseModel):
 def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_docker_service)):
     lab_number = lab_id_to_number(req.lab_id)
 
-    session = LabSession(lab_type="custom", lab_id=req.lab_id, user_id="")
+    session = LabSession(lab_type="custom", lab_id=req.lab_id, user_id=req.user_id)
     session.container_name = f"{LAB_PREFIX}-{session.session_id}"
 
     try:

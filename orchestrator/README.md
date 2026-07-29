@@ -244,13 +244,36 @@ uvicorn app.main:app --reload --port 8001
 Lab containers run on Sysbox-compatible base images. Build them first:
 
 ```bash
-cd lab-images
+cd orchestrator/lab-images
 docker build -t sgp-lab-ubuntu:latest -f Dockerfile.ubuntu .
 docker build -t sgp-lab-docker:latest -f Dockerfile.docker .
-docker build -t sgp-lab-git:latest -f Dockerfile.git .
+```
+
+Or from the repo root:
+
+```bash
+docker build -t sgp-lab-ubuntu:latest -f orchestrator/lab-images/Dockerfile.ubuntu orchestrator/lab-images
+docker build -t sgp-lab-docker:latest -f orchestrator/lab-images/Dockerfile.docker orchestrator/lab-images
+```
+
+**Important:** Images are pulled by the orchestrator at `docker run` time. If you modify a Dockerfile, you **must** rebuild the image and restart the stack for new lab containers to pick it up:
+
+```bash
+docker compose down
+# rebuild the image(s) you changed (see commands above)
+docker compose up -d
 ```
 
 All images use `ENTRYPOINT ["/sbin/init"]` for systemd as PID 1.
+
+There are only **2 base images**:
+
+| Image | Contents | Used by |
+|-------|----------|---------|
+| `sgp-lab-ubuntu:latest` | Ubuntu 22.04 + systemd + `student` user + sudo + tmux + common tools (git, curl, vim) | git-fundamentals, linux-fundamentals |
+| `sgp-lab-docker:latest` | Extends ubuntu + Docker CE from official Docker repo | docker-mastery (needs DinD) |
+
+Additional packages (e.g. `git`, `vim`, `curl`) can be installed at runtime via the lab YAML's `environment.apt_packages` field, so most courses can use `sgp-lab-ubuntu` without a custom image.
 
 ---
 
@@ -260,8 +283,7 @@ All images use `ENTRYPOINT ["/sbin/init"]` for systemd as PID 1.
 orchestrator/
 ├── lab-images/                    # Base image Dockerfiles
 │   ├── Dockerfile.ubuntu          # sgp-lab-ubuntu: systemd + student user
-│   ├── Dockerfile.docker          # sgp-lab-docker: + Docker daemon (DinD)
-│   └── Dockerfile.git             # sgp-lab-git: + git pre-installed
+│   └── Dockerfile.docker          # sgp-lab-docker: + Docker daemon (DinD)
 ├── app/
 │   ├── main.py                 # FastAPI app, lifespan, CORS
 │   ├── config.py               # Environment variables

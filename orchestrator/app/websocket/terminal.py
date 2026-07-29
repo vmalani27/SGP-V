@@ -9,6 +9,7 @@ On reconnect: tmux reattaches with full scrollback preserved.
 """
 
 import asyncio
+import json
 import logging
 
 import aiodocker
@@ -32,25 +33,6 @@ def _verify_token(token: str) -> dict | None:
     except jwt.InvalidTokenError as e:
         logger.warning(f"Invalid WebSocket token: {e}")
         return None
-
-
-async def _tmux_exists(container) -> bool:
-    """Check if a tmux session named 'lab' exists inside the container."""
-    try:
-        exec_obj = await container.exec(
-            cmd=["tmux", "has-session", "-t", "lab"],
-            stdin=False,
-            stdout=False,
-            stderr=False,
-        )
-        stream = exec_obj.start(detach=False)
-        # Read until stream closes, then check exit code
-        await stream.read_out()
-        # aiodocker: inspect the exec to get exit code
-        info = await exec_obj.inspect()
-        return info.get("ExitCode", 1) == 0
-    except Exception:
-        return False
 
 
 @router.websocket("/ws/{container_name}/terminal")
@@ -80,19 +62,17 @@ async def terminal(
     try:
         container = await docker.containers.get(container_name)
 
-        # Check if tmux session already exists (reconnect case)
-        tmux_exists = await _tmux_exists(container)
-
-        if tmux_exists:
-            # Reconnect — attach to existing session
-            attach_cmd = ["tmux", "attach-session", "-t", "lab"]
-        else:
-            # First connect — create new session with bash
-            attach_cmd = [
-                "tmux", "new-session", "-s", "lab",
-                "-x", "200", "-y", "50",
-                "/bin/bash", "-l",
-            ]
+        # Atomically create-or-attach: tries creating a new detached session
+        # (fails silently if one already exists), then attaches regardless.
+        # This avoids a race where two connections both check _tmux_exists
+        # before either creates the session.
+        # Initial size will be corrected by the first resize message from the
+        # frontend (sent on connect), so a generous default is fine here.
+        attach_cmd = [
+            "bash", "-c",
+            "tmux new-session -d -s lab '/bin/bash -l' 2>/dev/null; "
+            "tmux attach-session -t lab",
+        ]
 
         exec_obj = await container.exec(
             cmd=attach_cmd,
@@ -110,6 +90,20 @@ async def terminal(
                 try:
                     while True:
                         data = await websocket.receive_bytes()
+                        # Check for JSON resize messages
+                        try:
+                            msg = json.loads(data.decode())
+                            if msg.get("type") == "resize":
+                                cols = msg["cols"]
+                                rows = msg["rows"]
+                                await container.exec(
+                                    ["tmux", "resize-window", "-t", "lab",
+                                     "-x", str(cols), "-y", str(rows)],
+                                    stdin=False, stdout=False, stderr=False,
+                                )
+                                continue
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            pass
                         await stream.write_in(data)
                 except WebSocketDisconnect:
                     logger.info(f"WebSocket disconnected for '{container_name}'")
