@@ -25,6 +25,17 @@ export default function CourseCurriculum({
     }
   }
 
+  const completedLabIds: string[] = [];
+  if (enrollment?.labsProgress) {
+    for (const modVal of Object.values(enrollment.labsProgress)) {
+      if (modVal && typeof modVal === 'object') {
+        for (const [labId, status] of Object.entries(modVal)) {
+          if (status === 'completed') completedLabIds.push(labId);
+        }
+      }
+    }
+  }
+
   return (
     <>
       {modules.map((mod, modIndex) => (
@@ -34,6 +45,7 @@ export default function CourseCurriculum({
           courseId={courseId}
           moduleIndex={modIndex}
           completedChapterIds={completedChapterIds}
+          completedLabIds={completedLabIds}
         />
       ))}
     </>

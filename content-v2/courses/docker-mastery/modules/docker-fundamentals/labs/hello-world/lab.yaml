@@ -1,0 +1,52 @@
+id: hello-world
+title: Hello World Container
+difficulty: beginner
+estimated_time: 10
+xp: 50
+tags:
+  - docker
+  - containers
+  - fundamentals
+environment: docker-basic
+
+objectives:
+  - Diagnose why Docker commands fail
+  - Grant your user access to the Docker daemon
+  - Inspect the local image cache
+
+tasks:
+  - id: access-daemon
+    title: Can you access the Docker daemon?
+    prompt: Can you access the Docker daemon right now? Run `docker ps` to find out.
+    type: multiple_choice
+    options: ["Yes", "No"]
+    validation:
+      command: "docker ps >/dev/null 2>&1 && echo Yes || echo No"
+      match_type: exact
+    error_message: Docker should refuse the connection for now. You'll fix that in the next task.
+    hint: Run `docker ps` and read the error message.
+
+  - id: fix-group
+    title: Fix Docker access
+    prompt: Add your user to the docker group so Docker commands work.
+    type: terminal_action
+    validation:
+      command: getent group docker | grep -qw student && echo ACCESS_GRANTED
+      match_type: exact
+      expected_output: ACCESS_GRANTED
+    error_message: Your user is not in the docker group yet. Check with `getent group docker`.
+    hint: Run `sudo usermod -aG docker student`, then refresh your session with `newgrp docker`.
+
+  - id: count-images
+    title: Count images
+    prompt: How many images are present in the system?
+    type: multiple_choice
+    options: ["1", "2", "3", "4"]
+    validation:
+      match_type: exact
+      expected_output: "2"
+    error_message: Unexpected image count.
+    hint: Run `docker images` to count them.
+
+completion:
+  required_tasks: all

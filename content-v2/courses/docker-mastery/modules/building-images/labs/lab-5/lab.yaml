@@ -1,0 +1,18 @@
+id: lab-5
+title: Multi-Stage Builds
+difficulty: intermediate
+estimated_time: 20
+xp: 100
+tags:
+  - docker
+  - dockerfile
+  - optimization
+environment: docker-basic
+
+objectives:
+  - Create a multi-stage Dockerfile
+  - Reduce final image size
+  - Copy artifacts between build stages
+
+completion:
+  required_tasks: all

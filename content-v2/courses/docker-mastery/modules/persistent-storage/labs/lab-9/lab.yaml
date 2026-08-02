@@ -1,0 +1,18 @@
+id: lab-9
+title: Volume Publishing
+difficulty: intermediate
+estimated_time: 15
+xp: 75
+tags:
+  - docker
+  - storage
+  - volumes
+environment: docker-basic
+
+objectives:
+  - Create Docker volumes
+  - Mount volumes into containers
+  - Persist data across container restarts
+
+completion:
+  required_tasks: all

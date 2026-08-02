@@ -1,21 +1,66 @@
-The Local Orchestrator is a FastAPI-based service that acts as the control plane of the local learning platform. It is responsible for managing the complete lifecycle of lab environments, exposing a unified REST and WebSocket interface to the frontend, and communicating with the host Docker Engine through the Docker SDK. Unlike the cloud backend, which handles user authentication, course enrollment, and progress synchronization, the orchestrator never communicates directly with Firebase or stores persistent user data. Its sole purpose is to manage the student's local execution environment.
+# Orchestrator — Technical Deep Dive
+
+The orchestrator is a FastAPI-based service that acts as the container control plane. It manages the complete lifecycle of lab environments, exposes a unified REST and WebSocket interface, and communicates with the host Docker Engine through the Docker SDK.
+
+The orchestrator never communicates with Firebase or stores persistent user data. Its sole purpose is to manage containers. The backend handles auth, content serving, and progress tracking. The frontend drives the learning flow.
 
 ## Lab Lifecycle Management
 
-The orchestrator's primary responsibility is lab lifecycle management. When a student selects a course from the frontend, the orchestrator identifies the appropriate lab definition and creates an isolated Sysbox-based container using the corresponding Docker image. It supports three lifecycle operations: stop (pause), resume (restart), and destroy (force remove). Since labs are ephemeral, the orchestrator cleans up all container resources when a session is destroyed.
+When a student starts a lab from the frontend:
+
+1. **Frontend** calls `POST /api/v1/labs/courses/{id}/labs/{labId}/start` on the **backend**
+2. **Backend** reads the lab YAML from content-v2, resolves the environment config (inline or from `environments/{name}.yaml`), and calls `POST /labs` on the orchestrator
+3. **Orchestrator** creates an isolated Sysbox container using the specified image with `sysbox-runc` runtime
+4. **Orchestrator** installs `apt_packages` and pre-pulls Docker images as specified in the environment config
+
+Lifecycle operations: `POST /labs/{id}/stop` (pause), `POST /labs/{id}/resume` (restart), `DELETE /labs/{id}` (force remove). Labs are ephemeral — all container resources are cleaned up on destroy.
+
+A background checker destroys labs after 40 minutes (configurable via `LAB_TIMEOUT_MINUTES`).
 
 ## Terminal Management
 
-The orchestrator provides an interactive Linux terminal through a WebSocket interface between the frontend and the running lab container. Using aiodocker's async exec streaming, the orchestrator bridges stdin/stdout between the browser (xterm.js) and the container's shell. The student gets a bash session as the `student` user, running inside the container with full terminal capabilities.
+The orchestrator provides an interactive Linux terminal via WebSocket at `WS /ws/{container_name}/terminal`. It uses aiodocker's async exec streaming to bridge stdin/stdout between xterm.js (browser) and the container's bash shell. The student gets a bash session as the `student` user.
 
 ## Validation System
 
-Each lab ships with its own `validator.sh` script that checks student work and outputs structured JSON. The orchestrator's only responsibility is to execute the script inside the container and return the parsed result. This separation means the orchestrator remains generic — it manages containers, terminals, and execution — while each lab encapsulates its own grading logic. As the catalog grows from Linux to Git, Docker, Kubernetes, or custom labs, no special-case validation code is needed in the backend.
+Validation is **exec-based**. The orchestrator has no knowledge of tasks or expected answers:
+
+1. The **frontend** reads the task definitions from the backend's content API (`GET /api/v1/content/courses/{id}/labs/{labId}/tasks`)
+2. The student completes the task in the terminal
+3. The student clicks "Check"
+4. The **frontend** sends `POST /labs/{session_id}/exec` with the task's validation command
+5. The **orchestrator** runs the command inside the container via `docker exec` and returns the output
+6. The **frontend** compares the output to the task's `expected_output` using the `match_type`
+
+This separation means the orchestrator remains generic — it manages containers, terminals, and command execution — while each lab's tasks are defined entirely in YAML.
+
+A legacy `POST /labs/{session_id}/validate` endpoint still exists that runs `validator.sh` scripts baked into container images. This is being replaced by the exec-based flow.
 
 ## File Inspection
 
-For grading and verification, the orchestrator provides file inspection capabilities. It can check whether files exist, read permissions, verify ownership, and retrieve file contents — all executed inside the container via `docker exec`. This ensures checks reflect the actual state inside the student's environment.
+For tasks that check file state (type: `file_check`), the orchestrator provides `POST /labs/{session_id}/inspect` which checks file existence, permissions, ownership, and content via `docker exec`.
 
 ## Docker Runtime Integration
 
-For Docker-course labs, the orchestrator controls the outer Sysbox container. Everything the student does with Docker happens inside. The orchestrator's validation scripts run `docker ps`, `docker inspect`, and other commands inside the student's Docker daemon, treating the lab like a VM. No host port exposure is needed — checks use `curl localhost:PORT` inside the container.
+All lab containers run with the **Sysbox** runtime (`sysbox-runc`). For Docker-course labs, the orchestrator controls the outer Sysbox container while the student uses Docker inside. Validation commands like `docker ps`, `docker inspect`, and `docker images` run inside the student's Docker daemon, treating the lab like a VM. No host port exposure is needed — checks use `curl localhost:PORT` inside the container.
+
+## API Contract
+
+All endpoints live under `http://localhost:8001`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Docker daemon connectivity check |
+| `POST` | `/labs` | Start a lab container |
+| `GET` | `/labs` | List all active sessions |
+| `GET` | `/labs/{id}` | Session info |
+| `POST` | `/labs/{id}/activate` | Switch active lab (symlinks) |
+| `POST` | `/labs/{id}/stop` | Pause container |
+| `POST` | `/labs/{id}/resume` | Resume container |
+| `DELETE` | `/labs/{id}` | Destroy container |
+| `POST` | `/labs/{id}/exec` | Run command in container |
+| `POST` | `/labs/{id}/validate` | Legacy: run validator.sh |
+| `POST` | `/labs/{id}/inspect` | Check file state |
+| `WS` | `/ws/{name}/terminal` | WebSocket terminal |
+| `GET` | `/schemas/yaml` | Lab YAML JSON Schema |
+| `GET` | `/schemas/sample` | Sample lab YAML |

@@ -1,0 +1,11 @@
+id: docker-fundamentals
+title: Docker Fundamentals
+order: 1
+chapters:
+  - chapter-1
+  - chapter-2
+  - chapter-3
+labs:
+  - lab-1
+  - lab-2
+  - lab-3

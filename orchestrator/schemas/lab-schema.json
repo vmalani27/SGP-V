@@ -2,203 +2,293 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sgp.dev/schemas/lab.yaml",
   "title": "SGP Lab Definition Schema",
-  "description": "Schema for per-module lab YAML files. Each module has its own lab.yaml with environment config and phased labs/tasks.",
+  "description": "Schema for lab YAML files. Supports both the new flat format (one lab per YAML) and the old monolithic format (multiple labs with phases).",
   "type": "object",
-  "required": ["environment", "phases"],
-  "properties": {
-    "environment": {
+  "oneOf": [
+    { "$ref": "#/$defs/flat_format" },
+    { "$ref": "#/$defs/monolithic_format" }
+  ],
+  "$defs": {
+
+    "flat_format": {
+      "description": "New flat format: one lab per YAML file. environment is a string reference to an external file.",
       "type": "object",
-      "description": "Container environment definition.",
-      "required": ["base_image"],
+      "required": ["id", "title", "environment", "tasks"],
       "properties": {
-        "base_image": {
+        "id": {
           "type": "string",
-          "description": "Docker image to use as the base. Must be Sysbox-compatible."
+          "description": "Lab identifier (e.g. hello-world, images, lab-4)."
         },
-        "apt_packages": {
+        "title": {
+          "type": "string",
+          "description": "Human-readable lab title."
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["beginner", "intermediate", "advanced"],
+          "description": "Lab difficulty level."
+        },
+        "estimated_time": {
+          "type": "integer",
+          "description": "Estimated completion time in minutes."
+        },
+        "xp": {
+          "type": "integer",
+          "description": "Experience points awarded on completion."
+        },
+        "tags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "System packages to install via apt when the container starts."
+          "description": "Topic tags for filtering and discovery."
         },
-        "pre_pull": {
+        "objectives": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Docker images to pre-pull before the student sees the terminal."
+          "description": "Learning objectives displayed to the student."
+        },
+        "setup": {
+          "type": "array",
+          "description": "Optional commands to run before this lab starts. Resets container state.",
+          "items": {
+            "type": "object",
+            "required": ["command"],
+            "properties": {
+              "command": {
+                "type": "string",
+                "description": "Shell command to execute inside the container."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "environment": {
+          "type": "string",
+          "description": "Reference to an environment definition file (e.g. 'docker-basic' → environments/docker-basic.yaml)."
+        },
+        "tasks": {
+          "type": "array",
+          "description": "Ordered list of tasks the student must complete.",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/task" }
+        },
+        "completion": {
+          "type": "object",
+          "description": "Completion rules for the lab.",
+          "properties": {
+            "required_tasks": {
+              "oneOf": [
+                { "type": "string", "enum": ["all"] },
+                { "type": "array", "items": { "type": "string" } }
+              ],
+              "description": "'all' or a list of task IDs that must be completed."
+            }
+          },
+          "required": ["required_tasks"],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
     },
-    "phases": {
-      "type": "array",
-      "description": "Ordered list of phases. Phase 0 is environment setup.",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["id", "title"],
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^phase-[0-9]+$",
-            "description": "Phase identifier. Must match 'phase-N' where N is a number."
-          },
-          "title": {
-            "type": "string",
-            "description": "Human-readable phase title."
-          },
-          "description": {
-            "type": "string",
-            "description": "What this phase covers."
-          },
-          "type": {
-            "type": "string",
-            "enum": ["setup"],
-            "description": "Optional. Set to 'setup' for phase-0 (environment setup). Omit for content phases."
-          },
-          "steps": {
-            "type": "array",
-            "description": "Setup steps (only for type: setup phases).",
-            "items": {
-              "type": "object",
-              "required": ["id", "command", "description"],
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "description": "Step identifier."
-                },
-                "command": {
-                  "type": "string",
-                  "description": "Shell command to execute inside the container."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "What this step does."
-                }
-              },
-              "additionalProperties": false
+
+    "monolithic_format": {
+      "description": "Old monolithic format: multiple labs grouped under phases in a single YAML file.",
+      "type": "object",
+      "required": ["environment", "phases"],
+      "properties": {
+        "environment": {
+          "type": "object",
+          "description": "Inline environment definition.",
+          "required": ["base_image"],
+          "properties": {
+            "base_image": {
+              "type": "string",
+              "description": "Docker image to use as the base. Must be Sysbox-compatible."
+            },
+            "apt_packages": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "System packages to install via apt when the container starts."
+            },
+            "pre_pull": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Docker images to pre-pull before the student sees the terminal."
             }
           },
-          "labs": {
-            "type": "array",
-            "description": "Labs in this phase (omit for setup phases).",
-            "items": {
-              "type": "object",
-              "required": ["id", "title", "tasks"],
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "pattern": "^lab-[0-9]+$",
-                  "description": "Lab identifier. Must match 'lab-N' where N is a number."
-                },
-                "title": {
-                  "type": "string",
-                  "description": "Human-readable lab title."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "What this lab covers."
-                },
-                "order": {
-                  "type": "integer",
-                  "description": "Display order within the phase."
-                },
-                "setup": {
-                  "type": "array",
-                  "description": "Optional commands to run before this lab starts. Useful for resetting state.",
-                  "items": {
-                    "type": "object",
-                    "required": ["command"],
-                    "properties": {
-                      "command": {
-                        "type": "string",
-                        "description": "Shell command to execute inside the container."
-                      }
+          "additionalProperties": false
+        },
+        "phases": {
+          "type": "array",
+          "description": "Ordered list of phases. Phase 0 is environment setup.",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "title"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^phase-[0-9]+$",
+                "description": "Phase identifier. Must match 'phase-N' where N is a number."
+              },
+              "title": {
+                "type": "string",
+                "description": "Human-readable phase title."
+              },
+              "description": {
+                "type": "string",
+                "description": "What this phase covers."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["setup"],
+                "description": "Set to 'setup' for phase-0 (environment setup). Omit for content phases."
+              },
+              "steps": {
+                "type": "array",
+                "description": "Setup steps (only for type: setup phases).",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "command", "description"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "command": {
+                      "type": "string",
+                      "description": "Shell command to execute inside the container."
                     },
-                    "additionalProperties": false
-                  }
-                },
-                "tasks": {
-                  "type": "array",
-                  "description": "Ordered list of tasks the student must complete.",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["id", "prompt", "type", "validation"],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Task identifier (e.g. task-1, task-2)."
-                      },
-                      "prompt": {
-                        "type": "string",
-                        "description": "The question or instruction shown to the student."
-                      },
-                      "type": {
-                        "type": "string",
-                        "enum": ["multiple_choice", "terminal_action", "file_check", "informational"],
-                        "description": "Task type. multiple_choice: student picks from options. terminal_action: student runs a command. file_check: student creates/modifies a file. informational: read-only, auto-passes."
-                      },
-                      "options": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Static answer options (for type: multiple_choice with fixed options)."
-                      },
-                      "options_source": {
-                        "type": "string",
-                        "enum": ["dynamic"],
-                        "description": "For type: multiple_choice. Set to 'dynamic' when options are generated at runtime from a validation command."
-                      },
-                      "validation": {
+                    "description": {
+                      "type": "string",
+                      "description": "What this step does."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "labs": {
+                "type": "array",
+                "description": "Labs in this phase (omit for setup phases).",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "title", "tasks"],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^lab-[0-9]+$",
+                      "description": "Lab identifier. Must match 'lab-N' where N is a number."
+                    },
+                    "title": { "type": "string" },
+                    "description": { "type": "string" },
+                    "order": { "type": "integer" },
+                    "setup": {
+                      "type": "array",
+                      "items": {
                         "type": "object",
-                        "description": "How to check if the task is complete.",
+                        "required": ["command"],
                         "properties": {
                           "command": {
                             "type": "string",
-                            "description": "Shell command to run inside the container."
-                          },
-                          "expected_output": {
-                            "type": "string",
-                            "description": "Expected output to match against. Omit for dynamic multiple_choice."
-                          },
-                          "match_type": {
-                            "type": "string",
-                            "enum": ["exact", "contains", "regex", "line_count"],
-                            "default": "contains",
-                            "description": "How to compare command output to expected_output."
-                          },
-                          "script": {
-                            "type": "string",
-                            "description": "Path to a validation script (alternative to command + expected_output). Script must exit 0 for pass."
-                          },
-                          "path": {
-                            "type": "string",
-                            "description": "File path inside the container (for type: file_check)."
-                          },
-                          "contains": {
-                            "type": "string",
-                            "description": "String the file must contain (for type: file_check)."
+                            "description": "Shell command to execute inside the container."
                           }
-                        }
-                      },
-                      "error_message": {
-                        "type": "string",
-                        "description": "Message shown when validation fails."
-                      },
-                      "hint": {
-                        "type": "string",
-                        "description": "A guiding hint. Be vague — ask a question, don't give the answer."
+                        },
+                        "additionalProperties": false
                       }
                     },
-                    "additionalProperties": false
-                  }
+                    "tasks": {
+                      "type": "array",
+                      "description": "Ordered list of tasks.",
+                      "minItems": 1,
+                      "items": { "$ref": "#/$defs/task" }
+                    }
+                  },
+                  "additionalProperties": false
                 }
-              },
-              "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "task": {
+      "type": "object",
+      "description": "A single task the student must complete.",
+      "required": ["id", "prompt", "type", "validation"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Task identifier (e.g. task-1, pass-env, count-images)."
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional short title for the task."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional longer description of what the task requires."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "The question or instruction shown to the student."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["multiple_choice", "terminal_action", "file_check", "informational"],
+          "description": "Task type. multiple_choice: student picks from options. terminal_action: student runs a command in the terminal. file_check: student creates or modifies a file. informational: read-only, auto-passes."
+        },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Static answer options (for multiple_choice with fixed options)."
+        },
+        "options_source": {
+          "type": "string",
+          "enum": ["dynamic"],
+          "description": "For multiple_choice. Set to 'dynamic' when options are generated at runtime."
+        },
+        "validation": {
+          "type": "object",
+          "description": "How to check if the task is complete.",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "Shell command to run inside the container."
+            },
+            "expected_output": {
+              "type": "string",
+              "description": "Expected output to match against. Omit for dynamic multiple_choice."
+            },
+            "match_type": {
+              "type": "string",
+              "enum": ["exact", "contains", "regex", "line_count"],
+              "default": "contains",
+              "description": "How to compare command output to expected_output."
+            },
+            "script": {
+              "type": "string",
+              "description": "Path to a validation script (alternative to command + expected_output). Script must exit 0 for pass."
+            },
+            "path": {
+              "type": "string",
+              "description": "File path inside the container (for file_check)."
+            },
+            "contains": {
+              "type": "string",
+              "description": "String the file must contain (for file_check)."
             }
           }
         },
-        "additionalProperties": false
-      }
+        "error_message": {
+          "type": "string",
+          "description": "Message shown when validation fails."
+        },
+        "hint": {
+          "type": "string",
+          "description": "A guiding hint. Ask a question, don't give the answer."
+        }
+      },
+      "additionalProperties": false
     }
-  },
-  "additionalProperties": false
+
+  }
 }

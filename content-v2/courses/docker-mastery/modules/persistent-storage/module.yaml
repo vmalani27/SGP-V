@@ -1,0 +1,10 @@
+id: persistent-storage
+title: Persistent Storage
+description: Learn to manage data persistence with volumes and production storage patterns.
+order: 4
+chapters:
+  - chapter-9
+  - chapter-10
+labs:
+  - lab-9
+  - lab-10

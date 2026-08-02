@@ -1,0 +1,18 @@
+id: lab-10
+title: Production Workflow
+difficulty: advanced
+estimated_time: 20
+xp: 100
+tags:
+  - docker
+  - production
+  - healthchecks
+environment: docker-basic
+
+objectives:
+  - Add HEALTHCHECK to a Dockerfile
+  - Configure restart policies
+  - Implement backup strategies
+
+completion:
+  required_tasks: all

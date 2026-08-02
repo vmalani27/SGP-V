@@ -1,6 +1,6 @@
 # Frontend (Next.js)
 
-The UI layer for LabOps. Handles authentication, course browsing, chapter viewing, and the lab terminal experience.
+The UI layer for LabOps. Handles authentication, course browsing, chapter viewer, and the lab terminal experience.
 
 ## What It Does
 
@@ -9,27 +9,47 @@ The UI layer for LabOps. Handles authentication, course browsing, chapter viewin
 | Auth flow | Firebase client SDK (login/register/session) |
 | Course catalog | Fetches from backend API, displays with enrollment status |
 | Chapter viewer | Renders markdown theory + embedded quizzes |
-| Lab viewer | Resizable panels: instructions + xterm.js terminal |
-| Terminal | WebSocket to orchestrator (`WS /ws/{id}/terminal`) |
-| Progress tracking | Calls backend API to mark labs complete |
+| Lab viewer | Intro → provision → running with task runner, xterm.js terminal, and toolbar (pause/resume/restart/destroy) |
+| Task runner | Renders `multiple_choice`, `terminal_action`, `port_check` tasks; validates via backend |
+| Terminal | WebSocket to orchestrator (`WS /ws/{id}/terminal`) via JWT token from backend |
+| Submit flow | Success animation per correct answer; Submit Lab modal records completion, destroys the container, returns to course |
+| Progress tracking | Calls backend API to mark chapters complete + labs complete |
 
 ## What It Does NOT Do
 
-- Store course content — reads from orchestrator's content API
-- Manage containers — sends commands to orchestrator
+- Store course content — reads from backend's content API
+- Manage containers — sends commands to orchestrator via backend proxy
 - Verify auth tokens — backend does that with Admin SDK
 - Track progress in Firestore — backend does that
 
-## Current State
+## Data Source
 
-The frontend currently:
-- Reads course structure from static files via `lib/content-server.ts` (SSG)
-- Has a complete orchestrator client (`lib/orchestrator.ts`) ready to connect
-- Has a lab session hook (`hooks/useLabSession.ts`) for container lifecycle
-- Has xterm.js terminal integration (`components/TerminalPane.tsx`)
-- Has placeholder validation (marks as "pending")
+The frontend reads all data from the **backend API** (`localhost:8000`), never from the orchestrator directly:
 
-**Target:** Switch to orchestrator's content API for all course data, build the lab.yaml task wizard.
+```
+Frontend → Backend (content + lab proxy) → Orchestrator (container exec)
+                                         → Firestore (user data via backend)
+```
+
+- **Course content** (TOC, chapters, lab instructions, tasks): `GET /api/v1/content/...`
+- **Lab lifecycle**: `POST /api/v1/labs/courses/{id}/labs/{labId}/start` (backend proxies to orchestrator)
+- **Command execution**: `POST /api/v1/labs/courses/{id}/labs/{labId}/exec/{sid}`
+- **WebSocket terminal**: `ws://localhost:8001/ws/{container}/terminal?token={jwt}` (direct, with JWT from backend)
+
+## Validation Flow
+
+Server-validated (backend runs the command in the container; answers never leave the container):
+
+```
+1. Frontend reads lab tasks (GET /api/v1/content/courses/{id}/labs/{labId}/tasks)
+2. Renders the current task (multiple_choice / terminal_action / port_check)
+3. Student answers (select an option, type a command in the terminal, or clicks "Check")
+4. Frontend sends POST /api/v1/labs/courses/{id}/labs/{labId}/validate { task_id, answer }
+5. Backend runs the validation command in the container via the orchestrator and matches output server-side (contains/exact/regex/port)
+6. Correct → success animation, then advance to the next task
+7. Incorrect → show error_message + hint; student retries
+8. All tasks complete → Submit Lab modal → records lab completion + destroys the container → returns to course
+```
 
 ## Tech Stack
 
@@ -80,7 +100,7 @@ NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8001
 | `/dashboard` | Yes | My courses + browse courses |
 | `/courses/[courseId]` | Yes | Course detail with curriculum accordion |
 | `/courses/[courseId]/chapters/[chapterId]` | Yes | Theory + quiz viewer |
-| `/courses/[courseId]/labs/[labId]` | Yes | Lab instructions + terminal |
+| `/courses/[courseId]/labs/[labId]` | Yes | Lab instructions + terminal + tasks |
 
 ## Key Components
 
@@ -90,9 +110,15 @@ NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8001
 | `LearningPlayer.tsx` | Full-screen chapter layout with sidebar |
 | `ChapterClient.tsx` | Orchestrates theory → quiz → completion |
 | `QuizSection.tsx` | Interactive quiz with client-side grading |
-| `LabTerminal.tsx` | Terminal controls (start/stop/destroy) |
-| `TerminalPane.tsx` | xterm.js integration + validation tab |
-| `CourseCurriculum.tsx` | Module accordion with progress |
+| `LabTerminal.tsx` | xterm.js WebSocket terminal with auto-fit + remote PTY resize |
+| `LabTaskRenderer.tsx` | Steps through lab tasks; shows "Lab Complete" state |
+| `MultipleChoiceTask.tsx` | Multiple-choice task card (server-validated options) |
+| `TerminalActionTask.tsx` | Run-a-command task card (validates in container) |
+| `PortCheckTask.tsx` | Port/path check task card |
+| `TaskProgress.tsx` | Task progress indicator (n/total) |
+| `CelebrationOverlay.tsx` | CSS confetti/checkmark animation on correct answers |
+| `SubmitLabModal.tsx` | Submit Lab modal on completion (record + destroy + return to course) |
+| `CourseCurriculum.tsx` | Module accordion with progress (incl. completed labs) |
 | `PlayerSidebar.tsx` | Navigation with completion status |
 
 ## Key Files
@@ -102,36 +128,11 @@ NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8001
 | `lib/firebase.ts` | Firebase client SDK init |
 | `lib/auth-context.tsx` | AuthProvider + useAuth hook |
 | `lib/api.ts` | Backend API client with auto-auth |
-| `lib/orchestrator.ts` | Orchestrator REST + WebSocket client |
-| `lib/content-server.ts` | SSG content reader (filesystem) |
-| `lib/content-types.ts` | TypeScript interfaces |
-| `hooks/useLabSession.ts` | Lab lifecycle hook (start/stop/validate) |
+| `lib/task-types.ts` | Lab task / progress / validation types |
+| `lib/content-server.ts` | SSG content reader (build-time) |
+| `lib/content-types.ts` | Course content TypeScript interfaces |
+| `app/courses/[courseId]/labs/[labId]/page.tsx` | Lab page: phases, task runner, toolbar, submit flow |
 | `middleware.ts` | Route protection (redirects) |
-
-## Architecture Notes
-
-### Two Data Sources
-
-The frontend currently reads from two sources:
-
-1. **Filesystem** (`lib/content-server.ts`) — For SSG at build time. Reads `content/` directory directly.
-2. **Orchestrator API** (`lib/orchestrator.ts`) — For runtime. Calls `GET /courses`, `POST /labs`, etc.
-
-**Target:** Phase out filesystem reads. Use orchestrator API for everything.
-
-### Validation Flow (Target)
-
-```
-1. Frontend reads lab.yaml (from orchestrator API)
-2. Renders task prompt from lab.yaml
-3. Student types command in terminal
-4. Student clicks "Check"
-5. Frontend sends POST /labs/{id}/exec { command: task.validation.command }
-6. Orchestrator runs command in container, returns output
-7. Frontend compares output to task.validation.expected_output
-8. Uses match_type (contains/exact/regex/line_count)
-9. Pass → unlock next task. Fail → show error_message + hint.
-```
 
 ## Project Structure
 
@@ -142,43 +143,49 @@ next-app/
 │   ├── page.tsx                # Landing page
 │   ├── middleware.ts           # Route protection
 │   ├── globals.css             # Tailwind + dark theme
-│   ├── login/page.tsx          # Login
-│   ├── register/page.tsx       # Register
-│   ├── onboarding/page.tsx     # Onboarding
-│   ├── dashboard/page.tsx      # Dashboard
+│   ├── login/page.tsx
+│   ├── register/page.tsx
+│   ├── onboarding/page.tsx
+│   ├── dashboard/page.tsx
 │   └── courses/
 │       └── [courseId]/
-│           ├── page.tsx        # Course detail (SSG)
-│           ├── CourseCurriculum.tsx
+│           ├── page.tsx        # Course detail
 │           ├── CourseAccordion.tsx
+│           ├── CourseCurriculum.tsx
 │           ├── CourseProgressHeader.tsx
 │           ├── chapters/
-│           │   └── [chapterId]/page.tsx   # Chapter viewer (SSG)
+│           │   └── [chapterId]/page.tsx
+│           ├── quizzes/
+│           │   └── [quizId]/page.tsx
 │           └── labs/
-│               └── [labId]/page.tsx       # Lab viewer (SSG)
+│               └── [labId]/page.tsx       # Lab viewer + tasks + terminal
 ├── components/
 │   ├── Navbar.tsx
 │   ├── Footer.tsx
-│   ├── TerminalDemo.tsx
+│   ├── CourseSidebar.tsx
+│   ├── CourseTopBar.tsx
 │   ├── LearningPlayer.tsx
 │   ├── PlayerSidebar.tsx
 │   ├── ChapterClient.tsx
 │   ├── TheorySection.tsx
 │   ├── QuizSection.tsx
 │   ├── LabTerminal.tsx
-│   ├── TerminalPane.tsx
-│   ├── LabInstructions.tsx
-│   └── MarkCompleteButton.tsx
-├── hooks/
-│   └── useLabSession.ts
+│   ├── LabTaskRenderer.tsx
+│   ├── MultipleChoiceTask.tsx
+│   ├── TerminalActionTask.tsx
+│   ├── PortCheckTask.tsx
+│   ├── TaskProgress.tsx
+│   ├── CelebrationOverlay.tsx
+│   ├── SubmitLabModal.tsx
+│   ├── MarkCompleteButton.tsx
+│   └── PaginationNav.tsx
 ├── lib/
 │   ├── firebase.ts
 │   ├── auth-context.tsx
 │   ├── api.ts
-│   ├── orchestrator.ts
+│   ├── task-types.ts
 │   ├── content-server.ts
-│   ├── content-types.ts
-│   └── labs-api.ts
+│   └── content-types.ts
 ├── Dockerfile
 ├── package.json
 ├── tailwind.config.js

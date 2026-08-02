@@ -2,7 +2,7 @@
 
 ## In this chapter, you will
 
-- Run a container and understand what happens behind the scenes
+- Run a container and trace what happens through the Docker stack
 - Learn the image vs. container distinction through practice
 - Manage the container lifecycle: start, list, stop, remove
 
@@ -21,7 +21,11 @@ Here is what happens in order:
 3. Docker creates a container from that image
 4. The container runs, prints a message, and exits
 
-You just ran a container. The entire process — downloading the image, creating the container, running it — took seconds.
+### What Happened Under the Hood
+
+Recall the architecture from Chapter 1: your `docker` CLI sent an HTTP request to **dockerd** through the Unix socket. The daemon checked its image cache, found nothing, and told **containerd** to pull the `hello-world` image from Docker Hub. containerd downloaded the image layers and stored them on disk. Then the daemon sent a create-container request to containerd, which assembled an OCI bundle (a root filesystem from the image) and handed it to **runc**. runc created a fresh set of Linux namespaces (PID, Network, Mount, UTS, IPC), set up cgroups, and executed the container's entrypoint inside that isolated environment.
+
+The entire process — downloading the image, creating the namespaces, configuring cgroups, running the container — took seconds. That speed is the direct result of sharing the host kernel rather than booting a full operating system.
 
 ## A More Useful Example
 
@@ -93,8 +97,9 @@ A container exists from the moment you run it until you remove it. Stopped conta
 
 ## Key Takeaways
 
-- `docker run` pulls an image (if needed) and starts a container from it
+- `docker run` is a CLI command that triggers daemon → containerd → runc behind the scenes
 - `-d` runs in the background; `-p` maps ports between host and container
 - `docker ps` shows running containers; `docker ps -a` shows all
 - Stop containers with `docker stop`, remove them with `docker rm`
 - Clean up stopped containers to free disk space
+- Every container runs in its own set of Linux namespaces, enforced by runc

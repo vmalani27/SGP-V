@@ -1,0 +1,17 @@
+id: lab-6
+title: Image Debugging
+difficulty: intermediate
+estimated_time: 15
+xp: 75
+tags:
+  - docker
+  - debugging
+environment: docker-basic
+
+objectives:
+  - Debug image build failures
+  - Inspect image layers
+  - Optimize layer caching
+
+completion:
+  required_tasks: all

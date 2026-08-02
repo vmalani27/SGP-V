@@ -1,0 +1,4 @@
+base_image: "sgp-lab-docker:latest"
+pre_pull:
+  - nginx:alpine
+  - alpine:latest

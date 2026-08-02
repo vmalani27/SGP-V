@@ -80,6 +80,26 @@ async def get_lab_instructions(course_id: str, lab_id: str):
     return result
 
 
+@router.get("/courses/{course_id}/labs/{lab_id}/tasks")
+async def get_lab_tasks(course_id: str, lab_id: str):
+    provider = get_content_provider()
+    config = provider.get_lab_config(course_id, lab_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"Lab '{lab_id}' config not found in course '{course_id}'")
+
+    tasks = config.get("tasks", [])
+    if not tasks:
+        for phase in config.get("phases", []):
+            for lab in phase.get("labs", []):
+                if lab.get("id") == lab_id:
+                    tasks = lab.get("tasks", [])
+                    break
+            if tasks:
+                break
+
+    return {"lab_id": lab_id, "tasks": tasks}
+
+
 @router.get("/courses/{course_id}/labs/{lab_id}/config")
 async def get_lab_config(course_id: str, lab_id: str):
     provider = get_content_provider()

@@ -132,9 +132,6 @@ export default function LabTerminal({
     termRef.current = term;
     fitRef.current = fitAddon;
 
-    // Initial fit
-    requestAnimationFrame(() => fitAddon.fit());
-
     // Forward terminal input to WebSocket
     term.onData((data) => {
       const ws = wsRef.current;
@@ -143,21 +140,44 @@ export default function LabTerminal({
       }
     });
 
-    // Handle resize
+    // Fit is safe to call repeatedly; guard against zero-size throws.
+    const safeFit = () => {
+      try {
+        fitAddon.fit();
+      } catch {
+        // container may not be laid out yet
+      }
+    };
+
+    // Initial fit after layout + web font load (fonts change cell metrics,
+    // so refitting once the IBM Plex Mono font arrives fills the full width).
+    requestAnimationFrame(safeFit);
+    const fontTimer = setTimeout(safeFit, 300);
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready.then(safeFit).catch(() => {});
+    }
+
+    // Handle resize — debounced via rAF, with window resize as a fallback.
+    let resizeRaf = 0;
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(safeFit);
     });
     resizeObserver.observe(containerRef.current);
+    window.addEventListener('resize', safeFit);
 
     return () => {
+      cancelAnimationFrame(resizeRaf);
+      clearTimeout(fontTimer);
       resizeObserver.disconnect();
+      window.removeEventListener('resize', safeFit);
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
   }, []);
 
-  // Send resize events to backend
+  // Send resize events to backend (binary frame, matching receive_bytes)
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
@@ -165,20 +185,45 @@ export default function LabTerminal({
     const disposable = term.onResize(({ cols, rows }) => {
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+        ws.send(
+          new TextEncoder().encode(JSON.stringify({ type: 'resize', cols, rows }))
+        );
       }
     });
 
     return () => disposable.dispose();
   }, [state]);
 
-  // Re-fit and send initial terminal size when WebSocket connects
+  // Re-fit and send the terminal size to the backend when WebSocket connects.
+  // This guarantees the remote tmux is sized to the local terminal even when
+  // the dimensions haven't changed since the previous connection. A second
+  // send lands after tmux attach settles, so the remote window always matches.
   useEffect(() => {
     if (state !== 'connected') return;
+    const sendSize = () => {
+      const term = termRef.current;
+      const ws = wsRef.current;
+      if (term && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          new TextEncoder().encode(
+            JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows })
+          )
+        );
+      }
+    };
     requestAnimationFrame(() => {
       const fit = fitRef.current;
-      if (fit) fit.fit();
+      if (fit) {
+        try {
+          fit.fit();
+        } catch {
+          // ignore — container may not be laid out yet
+        }
+      }
+      sendSize();
     });
+    const settleTimer = setTimeout(sendSize, 600);
+    return () => clearTimeout(settleTimer);
   }, [state]);
 
   // Connect on mount, cleanup on unmount

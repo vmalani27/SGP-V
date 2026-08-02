@@ -89,13 +89,31 @@ async def terminal(
             async def ws_to_exec():
                 try:
                     while True:
-                        data = await websocket.receive_bytes()
+                        # Accept both binary and text frames (the frontend sends
+                        # terminal input as binary and resize as text/binary JSON).
+                        message = await websocket.receive()
+                        if message.get("type") != "websocket.receive":
+                            continue
+                        payload = message.get("bytes")
+                        if payload is None:
+                            text = message.get("text")
+                            if text is None:
+                                continue
+                            payload = text.encode()
                         # Check for JSON resize messages
                         try:
-                            msg = json.loads(data.decode())
+                            msg = json.loads(payload.decode())
                             if msg.get("type") == "resize":
                                 cols = msg["cols"]
                                 rows = msg["rows"]
+                                # Resize the attach exec's PTY so the attached
+                                # tmux client reflows to the correct size. This
+                                # is race-free: tmux follows the client size even
+                                # while attach is still settling.
+                                try:
+                                    await exec_obj.resize(h=rows, w=cols)
+                                except Exception as e:
+                                    logger.debug(f"exec PTY resize failed: {e}")
                                 await container.exec(
                                     ["tmux", "resize-window", "-t", "lab",
                                      "-x", str(cols), "-y", str(rows)],
@@ -104,7 +122,7 @@ async def terminal(
                                 continue
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
-                        await stream.write_in(data)
+                        await stream.write_in(payload)
                 except WebSocketDisconnect:
                     logger.info(f"WebSocket disconnected for '{container_name}'")
                 except Exception as e:

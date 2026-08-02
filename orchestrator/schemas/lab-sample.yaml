@@ -1,57 +1,117 @@
 # ──────────────────────────────────────────────────────────────
-# lab.yaml — Per-Module Lab Definition
+# lab.yaml — Lab Definition Reference
 # ──────────────────────────────────────────────────────────────
 #
-# This file defines labs for a single module. Each module in
-# content-v2 has its own lab.yaml alongside the chapter markdown.
+# This file shows both supported formats.
 #
-# The frontend reads and parses this for task prompts and validation.
-# The orchestrator never sees this file — it only runs commands
-# the frontend sends via POST /labs/{id}/exec.
+# The orchestrator never reads lab.yaml — it only runs commands
+# the frontend sends via exec. The backend reads it for the
+# environment config.
 #
-# Course authors: copy this file, modify the fields below, and place it
-# in content-v2/courses/{course-id}/modules/{module-id}/labs/.
+# Course authors: choose ONE format per lab file.
 #
-# Validation errors? Download this file as reference:
-#   GET /schemas/sample
+# Format A (New — Flat): Each lab gets its own .yaml file.
+#   courses/{course}/modules/{module}/labs/{lab-id}/lab.yaml
 #
-# JSON Schema (for programmatic validation):
-#   GET /schemas/yaml
+# Format B (Old — Monolithic): All labs for a module in one .yaml.
+#   courses/{course}/modules/{module}/labs/lab-1.yaml
+#
+# ──────────────────────────────────────────────────────────────
+
+
+
+# ══════════════════════════════════════════════════════════════
+# FORMAT A: FLAT (one lab per file)
+# ══════════════════════════════════════════════════════════════
+#
+# Use this when each lab has its own directory with lab.yaml +
+# instructions.md. Environment config lives in a shared file at
+# environments/{name}.yaml and is referenced by string.
+
+id: hello-world
+title: Hello World Container
+difficulty: beginner
+estimated_time: 10
+xp: 50
+tags:
+  - docker
+  - containers
+  - fundamentals
+
+objectives:
+  - Inspect the local image cache
+  - Run a detached nginx container
+  - Verify a running container
+
+# Environment is a string reference to environments/docker-basic.yaml
+environment: docker-basic
+
+# Optional commands to reset state before this lab
+setup:
+  - command: docker rm -f web || true
+
+tasks:
+
+  - id: count-images
+    title: Check available images
+    prompt: How many images are currently available locally?
+    type: multiple_choice
+    options_source: dynamic
+    validation:
+      command: docker images -q | wc -l | tr -d ' '
+      match_type: exact
+    error_message: "Not quite. Run docker images to see everything."
+    hint: "What command lists local images?"
+
+  - id: run-nginx
+    title: Launch nginx
+    description: Start an nginx container named web in the background.
+    prompt: Run an nginx container named **web** in detached mode.
+    type: terminal_action
+    validation:
+      command: docker ps --format '{{.Names}}'
+      match_type: contains
+      expected_output: web
+    error_message: "Could not find a running container named web."
+    hint: "How do you name a container and run it in the background?"
+
+  - id: verify-running
+    prompt: How many containers are now running?
+    type: multiple_choice
+    options_source: dynamic
+    validation:
+      command: docker ps -q | wc -l | tr -d ' '
+      match_type: exact
+    error_message: "Check docker ps — one of those numbers matches."
+    hint: "What command lists running containers?"
+
+completion:
+  required_tasks: all
+
+# ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# FORMAT B: MONOLITHIC (all labs in one file)
+# ══════════════════════════════════════════════════════════════
+#
+# Use this for backward compatibility. Environment is defined
+# inline. Labs are grouped into phases with setup steps.
 # ──────────────────────────────────────────────────────────────
 
 # ── Environment ──────────────────────────────────────────────
-# Defines the base container. Orchestrator spins this up.
-# The frontend then drives everything else through exec commands.
 environment:
-  base_image: "sgp-lab-ubuntu:latest"
-
-  # Packages to install when the container starts (apt).
+  base_image: "sgp-lab-docker:latest"
   apt_packages:
     - docker.io
-    - docker-compose-plugin
-
-  # Images to pre-pull before the student sees the terminal.
   pre_pull:
     - nginx:alpine
     - alpine:latest
 
 # ── Phases ───────────────────────────────────────────────────
-# Phases are ordered groups of labs. Think of them as chapters
-# or modules. Phase 0 is special — it runs once as environment
-# setup before any lab starts.
-#
-# Makefile analogy:
-#   make setup   → phase-0 (runs once)
-#   make lab-1   → phase-1, lab-1
-#   make lab-2   → phase-1, lab-2
-#   make lab-3   → phase-2, lab-1
-# ─────────────────────────────────────────────────────────────
-
+# Phase 0 is special — it runs once as environment setup.
+# Subsequent phases contain labs with tasks.
 phases:
 
   # ── Phase 0: Environment Setup ───────────────────────────
-  # Runs once when the student starts the module.
-  # Install tools, pull images, configure the environment.
   - id: "phase-0"
     title: "Environment Setup"
     type: "setup"
@@ -60,63 +120,46 @@ phases:
       - id: "install-docker"
         command: "apt-get update && apt-get install -y docker.io"
         description: "Install Docker Engine"
-      - id: "start-docker"
-        command: "service docker start"
-        description: "Start Docker daemon"
       - id: "pull-images"
         command: "docker pull nginx:alpine && docker pull alpine:latest"
         description: "Pull required images"
 
-  # ── Phase 1: Docker Fundamentals ─────────────────────────
-  # Labs in this phase teach basic container operations.
+  # ── Phase 1: Container Basics ────────────────────────────
   - id: "phase-1"
-    title: "Docker Fundamentals"
-    description: "Learn to run and inspect containers."
+    title: "Container Basics"
+    description: "Run, inspect, and manage containers."
     labs:
 
       - id: "lab-1"
         title: "Running Your First Container"
-        description: "Start a container and verify it's running."
         order: 1
         tasks:
 
           - id: "task-1"
-            prompt: "How many images are currently available locally?"
+            prompt: "How many images are available?"
             type: "multiple_choice"
             options_source: "dynamic"
             validation:
               command: "docker images -q | wc -l | tr -d ' '"
               match_type: "exact"
-            error_message: "Unexpected image count. Did the setup phase complete?"
-            hint: "Run 'docker images' to see what's available."
+            error_message: "Unexpected image count."
+            hint: "Run docker images to see what's available."
 
           - id: "task-2"
-            prompt: "Run an nginx container named 'web' in detached mode."
+            prompt: "Run nginx named 'web' in detached mode."
             type: "terminal_action"
             validation:
               command: "docker ps --format '{{.Names}}'"
               expected_output: "web"
               match_type: "contains"
-            error_message: "No running container named 'web' found."
-            hint: "docker run -d --name web nginx:alpine"
-
-          - id: "task-3"
-            prompt: "How many containers are now running?"
-            type: "multiple_choice"
-            options_source: "dynamic"
-            validation:
-              command: "docker ps -q | wc -l | tr -d ' '"
-              match_type: "exact"
-            error_message: "Unexpected container count."
-            hint: "docker ps shows running containers."
+            error_message: "No running container named 'web'."
+            hint: "How do you name a container and run it detached?"
 
       - id: "lab-2"
         title: "Container Networking"
-        description: "Create a custom network and connect containers."
         order: 2
         setup:
           - command: "docker rm -f web || true"
-          - command: "docker network rm lab-net || true"
         tasks:
 
           - id: "task-1"
@@ -130,69 +173,11 @@ phases:
             hint: "How do you create a user-defined network?"
 
           - id: "task-2"
-            prompt: "Run an alpine container named 'app' connected to 'lab-net'."
+            prompt: "Run alpine named 'app' on 'lab-net'."
             type: "terminal_action"
             validation:
               command: "docker inspect app --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}'"
               expected_output: "."
               match_type: "regex"
-            error_message: "Container 'app' not found or not on lab-net."
-            hint: "How do you specify which network a container joins?"
-
-  # ── Phase 2: Building Images ─────────────────────────────
-  - id: "phase-2"
-    title: "Building Images"
-    description: "Write Dockerfiles and build custom images."
-    labs:
-
-      - id: "lab-3"
-        title: "Writing Your First Dockerfile"
-        description: "Create a Dockerfile and build an image from it."
-        order: 3
-        tasks:
-
-          - id: "task-1"
-            prompt: "Create a file called 'Dockerfile' that uses alpine as its base image."
-            type: "file_check"
-            validation:
-              path: "Dockerfile"
-              contains: "FROM alpine"
-            error_message: "Dockerfile not found or missing a FROM instruction."
-            hint: "Every Dockerfile starts with a base image instruction."
-
-          - id: "task-2"
-            prompt: "Build the image and tag it as 'my-app'."
-            type: "terminal_action"
-            validation:
-              command: "docker images my-app --format '{{.Repository}}'"
-              expected_output: "my-app"
-              match_type: "contains"
-            error_message: "Image 'my-app' not found."
-            hint: "How do you tag an image during build?"
-
-          - id: "task-3"
-            prompt: "Run your 'my-app' image and verify it starts."
-            type: "terminal_action"
-            validation:
-              command: "docker ps --format '{{.Names}}'"
-              expected_output: "."
-              match_type: "regex"
-            error_message: "No running containers found."
-            hint: "You built the image — now what do you do with it?"
-
-      - id: "lab-4"
-        title: "Multi-Stage Builds"
-        description: "Reduce image size using multi-stage builds."
-        order: 4
-        setup:
-          - command: "docker rm -f $(docker ps -aq) || true"
-        tasks:
-
-          - id: "task-1"
-            prompt: "Write a multi-stage Dockerfile: build stage uses 'node:18', final stage uses 'node:18-slim'."
-            type: "file_check"
-            validation:
-              path: "Dockerfile"
-              contains: "AS"
-            error_message: "Dockerfile missing multi-stage syntax."
-            hint: "Multi-stage builds use a keyword to name each stage."
+            error_message: "Container not found or not on lab-net."
+            hint: "Which flag specifies the network?"

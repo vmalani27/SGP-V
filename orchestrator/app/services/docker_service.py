@@ -1,4 +1,5 @@
 import logging
+import time
 
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
@@ -54,6 +55,38 @@ class DockerService:
             return self._container_info(container)
         except APIError as e:
             raise RuntimeError(f"Failed to start container: {e}")
+
+    def wait_for_docker(self, name: str, timeout: int = 90) -> None:
+        """Wait until the inner Docker daemon inside the container responds.
+
+        The base image boots dockerd via systemd, so there is a short race
+        after the container starts. Polls `docker info` as root.
+        """
+        deadline = time.monotonic() + timeout
+        last_output = ""
+        while time.monotonic() < deadline:
+            try:
+                exit_code, output = self.exec_command(name, ["docker", "info"], user="root")
+                if exit_code == 0:
+                    logger.info(f"Docker daemon ready in '{name}'")
+                    return
+                last_output = output
+            except RuntimeError:
+                pass
+            time.sleep(1)
+        raise RuntimeError(
+            f"Docker daemon not ready in '{name}' within {timeout}s: {last_output}"
+        )
+
+    def pre_pull_images(self, name: str, images: list[str]) -> None:
+        """Pull images into the container's inner Docker daemon before the
+        student sees the terminal (equivalent to `sudo docker pull` during setup).
+        """
+        for image in images:
+            exit_code, output = self.exec_command(name, ["docker", "pull", image], user="root")
+            if exit_code != 0:
+                raise RuntimeError(f"Failed to pre-pull image '{image}' in '{name}': {output}")
+            logger.info(f"Pre-pulled image '{image}' in '{name}'")
 
     def stop_lab(self, name: str, timeout: int = 10) -> dict:
         container = self._get_container(name)

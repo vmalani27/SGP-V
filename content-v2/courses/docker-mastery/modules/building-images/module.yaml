@@ -1,0 +1,12 @@
+id: building-images
+title: Building Custom Images
+description: Master Dockerfile creation, multi-stage builds, and image optimization.
+order: 2
+chapters:
+  - chapter-4
+  - chapter-5
+  - chapter-6
+labs:
+  - lab-4
+  - lab-5
+  - lab-6

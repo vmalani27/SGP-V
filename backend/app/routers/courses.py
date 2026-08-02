@@ -14,6 +14,11 @@ class UpdateProgressRequest(BaseModel):
     status: str = "completed"
 
 
+class UpdateLabProgressRequest(BaseModel):
+    moduleId: str
+    status: str = "completed"
+
+
 @router.get("")
 async def list_courses() -> list[dict]:
     courses = db.collection("courses").stream()
@@ -104,3 +109,31 @@ async def update_progress(
     })
 
     return {"status": "ok", "progress": progress}
+
+
+@router.put("/{course_id}/labs/{lab_id}/progress")
+async def update_lab_progress(
+    course_id: str,
+    lab_id: str,
+    body: UpdateLabProgressRequest,
+    firebase_data: dict = Depends(verify_firebase_token),
+) -> dict:
+    uid = firebase_data["uid"]
+    enrollment_ref = db.collection("enrollments").document(f"{uid}_{course_id}")
+    doc = enrollment_ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Not enrolled in this course")
+
+    data = doc.to_dict()
+    labs_progress = data.get("labsProgress", {})
+
+    mod_labs = labs_progress.get(body.moduleId, {})
+    mod_labs[lab_id] = body.status
+    labs_progress[body.moduleId] = mod_labs
+
+    enrollment_ref.update({
+        "labsProgress": labs_progress,
+        "lastAccessed": datetime.utcnow(),
+    })
+
+    return {"status": "ok", "labsProgress": labs_progress}

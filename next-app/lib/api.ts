@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import type { TaskListResponse, TaskProgressData, ValidateResponse } from './task-types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
@@ -79,6 +80,7 @@ export interface Enrollment {
   courseId: string;
   enrolledAt: string;
   progress: Record<string, unknown>;
+  labsProgress?: Record<string, Record<string, string>>;
   lastAccessed: string;
   status: string;
   percentage?: number;
@@ -109,6 +111,11 @@ export const api = {
         `/api/v1/courses/${id}/progress`,
         { method: 'PUT', body: JSON.stringify({ moduleId, chapterId, status }) },
       ),
+    updateLabProgress: (id: string, labId: string, moduleId: string, status = 'completed') =>
+      apiFetch<{ status: string; labsProgress: Record<string, Record<string, string>> }>(
+        `/api/v1/courses/${id}/labs/${labId}/progress`,
+        { method: 'PUT', body: JSON.stringify({ moduleId, status }) },
+      ),
   },
   content: {
     getChapterContent: (courseId: string, chapterId: string) =>
@@ -123,6 +130,14 @@ export const api = {
         chapter_id: string;
         instructions: string | null;
       }>(`/api/v1/content/courses/${courseId}/labs/${labId}/instructions`),
+    getLabTasks: (courseId: string, labId: string) =>
+      apiFetch<TaskListResponse>(
+        `/api/v1/content/courses/${courseId}/labs/${labId}/tasks`
+      ),
+    getLabConfig: (courseId: string, labId: string) =>
+      apiFetch<Record<string, unknown>>(
+        `/api/v1/content/courses/${courseId}/labs/${labId}/config`
+      ),
   },
   labs: {
     active: (courseId: string, labId: string) =>
@@ -168,6 +183,15 @@ export const api = {
       apiFetch<{ ws_token: string; ws_url: string }>(
         `/api/v1/labs/courses/${courseId}/labs/${labId}/token/${sessionId}`,
         { method: 'POST' }
+      ),
+    tasks: (courseId: string, labId: string) =>
+      apiFetch<TaskListResponse>(
+        `/api/v1/labs/courses/${courseId}/labs/${labId}/tasks`
+      ),
+    validate: (courseId: string, labId: string, taskId: string, answer?: string) =>
+      apiFetch<ValidateResponse>(
+        `/api/v1/labs/courses/${courseId}/labs/${labId}/validate`,
+        { method: 'POST', body: JSON.stringify({ task_id: taskId, answer }) }
       ),
   },
 };

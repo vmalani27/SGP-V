@@ -106,24 +106,82 @@ def validate_index(content_dir: Path) -> ValidationResult:
     return result
 
 
+def _read_course_data(course_dir: Path) -> tuple[dict | None, str]:
+    """Read course from course.yaml (new) or course.json (old). Returns (data, source_label)."""
+    yaml_path = course_dir / "course.yaml"
+    if yaml_path.exists():
+        data = _read_yaml(yaml_path)
+        if data:
+            # Resolve modules from module.yaml files
+            modules = []
+            for mod_ref in data.get("modules", []):
+                if isinstance(mod_ref, str):
+                    mod_path = course_dir / "modules" / mod_ref / "module.yaml"
+                    mod_data = _read_yaml(mod_path)
+                    if mod_data:
+                        mod_data["id"] = mod_ref
+                        # Resolve lab references
+                        labs = []
+                        for lab_ref in mod_data.get("labs", []):
+                            if isinstance(lab_ref, str):
+                                labs.append({"id": lab_ref, "title": lab_ref})
+                            elif isinstance(lab_ref, dict):
+                                labs.append(lab_ref)
+                        mod_data["labs"] = labs
+                        # Chapters are strings in module.yaml, convert to dicts for consistent validation
+                        chapters = []
+                        for ch_ref in mod_data.get("chapters", []):
+                            if isinstance(ch_ref, str):
+                                chapters.append({"id": ch_ref, "title": ch_ref})
+                            elif isinstance(ch_ref, dict):
+                                chapters.append(ch_ref)
+                        mod_data["chapters"] = chapters
+                        modules.append(mod_data)
+                    else:
+                        modules.append({"id": mod_ref, "title": mod_ref, "labs": [], "chapters": []})
+                elif isinstance(mod_ref, dict):
+                    modules.append(mod_ref)
+            if modules:
+                data["modules"] = modules
+            return data, f"courses/{course_dir.name}/course.yaml"
+    json_path = course_dir / "course.json"
+    if json_path.exists():
+        data = _read_json(json_path)
+        if data:
+            return data, f"courses/{course_dir.name}/course.json"
+    return None, f"courses/{course_dir.name}/course.yaml"
+
+
+def _check_lab_md(labs_dir: Path, lab_id: str) -> tuple[bool, str]:
+    """Check if lab instructions file exists (.md or instructions.md in subdir)."""
+    if (labs_dir / f"{lab_id}.md").exists():
+        return True, f"{lab_id}.md"
+    if (labs_dir / lab_id / "instructions.md").exists():
+        return True, f"{lab_id}/instructions.md"
+    return False, ""
+
+
+def _check_lab_yaml(labs_dir: Path, lab_id: str) -> tuple[bool, str]:
+    """Check if lab config file exists (.yaml or lab.yaml in subdir)."""
+    if (labs_dir / f"{lab_id}.yaml").exists():
+        return True, f"{lab_id}.yaml"
+    if (labs_dir / lab_id / "lab.yaml").exists():
+        return True, f"{lab_id}/lab.yaml"
+    return False, ""
+
+
 def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
-    """Validate course.json TOC structure: modules, chapters, labs. No quiz data allowed."""
+    """Validate course TOC (course.yaml or course.json) structure."""
     result = ValidationResult()
     course_dir = content_dir / "courses" / course_id
-    course_json = course_dir / "course.json"
-    label = f"courses/{course_id}/course.json"
 
     if not course_dir.exists():
-        result.add(label, "$", f"Course directory not found: courses/{course_id}/")
+        result.add(f"courses/{course_id}", "$", f"Course directory not found")
         return result
 
-    if not course_json.exists():
-        result.add(label, "$", "course.json not found")
-        return result
-
-    data = _read_json(course_json)
+    data, label = _read_course_data(course_dir)
     if data is None:
-        result.add(label, "$", "Invalid JSON")
+        result.add(label, "$", "Neither course.yaml nor course.json found or valid")
         return result
 
     for field_name in ("id", "title", "description", "level", "modules"):
@@ -149,7 +207,7 @@ def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
             result.add(label, mprefix, "Expected object")
             continue
 
-        for required in ("id", "title", "chapters"):
+        for required in ("id", "chapters"):
             if required not in mod:
                 result.add(label, mprefix, f"Missing required field '{required}'")
 
@@ -175,9 +233,8 @@ def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
                 result.add(label, cprefix, "Expected object")
                 continue
 
-            for required in ("id", "title"):
-                if required not in ch:
-                    result.add(label, cprefix, f"Missing required field '{required}'")
+            if "id" not in ch:
+                result.add(label, cprefix, "Missing required field 'id'")
 
             chid = ch.get("id", "")
             if chid:
@@ -186,13 +243,11 @@ def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
                 else:
                     seen_chapter_ids.add(chid)
 
-            # v2: chapters should NOT have 'content' or 'quiz' fields (those live in files)
             if "content" in ch:
                 result.add(label, f"{cprefix}", "Chapter should not have 'content' field in v2 (use markdown file)")
             if "quiz" in ch:
                 result.add(label, f"{cprefix}", "Chapter should not have 'quiz' field in v2 (use lab YAML)")
 
-            # Check markdown file exists
             if chid:
                 mod_id = mod.get("id", "")
                 md_path = course_dir / "modules" / mod_id / "chapters" / f"{chid}.md"
@@ -212,7 +267,7 @@ def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
                 result.add(label, lprefix, "Expected object")
                 continue
 
-            for required in ("id", "title"):
+            for required in ("id",):
                 if required not in lab:
                     result.add(label, lprefix, f"Missing required field '{required}'")
 
@@ -223,31 +278,39 @@ def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
                 else:
                     seen_lab_ids.add(labid)
 
-            # v2: labs should NOT have 'content' field
             if "content" in lab:
                 result.add(label, lprefix, "Lab should not have 'content' field in v2 (use markdown + YAML files)")
 
-            # Check markdown file exists
             if labid:
                 mod_id = mod.get("id", "")
                 labs_dir = course_dir / "modules" / mod_id / "labs"
-                md_path = labs_dir / f"{labid}.md"
-
-                if not md_path.exists():
-                    result.add(label, lprefix, f"Markdown file not found: modules/{mod_id}/labs/{labid}.md")
+                found, p = _check_lab_md(labs_dir, labid)
+                if not found:
+                    result.add(label, lprefix, f"Instructions not found: modules/{mod_id}/labs/{labid}.md or {labid}/instructions.md")
 
     return result
+
+
+def _find_lab_yaml(labs_dir: Path, lab_id: str) -> tuple[Path | None, str]:
+    """Find lab YAML — supports old flat ({lab_id}.yaml) and new hierarchical ({lab_id}/lab.yaml)."""
+    flat = labs_dir / f"{lab_id}.yaml"
+    if flat.exists():
+        return flat, f"{lab_id}.yaml"
+    hier = labs_dir / lab_id / "lab.yaml"
+    if hier.exists():
+        return hier, f"{lab_id}/lab.yaml"
+    return None, ""
 
 
 def validate_lab_yaml(content_dir: Path, course_id: str, module_id: str, lab_id: str) -> ValidationResult:
     """Validate a single lab YAML file structure."""
     result = ValidationResult()
-    yaml_path = content_dir / "courses" / course_id / "modules" / module_id / "labs" / f"{lab_id}.yaml"
-    label = f"courses/{course_id}/modules/{module_id}/labs/{lab_id}.yaml"
+    labs_dir = content_dir / "courses" / course_id / "modules" / module_id / "labs"
+    yaml_path, suffix = _find_lab_yaml(labs_dir, lab_id)
+    label = f"courses/{course_id}/modules/{module_id}/labs/{suffix}"
 
-    if not yaml_path.exists():
-        result.add(label, "$", "File not found")
-        return result
+    if yaml_path is None:
+        return result  # YAML file is optional
 
     data = _read_yaml(yaml_path)
     if data is None:
@@ -258,7 +321,32 @@ def validate_lab_yaml(content_dir: Path, course_id: str, module_id: str, lab_id:
         result.add(label, "$", "Expected mapping")
         return result
 
-    # Validate environment section
+    env = data.get("environment")
+    tasks = data.get("tasks")
+
+    # New format: tasks at top level (optional) + environment reference (string or dict)
+    if isinstance(env, str) or tasks is not None:
+        if env is None:
+            result.add(label, "environment", "Missing required field 'environment'")
+        if tasks is not None:
+            if not isinstance(tasks, list):
+                result.add(label, "tasks", "Expected array of tasks")
+            else:
+                for ti, task in enumerate(tasks):
+                    tprefix = f"tasks[{ti}]"
+                    if not isinstance(task, dict):
+                        result.add(label, tprefix, "Expected object")
+                        continue
+                    if "id" not in task:
+                        result.add(label, tprefix, "Missing required field 'id'")
+                    if "prompt" not in task:
+                        result.add(label, tprefix, "Missing required field 'prompt'")
+                    validation = task.get("validation")
+                    if not isinstance(validation, dict):
+                        result.add(label, f"{tprefix}.validation", "Missing or invalid 'validation'")
+        return result
+
+    # Old monolithic format: environment dict + phases
     env = data.get("environment")
     if not isinstance(env, dict):
         result.add(label, "environment", "Missing or invalid 'environment' section")
@@ -266,7 +354,6 @@ def validate_lab_yaml(content_dir: Path, course_id: str, module_id: str, lab_id:
         if "base_image" not in env:
             result.add(label, "environment.base_image", "Missing required field 'base_image'")
 
-    # Validate phases section
     phases = data.get("phases")
     if not isinstance(phases, list):
         result.add(label, "phases", "Missing or invalid 'phases' section")
@@ -274,18 +361,13 @@ def validate_lab_yaml(content_dir: Path, course_id: str, module_id: str, lab_id:
 
     for pi, phase in enumerate(phases):
         pprefix = f"phases[{pi}]"
-
         if not isinstance(phase, dict):
             result.add(label, pprefix, "Expected object")
             continue
-
         if "id" not in phase:
             result.add(label, pprefix, "Missing required field 'id'")
-
         phase_type = phase.get("type", "lab")
-
         if phase_type == "setup":
-            # Setup phases have steps
             steps = phase.get("steps", [])
             if not isinstance(steps, list):
                 result.add(label, f"{pprefix}.steps", "Expected array of steps")
@@ -297,39 +379,30 @@ def validate_lab_yaml(content_dir: Path, course_id: str, module_id: str, lab_id:
                 if "command" not in step:
                     result.add(label, f"{pprefix}.steps[{si}]", "Missing required field 'command'")
         else:
-            # Lab phases have labs with tasks
-            labs = phase.get("labs", [])
-            if not isinstance(labs, list):
+            phase_labs = phase.get("labs", [])
+            if not isinstance(phase_labs, list):
                 result.add(label, f"{pprefix}.labs", "Expected array of labs")
                 continue
-
-            for li, lab in enumerate(labs):
+            for li, plab in enumerate(phase_labs):
                 lprefix = f"{pprefix}.labs[{li}]"
-
-                if not isinstance(lab, dict):
+                if not isinstance(plab, dict):
                     result.add(label, lprefix, "Expected object")
                     continue
-
-                if "id" not in lab:
+                if "id" not in plab:
                     result.add(label, lprefix, "Missing required field 'id'")
-
-                tasks = lab.get("tasks", [])
+                tasks = plab.get("tasks", [])
                 if not isinstance(tasks, list):
                     result.add(label, f"{lprefix}.tasks", "Expected array of tasks")
                     continue
-
                 for ti, task in enumerate(tasks):
                     tprefix = f"{lprefix}.tasks[{ti}]"
-
                     if not isinstance(task, dict):
                         result.add(label, tprefix, "Expected object")
                         continue
-
                     if "id" not in task:
                         result.add(label, tprefix, "Missing required field 'id'")
                     if "prompt" not in task:
                         result.add(label, tprefix, "Missing required field 'prompt'")
-
                     validation = task.get("validation")
                     if not isinstance(validation, dict):
                         result.add(label, f"{tprefix}.validation", "Missing or invalid 'validation'")
@@ -341,9 +414,8 @@ def validate_lab_yaml(content_dir: Path, course_id: str, module_id: str, lab_id:
                             if "contains" not in validation:
                                 result.add(label, f"{tprefix}.validation.contains", "Missing required field 'contains' for file_check")
                         else:
-                            if "command" not in validation:
+                            if task_type != "multiple_choice" and "command" not in validation:
                                 result.add(label, f"{tprefix}.validation.command", "Missing required field 'command'")
-
     return result
 
 
@@ -374,9 +446,18 @@ def validate_all(content_dir: Path) -> ValidationResult:
                 labs_dir = mod_dir / "labs"
                 if not labs_dir.exists():
                     continue
+                # Check flat yaml files
                 for yaml_file in labs_dir.glob("*.yaml"):
                     lab_id = yaml_file.stem
                     yaml_result = validate_lab_yaml(content_dir, cid, mod_dir.name, lab_id)
                     result.errors.extend(yaml_result.errors)
+                # Check hierarchical lab.yaml files in subdirectories
+                for sub_dir in sorted(labs_dir.iterdir()):
+                    if not sub_dir.is_dir():
+                        continue
+                    hier_yaml = sub_dir / "lab.yaml"
+                    if hier_yaml.exists():
+                        yaml_result = validate_lab_yaml(content_dir, cid, mod_dir.name, sub_dir.name)
+                        result.errors.extend(yaml_result.errors)
 
     return result

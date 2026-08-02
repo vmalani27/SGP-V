@@ -73,11 +73,124 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
+def _lab_title_from_yaml(parsed: dict | None, lab_ref: str) -> str | None:
+    """Extract lab title from YAML — flat (top-level title) or
+    old monolithic format (title nested in phases[*].labs[*].title)."""
+    if parsed is None:
+        return None
+    title = parsed.get("title")
+    if title:
+        return str(title)
+    for phase in parsed.get("phases", []):
+        for sub_lab in phase.get("labs", []):
+            if sub_lab.get("id") == lab_ref:
+                return sub_lab.get("title")
+    return None
+
+
+def _chapter_title_from_markdown(content: str | None) -> str | None:
+    """Extract the chapter title from the first H1 heading in markdown."""
+    if not content:
+        return None
+    for line in content.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return None
+
+
 class FilesystemProvider(ContentProvider):
-    """Reads course content from a local directory tree."""
+    """Reads course content from a local directory tree.
+
+    Supports both the old flat structure (course.json, lab-1.yaml, lab-1.md)
+    and the new hierarchical structure (course.yaml + module.yaml, labs/{id}/lab.yaml).
+    """
 
     def __init__(self, content_dir: str | Path):
         self.root = Path(content_dir)
+
+    # ── helpers ──────────────────────────────────────────────────
+
+    def _course_paths(self, course_id: str) -> tuple[Path, Path]:
+        base = self.root / "courses" / course_id
+        return base / "course.yaml", base / "course.json"
+
+    def _module_dir(self, course_id: str, mod_id: str) -> Path:
+        return self.root / "courses" / course_id / "modules" / mod_id
+
+    def _lab_files(self, course_dir: Path, mod_id: str, lab_id: str) -> tuple[Path, Path, Path, Path]:
+        """Return (new_yaml, old_yaml, new_md, old_md) for a lab."""
+        labs_dir = course_dir / "modules" / mod_id / "labs"
+        return (
+            labs_dir / lab_id / "lab.yaml",
+            labs_dir / f"{lab_id}.yaml",
+            labs_dir / lab_id / "instructions.md",
+            labs_dir / f"{lab_id}.md",
+        )
+
+    def _read_course(self, course_id: str) -> dict | None:
+        """Read course from course.yaml (new) or course.json (old)."""
+        yaml_path, json_path = self._course_paths(course_id)
+        data = _read_yaml(yaml_path)
+        if data:
+            data["_source"] = "yaml"
+            modules = []
+            for mod_ref in data.get("modules", []):
+                if isinstance(mod_ref, str):
+                    mod_path = self._module_dir(course_id, mod_ref) / "module.yaml"
+                    mod_data = _read_yaml(mod_path)
+                    if mod_data:
+                        mod_data["id"] = mod_ref
+                        # Resolve lab references: convert string IDs to dicts with id
+                        labs = []
+                        for lab_ref in mod_data.get("labs", []):
+                            if isinstance(lab_ref, str):
+                                lab_entry = {"id": lab_ref}
+                                labs_dir = self._module_dir(course_id, mod_ref) / "labs"
+                                # Try new hierarchical yaml
+                                parsed = _read_yaml(labs_dir / lab_ref / "lab.yaml")
+                                title = _lab_title_from_yaml(parsed, lab_ref)
+                                if not title:
+                                    # Try old flat yaml
+                                    parsed = _read_yaml(labs_dir / f"{lab_ref}.yaml")
+                                    title = _lab_title_from_yaml(parsed, lab_ref)
+                                lab_entry["title"] = title or lab_ref
+                                labs.append(lab_entry)
+                            elif isinstance(lab_ref, dict):
+                                labs.append(lab_ref)
+                        mod_data["labs"] = labs
+                        # Resolve chapter references: convert string IDs to dicts with id + title
+                        chapters = []
+                        for chapter_ref in mod_data.get("chapters", []):
+                            if isinstance(chapter_ref, str):
+                                chapter_dir = self._module_dir(course_id, mod_ref) / "chapters"
+                                content = _read_text(chapter_dir / f"{chapter_ref}.md")
+                                chapters.append({
+                                    "id": chapter_ref,
+                                    "title": _chapter_title_from_markdown(content) or chapter_ref,
+                                })
+                            elif isinstance(chapter_ref, dict):
+                                chapters.append(chapter_ref)
+                        mod_data["chapters"] = chapters
+                        modules.append(mod_data)
+                elif isinstance(mod_ref, dict):
+                    modules.append(mod_ref)
+            if modules:
+                data["modules"] = modules
+            return data
+        data = _read_json(json_path)
+        if data:
+            data["_source"] = "json"
+        return data
+
+    def _find_lab_entry(self, course_data: dict, lab_id: str) -> tuple[dict | None, str | None]:
+        """Find (lab_entry, module_id) for a given lab_id across all modules."""
+        for module in course_data.get("modules", []):
+            for lab in module.get("labs", []):
+                if lab["id"] == lab_id:
+                    return lab, module["id"]
+        return None, None
+
+    # ── public interface ─────────────────────────────────────────
 
     def list_courses(self) -> list[dict]:
         index_path = self.root / "index.json"
@@ -87,17 +200,17 @@ class FilesystemProvider(ContentProvider):
         return data.get("courses", [])
 
     def get_course(self, course_id: str) -> dict | None:
-        course_json = self.root / "courses" / course_id / "course.json"
-        return _read_json(course_json)
+        return self._read_course(course_id)
 
     def get_chapter_content(self, course_id: str, chapter_id: str) -> str | None:
-        course_data = self.get_course(course_id)
+        course_data = self._read_course(course_id)
         if course_data is None:
             return None
 
         for module in course_data.get("modules", []):
             for chapter in module.get("chapters", []):
-                if chapter["id"] == chapter_id:
+                cid = chapter["id"] if isinstance(chapter, dict) else chapter
+                if cid == chapter_id:
                     mod_id = module["id"]
                     md_path = (
                         self.root
@@ -113,60 +226,57 @@ class FilesystemProvider(ContentProvider):
         return None
 
     def get_lab_instructions(self, course_id: str, lab_id: str) -> dict | None:
-        course_data = self.get_course(course_id)
+        course_data = self._read_course(course_id)
         if course_data is None:
             return None
 
-        for module in course_data.get("modules", []):
-            for lab in module.get("labs", []):
-                if lab["id"] == lab_id:
-                    mod_id = module["id"]
-                    md_path = (
-                        self.root
-                        / "courses"
-                        / course_id
-                        / "modules"
-                        / mod_id
-                        / "labs"
-                        / f"{lab_id}.md"
-                    )
-                    instructions = _read_text(md_path)
-                    return {
-                        "lab_id": lab_id,
-                        "title": lab.get("title", ""),
-                        "module_id": mod_id,
-                        "chapter_id": lab.get("chapterId", ""),
-                        "instructions": instructions,
-                    }
+        lab_entry, mod_id = self._find_lab_entry(course_data, lab_id)
+        if lab_entry is None:
+            return None
 
-        return None
+        _, _, new_md, old_md = self._lab_files(
+            self.root / "courses" / course_id, mod_id, lab_id
+        )
+
+        instructions = _read_text(new_md) or _read_text(old_md)
+        return {
+            "lab_id": lab_id,
+            "title": lab_entry.get("title", ""),
+            "module_id": mod_id,
+            "chapter_id": lab_entry.get("chapterId", ""),
+            "instructions": instructions,
+        }
 
     def get_lab_config(self, course_id: str, lab_id: str) -> dict | None:
-        course_data = self.get_course(course_id)
+        course_data = self._read_course(course_id)
         if course_data is None:
             return None
 
-        for module in course_data.get("modules", []):
-            for lab in module.get("labs", []):
-                if lab["id"] == lab_id:
-                    mod_id = module["id"]
-                    yaml_path = (
-                        self.root
-                        / "courses"
-                        / course_id
-                        / "modules"
-                        / mod_id
-                        / "labs"
-                        / f"{lab_id}.yaml"
-                    )
-                    config = _read_yaml(yaml_path)
-                    if config is None:
-                        return None
-                    config["lab_id"] = lab_id
-                    config["module_id"] = mod_id
-                    return config
+        lab_entry, mod_id = self._find_lab_entry(course_data, lab_id)
+        if lab_entry is None:
+            return None
 
-        return None
+        new_yaml, old_yaml, _, _ = self._lab_files(
+            self.root / "courses" / course_id, mod_id, lab_id
+        )
+
+        # Try new path first, then old path
+        config = _read_yaml(new_yaml) or _read_yaml(old_yaml)
+        if config is None:
+            return None
+
+        config["lab_id"] = lab_id
+        config["module_id"] = mod_id
+
+        # Resolve environment reference if it's a string (new style)
+        env_ref = config.get("environment")
+        if isinstance(env_ref, str):
+            env_path = self.root / "environments" / f"{env_ref}.yaml"
+            env_data = _read_yaml(env_path)
+            if env_data:
+                config["environment"] = env_data
+
+        return config
 
 
 # ─── Provider singleton ───────────────────────────────────────────────────────

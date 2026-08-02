@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service for Firebase authentication and Firestore progress tracking.
+FastAPI service for Firebase authentication, content serving, lab lifecycle proxying, and Firestore progress tracking.
 
 ## What It Does
 
@@ -9,29 +9,60 @@ FastAPI service for Firebase authentication and Firestore progress tracking.
 | Verify Firebase tokens | `verify_firebase_token` dependency extracts Bearer token, verifies with Admin SDK |
 | Sync user profiles | `POST /api/v1/users/sync` creates/updates user doc in Firestore |
 | Track enrollments | `POST /api/v1/courses/{id}/enroll` creates enrollment doc |
-| Track progress | `POST /api/v1/courses/{id}/labs/{lab_id}/complete` updates progress map |
-| Seed course data | `python -m app.scripts.seed_courses` reads content files, upserts to Firestore |
+| Track progress | `PUT /api/v1/courses/{id}/progress` (chapters) + `PUT /api/v1/courses/{id}/labs/{lab_id}/progress` (labs) |
+| Serve course content | `GET /api/v1/content/...` — TOC, chapters, lab instructions, lab YAML config, tasks |
+| Proxy lab lifecycle | `/api/v1/labs/courses/{id}/labs/{labId}/...` — start, stop, resume, destroy, exec |
+| Validate task answers | `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` — exec in container, server-side match |
 
 ## What It Does NOT Do
 
-- Serve course content — the orchestrator does that
 - Manage lab containers — the orchestrator does that
 - Handle terminal sessions — the orchestrator does that
-- Run validation commands — the orchestrator does that
+- Read lab.yaml for validation — the backend runs the validation command; answers are matched server-side and never exposed to the client
 
-## Current State
+## Content Serving
 
-The backend currently reads `course.json` from the shared `content/` directory to:
-- Compute lab counts for progress percentages
-- Find which module a lab belongs to (for progress tracking)
+The backend serves all course content through a `ContentProvider` abstraction:
 
-**Target:** Remove these file reads and get the data from the orchestrator's content API instead.
+```
+ContentProvider (ABC)
+  ├── FilesystemProvider   ← active (reads content-v2/ from mounted volume)
+  └── S3Provider           ← future (CONTENT_SOURCE=s3)
+```
 
-## API Endpoints
+The provider reads `course.yaml` (primary) with `course.json` fallback, resolves `module.yaml` references, and extracts lab YAML from either flat per-lab directories or old monolithic files. Environment references (string values in `environment` field) are resolved to shared files in `environments/`.
 
-Base URL: `http://localhost:8000`
+### Content API Endpoints
 
-All endpoints require `Authorization: Bearer <firebase_id_token>` unless noted.
+All content endpoints are unauthenticated (served publicly).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/content/courses` | Course catalog (from index.json) |
+| `GET` | `/api/v1/content/courses/{id}` | Course TOC (resolved modules, chapters, labs with titles) |
+| `GET` | `/api/v1/content/courses/{id}/chapters/{chapterId}` | Chapter markdown + metadata |
+| `GET` | `/api/v1/content/courses/{id}/labs` | Lab list for a course |
+| `GET` | `/api/v1/content/courses/{id}/labs/{labId}/instructions` | Lab instructions markdown |
+| `GET` | `/api/v1/content/courses/{id}/labs/{labId}/config` | Lab YAML config (environment resolved, full content) |
+| `GET` | `/api/v1/content/courses/{id}/labs/{labId}/tasks` | Extracted tasks (flat list, from either format) |
+
+## Lab Lifecycle Proxy
+
+The backend proxies all lab lifecycle calls to the orchestrator. The frontend never talks to the orchestrator directly. These endpoints require Firebase auth (Bearer token) for state-changing operations.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/labs/courses/{id}/labs/{labId}/active` | Yes | Reconnect to existing session |
+| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/start` | Yes | Start lab container (reads lab YAML, forwards env config) |
+| `GET` | `/api/v1/labs/courses/{id}/labs/{labId}/status/{sid}` | No | Session status |
+| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/stop/{sid}` | No | Stop container |
+| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/resume/{sid}` | No | Resume container |
+| `DELETE` | `/api/v1/labs/courses/{id}/labs/{labId}/{sid}` | Yes | Destroy container |
+| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/exec/{sid}` | No | Run command in container |
+| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/validate` | Yes | Validate a task answer (runs the validation command in the container, matches server-side) |
+| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/token/{sid}` | Yes | Refresh WebSocket JWT token |
+
+## Other API Endpoints
 
 ### Health
 
@@ -48,7 +79,7 @@ All endpoints require `Authorization: Bearer <firebase_id_token>` unless noted.
 | `POST` | `/api/v1/users/sync` | Create/update user profile in Firestore |
 | `GET` | `/api/v1/users/me` | Get current user profile |
 | `PUT` | `/api/v1/users/me` | Update display name |
-| `GET` | `/api/v1/users/me/enrollments` | List enrollments with progress |
+| `GET` | `/api/v1/users/me/enrollments` | List enrollments with progress percentage |
 
 ### Courses (`/api/v1/courses`)
 
@@ -57,20 +88,9 @@ All endpoints require `Authorization: Bearer <firebase_id_token>` unless noted.
 | `GET` | `/api/v1/courses` | List all courses (from Firestore) |
 | `GET` | `/api/v1/courses/{id}` | Get single course |
 | `POST` | `/api/v1/courses/{id}/enroll` | Enroll in course |
-| `POST` | `/api/v1/courses/{id}/labs/{lab_id}/complete` | Mark lab done, update progress |
+| `PUT` | `/api/v1/courses/{id}/progress` | Update chapter progress `{moduleId: {chapterId: status}}` |
+| `PUT` | `/api/v1/courses/{id}/labs/{lab_id}/progress` | Mark a lab complete `{moduleId, status}` |
 | `GET` | `/api/v1/courses/{id}/progress` | Get enrollment progress |
-
-### Labs (`/api/v1/labs`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/v1/labs/start` | Start lab session (creates Firestore doc) |
-| `GET` | `/api/v1/labs/session/{id}` | Get session status |
-| `POST` | `/api/v1/labs/validate` | Submit answer (marks as pending) |
-| `GET` | `/api/v1/labs/progress/{course_id}/{chapter_id}` | Chapter progress |
-| `GET` | `/api/v1/labs/progress/{course_id}` | Full course progress |
-
-> **Note:** The labs router is a legacy layer. Lab container management is now handled by the orchestrator. This router tracks session metadata in Firestore.
 
 ## Data Models (Firestore Collections)
 
@@ -93,10 +113,10 @@ All endpoints require `Authorization: Bearer <firebase_id_token>` unless noted.
   "id": "string",
   "title": "string",
   "description": "string",
-  "slug": "string",
-  "modules": 4,
-  "labs": 10,
+  "modules": [{ "id": "mod-1", "title": "Module 1", "labs": [...], "chapters": [...] }],
+  "totalChapters": 10,
   "level": "beginner",
+  "contentHash": "abc123",
   "createdAt": "Timestamp"
 }
 ```
@@ -108,36 +128,32 @@ All endpoints require `Authorization: Bearer <firebase_id_token>` unless noted.
   "courseId": "string",
   "enrolledAt": "Timestamp",
   "progress": {
-    "module-1": { "lab-1": "completed", "lab-2": "completed" }
+    "module-1": { "chapter-1": "completed", "chapter-2": "completed" }
+  },
+  "labsProgress": {
+    "module-1": { "hello-world": "completed" }
   },
   "lastAccessed": "Timestamp",
   "status": "in-progress"
 }
 ```
 
-### `chapter_progress/{uid}_{courseId}_{chapterId}`
-```json
-{
-  "user_id": "string",
-  "course_id": "string",
-  "chapter_id": "string",
-  "answers": { "q1": "correct", "q2": "incorrect" },
-  "status": "in_progress",
-  "created_at": "Timestamp"
-}
-```
-
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `FIREBASE_PROJECT_ID` | Yes | Firebase project ID |
-| `FIREBASE_CREDENTIALS_JSON` | No* | Service account JSON string |
-| `FIREBASE_CREDENTIALS_PATH` | No* | Path to service account file |
-| `GOOGLE_APPLICATION_CREDENTIALS` | No* | Standard Google auth variable |
-| `CONTENT_DIR` | No | Path to content directory (default: `../content`) |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `FIREBASE_PROJECT_ID` | Yes | — | Firebase project ID |
+| `FIREBASE_CREDENTIALS_JSON` | No* | — | Service account JSON string |
+| `FIREBASE_CREDENTIALS_PATH` | No* | — | Path to service account file |
+| `GOOGLE_APPLICATION_CREDENTIALS` | No* | — | Standard Google auth variable |
+| `CONTENT_DIR` | No | `/app/content` | Path to content-v2 mount |
+| `CONTENT_SOURCE` | No | `filesystem` | Content provider backend |
+| `ORCHESTRATOR_URL` | No | `http://orchestrator:8000` | Orchestrator base URL |
+| `JWT_SECRET` | No | `dev-secret` | WebSocket JWT signing key |
+| `JWT_ALGORITHM` | No | `HS256` | JWT algorithm |
+| `JWT_EXPIRY_MINUTES` | No | `60` | WebSocket token expiry |
 
-*Firebase credentials: tries `FIREBASE_CREDENTIALS_JSON` → `FIREBASE_CREDENTIALS_PATH` → `GOOGLE_APPLICATION_CREDENTIALS` → local `credentials.json` → Application Default
+\*Firebase credentials: tries `FIREBASE_CREDENTIALS_JSON` → `FIREBASE_CREDENTIALS_PATH` → `GOOGLE_APPLICATION_CREDENTIALS` → Application Default
 
 ## Local Development
 
@@ -147,34 +163,26 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-## Seed Course Data
-
-```bash
-python -m app.scripts.seed_courses
-```
-
-Reads `content/index.json` and each `course.json`, computes module/lab counts, upserts into Firestore `courses` collection. Idempotent — safe to run multiple times.
-
 ## Project Structure
 
 ```
 backend/
 ├── app/
 │   ├── main.py                 # FastAPI entry point
+│   ├── config.py               # Env vars: CONTENT_DIR, ORCHESTRATOR_URL, JWT_SECRET
 │   ├── core/
 │   │   ├── firebase_config.py  # Admin SDK initialization
 │   │   ├── firestore_db.py     # Firestore client
 │   │   └── credentials.json    # Service account key (gitignored)
 │   ├── models/
-│   │   ├── user.py             # UserProfile, UserSyncResponse
-│   │   ├── course.py           # Course, Enrollment
-│   │   └── lab.py              # LabSession, progress models
+│   │   └── user.py             # UserProfile
 │   ├── routers/
-│   │   ├── users.py            # User sync, profile
+│   │   ├── users.py            # User sync, profile, enrollments
 │   │   ├── courses.py          # Enrollment, progress
-│   │   └── labs.py             # Lab session metadata (legacy)
-│   ├── scripts/
-│   │   └── seed_courses.py     # Firestore seeder
+│   │   ├── content.py          # Content API (TOC, chapters, labs, tasks)
+│   │   └── labs.py             # Lab lifecycle proxy + task validation
+│   ├── services/
+│   │   └── content_provider.py # FilesystemProvider (reads YAML + JSON, resolves env refs)
 │   └── utils/
 │       └── firebase_util.py    # Token verification dependency
 ├── Dockerfile

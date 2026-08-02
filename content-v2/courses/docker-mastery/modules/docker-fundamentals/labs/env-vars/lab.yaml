@@ -1,0 +1,42 @@
+id: env-vars
+title: Environment Variables
+difficulty: beginner
+estimated_time: 10
+xp: 50
+tags:
+  - docker
+  - environment
+  - networking
+environment: docker-basic
+
+objectives:
+  - Pass environment variables into a container
+  - Map host ports to container ports
+
+tasks:
+  - id: pass-env
+    title: Set environment variables
+    description: Pass MY_VAR into a container and print it.
+    prompt: Run an alpine container that prints the value of MY_VAR="hello" when it starts.
+    type: terminal_action
+    validation:
+      command: docker run --rm -e MY_VAR=hello alpine printenv MY_VAR
+      match_type: exact
+      expected_output: hello
+    error_message: The container did not print the expected value.
+    hint: Use -e KEY=VALUE to set environment variables.
+
+  - id: port-mapping
+    title: Map a host port
+    description: Expose nginx on port 9090 of the host.
+    prompt: Map host port 9090 to an nginx container's port 80.
+    type: terminal_action
+    validation:
+      command: docker port $(docker ps -q | head -1) 2>/dev/null | head -1
+      match_type: contains
+      expected_output: '9090'
+    error_message: Port 9090 is not mapped to any container.
+    hint: docker run -p 9090:80 nginx:alpine
+
+completion:
+  required_tasks: all

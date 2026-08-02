@@ -52,9 +52,11 @@ function ChapterRow({
 function LabRow({
   lab,
   courseId,
+  isCompleted,
 }: {
   lab: ContentLab;
   courseId: string;
+  isCompleted: boolean;
 }) {
   const href = `/courses/${courseId}/labs/${lab.id}`;
 
@@ -63,15 +65,27 @@ function LabRow({
       href={href}
       className="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition hover:bg-line/10"
     >
-      {/* Terminal icon */}
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20 transition">
-        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
-        </svg>
+      {/* Icon */}
+      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition ${
+        isCompleted
+          ? 'bg-emerald-500/15 text-emerald-400'
+          : 'bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20'
+      }`}>
+        {isCompleted ? (
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+          </svg>
+        ) : (
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
+          </svg>
+        )}
       </div>
 
       <div className="flex flex-1 items-center justify-between min-w-0">
-        <span className="text-sm truncate text-text group-hover:text-accent transition">
+        <span className={`text-sm truncate transition ${
+          isCompleted ? 'text-muted' : 'text-text group-hover:text-accent'
+        }`}>
           {lab.title}
         </span>
         <span className="ml-2 text-[11px] font-medium text-amber-400/70 shrink-0">
@@ -87,11 +101,13 @@ export default function CourseAccordion({
   courseId,
   moduleIndex,
   completedChapterIds = [],
+  completedLabIds = [],
 }: {
   module: ContentModule;
   courseId: string;
   moduleIndex: number;
   completedChapterIds?: string[];
+  completedLabIds?: string[];
 }) {
   const [isOpen, setIsOpen] = useState(moduleIndex === 0);
 
@@ -185,6 +201,7 @@ export default function CourseAccordion({
                     key={lab.id}
                     lab={lab}
                     courseId={courseId}
+                    isCompleted={completedLabIds.includes(lab.id)}
                   />
                 ))}
               </div>

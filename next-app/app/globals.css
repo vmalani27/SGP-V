@@ -188,3 +188,54 @@ h4,
   border-top: 1px solid rgba(148, 163, 184, 0.12);
   margin: 2rem 0;
 }
+
+/* ── Correct-answer celebration ──────────────────────────── */
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes confetti-burst {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--confetti-angle)) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--confetti-angle)) translateY(160px);
+  }
+}
+
+.animate-pop-in {
+  animation: pop-in 0.45s ease-out both;
+}
+
+.animate-fade-up {
+  animation: fade-up 0.5s ease-out both;
+}
+
+.animate-confetti {
+  animation: confetti-burst 1.2s ease-out forwards;
+}

@@ -39,6 +39,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 from firebase_admin import firestore
 
 from app.config import CONTENT_DIR
@@ -48,31 +50,6 @@ logger = logging.getLogger("worker.seeder")
 _content_dir = Path(CONTENT_DIR)
 
 
-def _file_hash(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
-
-
-def _content_hash(course_dir: Path) -> str:
-    """Hash course.json + all lab YAMLs to detect any content change."""
-    h = hashlib.sha256()
-
-    course_json = course_dir / "course.json"
-    if course_json.exists():
-        h.update(course_json.read_bytes())
-
-    modules_dir = course_dir / "modules"
-    if modules_dir.exists():
-        for mod_dir in sorted(modules_dir.iterdir()):
-            if not mod_dir.is_dir():
-                continue
-            labs_dir = mod_dir / "labs"
-            if labs_dir.exists():
-                for yaml_file in sorted(labs_dir.glob("*.yaml")):
-                    h.update(yaml_file.read_bytes())
-
-    return h.hexdigest()[:16]
-
-
 def _read_json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -80,9 +57,128 @@ def _read_json(path: Path) -> dict | None:
         return None
 
 
+def _read_yaml(path: Path) -> dict | None:
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, OSError):
+        return None
+
+
+def _lab_title_from_yaml(parsed: dict | None, lab_ref: str) -> str | None:
+    """Extract lab title from YAML — supports flat (top-level title) and
+    old monolithic format (title nested in phases[*].labs[*].title)."""
+    if parsed is None:
+        return None
+    title = parsed.get("title")
+    if title:
+        return str(title)
+    # Old monolithic format: phases[x].labs[y].title
+    for phase in parsed.get("phases", []):
+        for sub_lab in phase.get("labs", []):
+            if sub_lab.get("id") == lab_ref:
+                return sub_lab.get("title")
+    return None
+
+
+def _title_from_md(md_path: Path) -> str | None:
+    """Extract title from '# ' heading in markdown."""
+    try:
+        for line in md_path.read_text(encoding="utf-8").split("\n"):
+            if line.startswith("# "):
+                return line[2:].strip()
+    except OSError:
+        pass
+    return None
+
+
+def _read_course_data(course_dir: Path) -> dict | None:
+    """Read course from course.yaml (new) or course.json (old)."""
+    yaml_path = course_dir / "course.yaml"
+    data = _read_yaml(yaml_path)
+    if data:
+        data["_source"] = "yaml"
+        modules = []
+        for mod_ref in data.get("modules", []):
+            if isinstance(mod_ref, str):
+                mod_path = course_dir / "modules" / mod_ref / "module.yaml"
+                mod_data = _read_yaml(mod_path)
+                if mod_data:
+                    mod_data["id"] = mod_ref
+                    # Resolve lab references
+                    labs = []
+                    for lab_ref in mod_data.get("labs", []):
+                        if isinstance(lab_ref, str):
+                            lab_entry = {"id": lab_ref, "title": lab_ref}
+                            # Try new hierarchical yaml
+                            lab_yaml = course_dir / "modules" / mod_ref / "labs" / lab_ref / "lab.yaml"
+                            parsed = _read_yaml(lab_yaml)
+                            title = _lab_title_from_yaml(parsed, lab_ref)
+                            if not title:
+                                # Try old flat yaml
+                                flat_yaml = course_dir / "modules" / mod_ref / "labs" / f"{lab_ref}.yaml"
+                                flat_parsed = _read_yaml(flat_yaml)
+                                title = _lab_title_from_yaml(flat_parsed, lab_ref)
+                            if not title:
+                                # Try markdown heading
+                                md_path = course_dir / "modules" / mod_ref / "labs" / f"{lab_ref}.md"
+                                title = _title_from_md(md_path)
+                            if title:
+                                lab_entry["title"] = title
+                        elif isinstance(lab_ref, dict):
+                            lab_entry = lab_ref
+                        else:
+                            continue
+                        labs.append(lab_entry)
+                    mod_data["labs"] = labs
+                    modules.append(mod_data)
+                else:
+                    modules.append({"id": mod_ref, "title": mod_ref, "labs": [], "chapters": []})
+            elif isinstance(mod_ref, dict):
+                modules.append(mod_ref)
+        if modules:
+            data["modules"] = modules
+        return data
+    json_path = course_dir / "course.json"
+    data = _read_json(json_path)
+    if data:
+        data["_source"] = "json"
+    return data
+
+
+def _content_hash(course_dir: Path) -> str:
+    """Hash course.yaml (or course.json) + all lab/module YAMLs to detect content change."""
+    h = hashlib.sha256()
+
+    for fname in ["course.yaml", "course.json"]:
+        fp = course_dir / fname
+        if fp.exists():
+            h.update(fp.read_bytes())
+            break
+
+    modules_dir = course_dir / "modules"
+    if modules_dir.exists():
+        for mod_dir in sorted(modules_dir.iterdir()):
+            if not mod_dir.is_dir():
+                continue
+            mod_yaml = mod_dir / "module.yaml"
+            if mod_yaml.exists():
+                h.update(mod_yaml.read_bytes())
+            labs_dir = mod_dir / "labs"
+            if labs_dir.exists():
+                for yaml_file in sorted(labs_dir.glob("*.yaml")):
+                    h.update(yaml_file.read_bytes())
+                for sub_dir in sorted(labs_dir.iterdir()):
+                    if sub_dir.is_dir():
+                        sub_yaml = sub_dir / "lab.yaml"
+                        if sub_yaml.exists():
+                            h.update(sub_yaml.read_bytes())
+
+    return h.hexdigest()[:16]
+
+
 def sync_courses(db: firestore.Client) -> dict:
     """
-    Read index.json + each course.json (v2 TOC), upsert to Firestore.
+    Read index.json + course content (yaml or json), upsert to Firestore.
     Returns a summary dict with counts.
     """
     index_path = _content_dir / "index.json"
@@ -103,10 +199,9 @@ def sync_courses(db: firestore.Client) -> dict:
             continue
 
         course_dir = _content_dir / "courses" / cid
-        course_json = course_dir / "course.json"
-        course_data = _read_json(course_json)
+        course_data = _read_course_data(course_dir)
         if course_data is None:
-            errors.append(f"courses/{cid}/course.json: not found or invalid")
+            errors.append(f"courses/{cid}: neither course.yaml nor course.json found")
             continue
 
         content_hash = _content_hash(course_dir)
@@ -124,27 +219,30 @@ def sync_courses(db: firestore.Client) -> dict:
         for mod in course_data.get("modules", []):
             chapters = []
             for ch in mod.get("chapters", []):
+                cid_val = ch["id"] if isinstance(ch, dict) else ch
+                ctitle = ch.get("title", cid_val) if isinstance(ch, dict) else cid_val
                 chapters.append({
-                    "id": ch["id"],
-                    "title": ch.get("title", ""),
-                    "description": ch.get("description", ""),
-                    "order": ch.get("order", 0),
+                    "id": cid_val,
+                    "title": ctitle,
+                    "description": "",
+                    "order": 0,
                 })
                 total_chapters += 1
 
             labs = []
             for lab in mod.get("labs", []):
+                lid = lab["id"] if isinstance(lab, dict) else lab
                 labs.append({
-                    "id": lab["id"],
-                    "title": lab.get("title", ""),
-                    "description": lab.get("description", ""),
-                    "chapterId": lab.get("chapterId", ""),
-                    "order": lab.get("order", 0),
+                    "id": lid,
+                    "title": lab.get("title", "") if isinstance(lab, dict) else "",
+                    "description": "",
+                    "chapterId": "",
+                    "order": 0,
                 })
                 total_labs += 1
 
             modules.append({
-                "id": mod["id"],
+                "id": mod.get("id", ""),
                 "title": mod.get("title", ""),
                 "description": mod.get("description", ""),
                 "order": mod.get("order", 0),

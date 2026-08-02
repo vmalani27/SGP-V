@@ -1,0 +1,10 @@
+id: docker-mastery
+title: Docker Mastery
+description: Containers, multi-stage builds, Docker Compose, and production-ready deployments.
+level: intermediate
+estimated_hours: 8
+modules:
+  - docker-fundamentals
+  - building-images
+  - container-networking
+  - persistent-storage

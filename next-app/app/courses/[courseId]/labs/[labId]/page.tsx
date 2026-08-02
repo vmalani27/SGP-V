@@ -6,15 +6,19 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import type { LabMeta, TaskStatus, TaskProgressData } from '@/lib/task-types';
 import LabTerminal from '@/components/LabTerminal';
 import Navbar from '@/components/Navbar';
+import LabTaskRenderer from '@/components/LabTaskRenderer';
+import CelebrationOverlay from '@/components/CelebrationOverlay';
+import SubmitLabModal from '@/components/SubmitLabModal';
 
 interface LabInfo {
   labId: string;
   title: string;
   moduleId: string;
   chapterId: string;
-  instructions: string;
+  instructions: string | null;
 }
 
 interface LabState {
@@ -26,20 +30,80 @@ interface LabState {
 
 type LabPhase = 'loading' | 'intro' | 'provisioning' | 'running' | 'error';
 
+// ── Lab meta helpers ────────────────────────────────────────────────
+const DEFAULT_META: LabMeta = {
+  id: '',
+  title: '',
+  difficulty: 'beginner',
+  estimated_time: 10,
+  xp: 50,
+  tags: [],
+  objectives: [],
+  environment: '',
+  completion: { required_tasks: 'all' },
+};
+
+function buildLabMeta(
+  config: Record<string, unknown> | null,
+  labId: string,
+  titleFallback: string,
+): LabMeta {
+  const meta: LabMeta = { ...DEFAULT_META, id: labId, title: titleFallback };
+  if (!config) return meta;
+
+  const fromLab = (lab: Record<string, unknown>) => {
+    if (lab.title) meta.title = String(lab.title);
+    if (lab.difficulty) meta.difficulty = lab.difficulty as LabMeta['difficulty'];
+    if (typeof lab.estimated_time === 'number') meta.estimated_time = lab.estimated_time;
+    if (typeof lab.xp === 'number') meta.xp = lab.xp;
+    if (Array.isArray(lab.tags)) meta.tags = lab.tags as string[];
+    if (Array.isArray(lab.objectives)) meta.objectives = lab.objectives as string[];
+    if (lab.completion) meta.completion = lab.completion as LabMeta['completion'];
+  };
+
+  if (Array.isArray(config.phases)) {
+    for (const phase of config.phases as { labs?: Record<string, unknown>[] }[]) {
+      const lab = (phase.labs || []).find((l) => l.id === labId);
+      if (lab) {
+        fromLab(lab);
+        break;
+      }
+    }
+  } else {
+    fromLab(config);
+  }
+
+  return meta;
+}
+
 export default function LabPage() {
   const params = useParams();
   const router = useRouter();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, refreshEnrollments } = useAuth();
 
   const courseId = params.courseId as string;
   const labId = params.labId as string;
 
   const [labInfo, setLabInfo] = useState<LabInfo | null>(null);
+  const [labMeta, setLabMeta] = useState<LabMeta | null>(null);
   const [labState, setLabState] = useState<LabState | null>(null);
   const [phase, setPhase] = useState<LabPhase>('loading');
   const [error, setError] = useState<string | null>(null);
   const [destroying, setDestroying] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
+  const [taskStatuses, setTaskStatuses] = useState<Record<string, TaskStatus>>({});
+  const [taskErrors, setTaskErrors] = useState<Record<string, string>>({});
+  const [tasksError, setTasksError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const celebrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const taskProgressRef = useRef<TaskProgressData | null>(null);
   const initialCheckDone = useRef(false);
 
   // Fetch lab instructions + check active session on mount
@@ -56,14 +120,18 @@ export default function LabPage() {
         title: data.title,
         moduleId: data.module_id,
         chapterId: data.chapter_id,
-        instructions: data.instructions || '',
+        instructions: data.instructions,
       };
       setLabInfo(labInfoResult);
     }).catch(() => {
-      labInfoResult = { labId, title: labId, moduleId: '', chapterId: '', instructions: '' };
+      labInfoResult = { labId, title: labId, moduleId: '', chapterId: '', instructions: null };
       setLabInfo(labInfoResult);
     }).finally(() => {
-      // After fetching instructions, check for active session
+      // After fetching instructions, build lab meta and check for active session
+      api.content.getLabConfig(courseId, labId)
+        .then((config) => setLabMeta(buildLabMeta(config, labId, labInfoResult?.title || labId)))
+        .catch(() => setLabMeta(buildLabMeta(null, labId, labInfoResult?.title || labId)));
+
       api.labs.active(courseId, labId).then((active) => {
         if (active) {
           setLabState({
@@ -88,7 +156,22 @@ export default function LabPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
+  useEffect(() => {
+    return () => {
+      if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current);
+    };
+  }, []);
+
+  const cancelCelebration = () => {
+    if (celebrateTimerRef.current) {
+      clearTimeout(celebrateTimerRef.current);
+      celebrateTimerRef.current = null;
+    }
+    setCelebrating(false);
+  };
+
   const handleStart = useCallback(async () => {
+    cancelCelebration();
     setPhase('provisioning');
     setError(null);
     try {
@@ -109,39 +192,76 @@ export default function LabPage() {
 
   const handleRestart = async () => {
     if (!labState) return;
+    cancelCelebration();
     setRestarting(true);
+    setPhase('provisioning');
     try {
-      await api.labs.destroy(courseId, labId, labState.sessionId);
+      // Restart the SAME container (stop + start) so the student's changes
+      // persist — e.g. adding 'student' to the docker group survives restart.
+      if (labState.status === 'running') {
+        await api.labs.stop(courseId, labId, labState.sessionId);
+      }
+      await api.labs.resume(courseId, labId, labState.sessionId);
+      setLabState({ ...labState, status: 'running' });
     } catch (e) {
-      console.error('Failed to destroy old lab:', e);
+      // Fall back to a full destroy + recreate if the container is unusable.
+      console.error('Stop/resume restart failed, recreating container:', e);
+      try {
+        await api.labs.destroy(courseId, labId, labState.sessionId);
+      } catch (e2) {
+        console.error('Failed to destroy old lab:', e2);
+      }
+      setLabState(null);
+      try {
+        const result = await api.labs.start(courseId, labId);
+        setLabState({
+          sessionId: result.session_id,
+          wsUrl: result.ws_url,
+          containerName: result.container_name,
+          status: result.status,
+        });
+      } catch (e3) {
+        const msg = e3 instanceof Error ? e3.message : 'Failed to start lab';
+        setError(msg);
+        setPhase('error');
+        setRestarting(false);
+        return;
+      }
     }
-    setLabState(null);
     setRestarting(false);
-    await handleStart();
+    setPhase('running');
   };
 
   const handleStop = async () => {
-    if (!labState) return;
+    if (!labState || stopping) return;
+    setStopping(true);
     try {
       await api.labs.stop(courseId, labId, labState.sessionId);
       setLabState({ ...labState, status: 'stopped' });
     } catch (e) {
       console.error('Failed to stop lab:', e);
+    } finally {
+      setStopping(false);
     }
   };
 
   const handleResume = async () => {
-    if (!labState) return;
+    if (!labState || resuming) return;
+    setResuming(true);
     try {
       await api.labs.resume(courseId, labId, labState.sessionId);
       setLabState({ ...labState, status: 'running' });
     } catch (e) {
       console.error('Failed to resume lab:', e);
+    } finally {
+      setResuming(false);
     }
   };
 
   const handleDestroy = async () => {
     if (!labState) return;
+    cancelCelebration();
+    setSubmitOpen(false);
     setDestroying(true);
     try {
       await api.labs.destroy(courseId, labId, labState.sessionId);
@@ -154,6 +274,86 @@ export default function LabPage() {
     }
   };
 
+  const handleSubmitLab = async () => {
+    if (!labState || !labInfo) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      if (labInfo.moduleId) {
+        await api.courses.updateLabProgress(courseId, labId, labInfo.moduleId);
+      }
+      await api.labs.destroy(courseId, labId, labState.sessionId);
+      setLabState(null);
+      setPhase('intro');
+      setSubmitOpen(false);
+      cancelCelebration();
+      await refreshEnrollments();
+      router.push(`/courses/${courseId}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to submit lab. Please try again.';
+      setSubmitError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Load real tasks once the lab session is running
+  useEffect(() => {
+    if (phase !== 'running' || taskProgress) return;
+    let cancelled = false;
+
+    api.labs.tasks(courseId, labId)
+      .then((data) => {
+        if (cancelled) return;
+        if (data.tasks.length === 0) {
+          setTasksError('This lab has no tasks yet.');
+          return;
+        }
+        setTaskProgress({ tasks: data.tasks, currentIndex: 0, completed: false });
+        taskProgressRef.current = { tasks: data.tasks, currentIndex: 0, completed: false };
+      })
+      .catch(() => {
+        if (!cancelled) setTasksError('Failed to load lab tasks. Refresh the page to retry.');
+      });
+
+    return () => { cancelled = true; };
+  }, [phase, taskProgress, courseId, labId]);
+
+  const handleValidate = useCallback(async (taskId: string, answer?: string) => {
+    if (!labState) return;
+    setValidating(true);
+    setTaskErrors((prev) => ({ ...prev, [taskId]: '' }));
+    try {
+      const result = await api.labs.validate(courseId, labId, taskId, answer);
+      if (result.correct) {
+        setTaskStatuses((prev) => ({ ...prev, [taskId]: 'correct' }));
+        setCelebrating(true);
+        if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current);
+        celebrateTimerRef.current = setTimeout(() => {
+          celebrateTimerRef.current = null;
+          setCelebrating(false);
+          const prev = taskProgressRef.current;
+          if (!prev) return;
+          const nextIndex = prev.currentIndex + 1;
+          const completed = nextIndex >= prev.tasks.length;
+          const next = { ...prev, currentIndex: nextIndex, completed };
+          taskProgressRef.current = next;
+          setTaskProgress(next);
+          if (completed) setSubmitOpen(true);
+        }, 1400);
+      } else {
+        setTaskStatuses((prev) => ({ ...prev, [taskId]: 'incorrect' }));
+        setTaskErrors((prev) => ({ ...prev, [taskId]: result.error || 'Incorrect. Try again.' }));
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Validation failed.';
+      setTaskStatuses((prev) => ({ ...prev, [taskId]: 'incorrect' }));
+      setTaskErrors((prev) => ({ ...prev, [taskId]: msg }));
+    } finally {
+      setValidating(false);
+    }
+  }, [courseId, labId, labState]);
+
   if (authLoading || phase === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0f1419]">
@@ -162,14 +362,13 @@ export default function LabPage() {
     );
   }
 
-  const hasInstructions = labInfo?.instructions && labInfo.instructions.length > 0;
-
   return (
-    <div className="h-screen flex flex-col bg-[#0f1419] overflow-hidden">
+    <div className="h-screen flex flex-col bg-[#0f1419] overflow-hidden pt-14">
       <Navbar
         breadcrumb={[
           { label: 'Dashboard', href: '/dashboard' },
           { label: courseId, href: `/courses/${courseId}` },
+          { label: (labInfo?.moduleId || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Course' },
           { label: labInfo?.title || labId },
         ]}
       />
@@ -187,148 +386,195 @@ export default function LabPage() {
 
           <div className="flex items-center gap-2">
             {labState.status === 'running' && (
-              <button onClick={handleStop} className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded text-xs font-medium transition-colors">
-                Pause
+              <button onClick={handleStop} disabled={stopping || restarting || destroying} className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {stopping ? 'Pausing...' : 'Pause'}
               </button>
             )}
             {labState.status === 'stopped' && (
-              <button onClick={handleResume} className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded text-xs font-medium transition-colors">
-                Resume
+              <button onClick={handleResume} disabled={resuming || restarting || destroying} className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {resuming ? 'Resuming...' : 'Resume'}
               </button>
             )}
-            <button onClick={handleRestart} disabled={restarting} className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded text-xs font-medium transition-colors disabled:opacity-50">
+            <button onClick={handleRestart} disabled={restarting || stopping || resuming || destroying} className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded text-xs font-medium transition-colors disabled:opacity-50">
               {restarting ? 'Restarting...' : 'Restart'}
             </button>
-            <button onClick={handleDestroy} disabled={destroying} className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded text-xs font-medium transition-colors disabled:opacity-50">
+            <button onClick={handleDestroy} disabled={destroying || stopping || resuming || restarting} className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded text-xs font-medium transition-colors disabled:opacity-50">
               {destroying ? 'Destroying...' : 'Destroy'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Two-pane body */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left pane — instructions */}
-        {(phase === 'intro' || phase === 'running' || phase === 'provisioning') && labInfo && (
-          <div className={`overflow-y-auto border-r border-gray-800 ${
-            (phase === 'running' || phase === 'provisioning') ? 'w-[400px] min-w-[320px]' : 'flex-1 max-w-3xl mx-auto px-6'
-          }`}>
-            <div className="px-6 py-8">
-              {/* Header */}
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-400">
-                    Lab
-                  </span>
-                  {labInfo?.moduleId && (
-                    <span className="text-xs text-muted">{labInfo.moduleId}</span>
-                  )}
-                </div>
-                <h1 className="text-2xl font-bold text-text">
-                  {labInfo?.title || labId}
-                </h1>
-              </div>
+      {/* Intro — centered card before lab starts */}
+      {phase === 'intro' && (() => {
+        const meta = labMeta || { ...DEFAULT_META, id: labId, title: labInfo?.title || labId };
+        return (
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-xl mx-auto px-6 py-12">
+            <div className="flex items-center gap-2 text-xs text-muted mb-6">
+              <span>{labInfo?.moduleId || 'Course'}</span>
+              <span className="text-muted/40">/</span>
+              <span className="text-text font-medium">{meta.title}</span>
+            </div>
 
-              {/* Instructions */}
-              {hasInstructions && (
-                <div className="prose prose-invert prose-sm max-w-none">
+            <h1 className="text-3xl font-bold text-text mb-2">{meta.title}</h1>
+
+            <div className="flex items-center gap-4 text-xs text-muted mb-6">
+              <span className="flex items-center gap-1">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                {meta.estimated_time} min
+              </span>
+              <span className="flex items-center gap-1">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                {meta.xp} XP
+              </span>
+              <span className="capitalize">{meta.difficulty}</span>
+            </div>
+
+            <div className="p-5 rounded-xl bg-gray-900/60 border border-gray-800 mb-8">
+              {labInfo?.instructions ? (
+                <article className="prose-custom max-w-none text-sm text-text leading-relaxed">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {labInfo.instructions}
                   </ReactMarkdown>
-                </div>
-              )}
-              {!hasInstructions && phase === 'intro' && (
-                <p className="text-muted text-sm">
-                  No written instructions for this lab. Start the environment and follow the tasks in the terminal.
+                </article>
+              ) : (
+                <p className="text-sm text-text leading-relaxed">
+                  Complete the tasks below to finish this lab.
                 </p>
               )}
-
-
             </div>
+
+            {meta.objectives.length > 0 && (
+              <>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Objectives</h3>
+                <div className="space-y-2 mb-8">
+                  {meta.objectives.map((obj, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 mt-0.5 shrink-0">
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                        </svg>
+                      </span>
+                      <p className="text-sm text-text">{obj}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <button
+              onClick={handleStart}
+              className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-medium transition-colors text-sm"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+              </svg>
+              Start Lab
+            </button>
           </div>
-        )}
+        </div>
+        );
+      })()}
 
-        {/* Right pane — terminal / action */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {phase === 'intro' && (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center max-w-sm">
-                <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
-                  <svg className="h-8 w-8 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
-                  </svg>
+      {/* Split-pane body — provisioning / running / error */}
+      {phase !== 'intro' && (
+        <div className="relative flex flex-1 overflow-hidden">
+          {phase === 'running' && celebrating && <CelebrationOverlay />}
+          {/* Left pane — tasks */}
+          {(phase === 'provisioning' || phase === 'running') && (
+            <div className="overflow-y-auto border-r border-gray-800 w-[400px] min-w-[320px]">
+              <div className="px-6 py-8">
+                {(phase === 'running' && taskProgress && taskProgress.tasks.length > 0) ? (
+                  <LabTaskRenderer
+                    progress={taskProgress}
+                    taskStatuses={taskStatuses}
+                    taskErrors={taskErrors}
+                    validating={validating}
+                    onValidate={handleValidate}
+                  />
+                ) : tasksError ? (
+                  <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <p className="text-sm text-red-300">{tasksError}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm text-muted">
+                      <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                      Loading lab tasks...
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Right pane — terminal / action */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {phase === 'provisioning' && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center space-y-4">
+                  <div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-gray-300 text-sm">
+                    {restarting ? 'Restarting lab environment...' : 'Provisioning lab environment...'}
+                  </p>
+                  <p className="text-gray-500 text-xs">Hang on, this will take a few minutes</p>
                 </div>
-                <h2 className="text-lg font-semibold text-text mb-2">Ready when you are</h2>
-                <p className="text-sm text-muted mb-6">
-                  Read the instructions on the left, then start the lab to open a live terminal.
-                </p>
-                <button
-                  onClick={handleStart}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
-                  </svg>
-                  Start Lab
-                </button>
               </div>
-            </div>
-          )}
+            )}
 
-          {phase === 'provisioning' && (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center space-y-4">
-                <div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-gray-300 text-sm">
-                  {restarting ? 'Restarting lab environment...' : 'Provisioning lab environment...'}
-                </p>
-                <p className="text-gray-500 text-xs">Pulling image, creating container, installing packages</p>
-              </div>
-            </div>
-          )}
-
-          {phase === 'running' && labState && (
-            <>
-              {labState.status === 'running' && labState.wsUrl && (
-                <LabTerminal
-                  wsUrl={labState.wsUrl}
-                  className="flex-1 p-2"
-                />
-              )}
-              {labState.status === 'stopped' && (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center space-y-3">
+            {phase === 'running' && labState && (
+              <>
+                {labState.status === 'running' && labState.wsUrl && (
+                  <LabTerminal
+                    key={labState.wsUrl}
+                    wsUrl={labState.wsUrl}
+                    className="flex-1 p-2"
+                  />
+                )}
+                {labState.status === 'stopped' && (
+                  <div className="flex-1 flex items-center justify-center">
                     <p className="text-gray-400">Lab is paused</p>
-                    <button onClick={handleResume} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors">
-                      Resume Lab
+                  </div>
+                )}
+              </>
+            )}
+
+            {phase === 'error' && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center space-y-4 max-w-md">
+                  <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
+                    <span className="text-red-400 text-xl">!</span>
+                  </div>
+                  <h2 className="text-lg font-semibold text-white">Lab Failed to Start</h2>
+                  <p className="text-gray-400 text-sm">{error}</p>
+                  <div className="flex gap-3 justify-center">
+                    <button onClick={handleStart} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors">
+                      Retry
+                    </button>
+                    <button onClick={() => router.push(`/courses/${courseId}`)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg text-sm font-medium transition-colors">
+                      Back to Course
                     </button>
                   </div>
                 </div>
-              )}
-            </>
-          )}
-
-          {phase === 'error' && (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center space-y-4 max-w-md">
-                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
-                  <span className="text-red-400 text-xl">!</span>
-                </div>
-                <h2 className="text-lg font-semibold text-white">Lab Failed to Start</h2>
-                <p className="text-gray-400 text-sm">{error}</p>
-                <div className="flex gap-3 justify-center">
-                  <button onClick={handleStart} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors">
-                    Retry
-                  </button>
-                  <button onClick={() => router.push(`/courses/${courseId}`)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg text-sm font-medium transition-colors">
-                    Back to Course
-                  </button>
-                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      <SubmitLabModal
+        open={submitOpen}
+        submitting={submitting}
+        error={submitError}
+        labTitle={labInfo?.title || labId}
+        onSubmit={handleSubmitLab}
+        onClose={() => setSubmitOpen(false)}
+      />
     </div>
   );
 }

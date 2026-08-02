@@ -20,11 +20,13 @@
 **What was built:**
 
 - `content-v2/index.json` — course catalog with `version: "2.0"`
-- `content-v2/courses/{id}/course.json` — pure TOC (modules, chapters, labs, ordering). No quiz data, no correct answers, no embedded content.
+- `content-v2/environments/{name}.yaml` — shared environment definitions (base_image, pre_pull, apt_packages)
+- `content-v2/courses/{id}/course.yaml` — primary TOC (module references). Falls back to `course.json`.
+- `content-v2/courses/{id}/modules/{module-id}/module.yaml` — module metadata with lab/chapter references
 - `content-v2/courses/{id}/modules/{module-id}/chapters/{chapter-id}.md` — theory markdown
-- `content-v2/courses/{id}/modules/{module-id}/labs/lab-{n}.md` — lab instructions
-- `content-v2/courses/{id}/modules/{module-id}/labs/lab-{n}.yaml` — environment + validation tasks
-- Worker `validator.py` validates v2 schema: index, course.json TOC, markdown existence, lab YAML structure
+- `content-v2/courses/{id}/modules/{module-id}/labs/{lab-id}/lab.yaml` + `instructions.md` — per-lab directory format
+- `content-v2/courses/{id}/modules/{module-id}/labs/lab-{n}.yaml` — old monolithic format (backward compat)
+- Worker `validator.py` validates both YAML and JSON course files, both flat and monolithic lab formats
 - Worker `seeder.py` syncs nested module/chapter/lab structure to Firestore with `contentHash` for idempotent upserts; removes orphaned courses
 - Backend `PUT /api/v1/courses/{courseId}/progress` endpoint persists `{moduleId: {chapterId: status}}` to enrollment
 - Backend `GET /api/v1/users/me/enrollments` computes `percentage` per enrollment using `totalChapters` from Firestore courses
@@ -41,13 +43,19 @@
 | Area | Before | After | Why |
 |------|--------|-------|-----|
 | Source of truth | `content/` (old) + `content-v2/` (new) coexisting | `content-v2/` only | Single authority eliminates confusion |
-| Folder structure | Flat `module-1/` with 21 files from 4 modules | `modules/{module-id}/chapters/` + `modules/{module-id}/labs/` | Hierarchy is self-documenting |
+| Course TOC format | `course.json` only | `course.yaml` (primary) + `course.json` (fallback) | YAML is more author-friendly; JSON kept for backward compat |
+| Folder structure | Flat `module-1/` with 21 files from 4 modules | `modules/{module-id}/chapters/` + `modules/{module-id}/labs/{lab-id}/` | Hierarchy is self-documenting |
+| Lab format | Monolithic `lab-1.yaml` with phases + inline env | Per-lab `lab.yaml` + `instructions.md`, shared env ref | One lab per file, environment config externalized |
+| Environment config | Inline dict in each lab YAML | Shared `environments/{name}.yaml` referenced by string | Single source of truth for base images, pre-pull lists |
 | course.json | 664 lines: TOC + quiz questions + correct answers + explanations | Pure TOC (~180 lines): IDs, titles, ordering only | No answers leak to frontend |
-| Quiz system | Static: frontend receives `correct_answer` in JSON | Dynamic: validation runs in Docker container | Correct answers never leave the server |
+| Quiz system | Static: frontend receives `correct_answer` in JSON | Dynamic: validation runs in Docker container via exec | Correct answers never leave the server |
 | Worker sync | Synced monolithic course.json | Syncs nested module structure with `contentHash` | Idempotent, detects changes |
+| Worker validator | Validated only JSON course.json | Validates YAML + JSON, both flat and monolithic lab formats | Supports both content structures |
 | Backend content serving | Proxy to orchestrator | Direct filesystem reads via `ContentProvider` abstraction | Removes unnecessary network hop; S3 swap is one class away |
+| Backend lab proxy | Frontend→Orchestrator directly | Frontend→Backend→Orchestrator | Auth, session tracking, usage analytics |
 | Enrollment progress | Flat chapter completion | Nested `{moduleId: {chapterId: status}}` | Matches v2 TOC structure |
 | Orchestrator responsibilities | Content serving + Docker execution | Docker execution only | Separation of concerns |
+| Validation flow | `validator.sh` scripts baked in images | Frontend-driven exec + client-side comparison | No need to rebuild images for task changes |
 
 ### Tradeoffs made
 
@@ -56,11 +64,11 @@
 - After: all validation is lab-based (Docker container). No lightweight assessment for theory-only chapters.
 - Acceptance: during rapid development, lab-only validation is sufficient. Can add optional static comprehension quizzes later as a separate concern.
 
-**2. course.json is append-only by convention**
-- The TOC is the enrollment contract. Once users are enrolled, the module/chapter structure defines what "100% complete" means.
+**2. Course TOC is append-only by convention**
+- The module/chapter/lab structure defines what "100% complete" means once users are enrolled.
 - See "Course Immutability Rules" below for the full policy.
 
-**3. contentHash uses only course.json + lab YAMLs**
+**3. contentHash uses course TOC + lab YAMLs only**
 - Chapter markdown is not included in the hash because content changes (typo fixes, rewording) don't affect enrollment structure.
 - If chapter content changes need to be surfaced to users (e.g. "this chapter was updated"), that requires a separate `contentVersion` field. Not implemented yet.
 
@@ -68,16 +76,19 @@
 - Event-driven sync via S3 notifications is the target architecture. Current polling is fine for development with 2 courses.
 - See "Deployment Architecture" below.
 
-**5. Backend no longer proxies to orchestrator for content**
+**5. Backend serves content directly**
 - Phase 2 complete. Backend reads content-v2 filesystem directly via `ContentProvider` abstraction.
 - `FilesystemProvider` reads from local directory. When S3 comes, write `S3Provider` and set `CONTENT_SOURCE=s3`.
-- `httpx` kept in requirements for future Phase 3 (orchestrator lab validation calls).
 
 **6. Orchestrator is now labs-only (Phase 3 complete)**
 - `orchestrator/app/api/content.py` deleted. Content serving moved entirely to backend.
 - Orchestrator has zero knowledge of course structure — it only manages Docker containers.
 - `CONTENT_DIR` env var removed from orchestrator config and docker-compose.
-- `content-v2` volume mount removed from orchestrator in docker-compose.
+
+**7. Two lab formats coexist**
+- Old monolithic `lab-1.yaml` with phases + inline environment still works (backward compat).
+- New flat format `hello-world/lab.yaml` with environment reference is the future direction.
+- Content provider reads both transparently. No router changes needed.
 
 ---
 
@@ -90,10 +101,10 @@
 
 | Service | Reads from content-v2 | Writes to | Does NOT do |
 |---------|----------------------|-----------|-------------|
-| **Worker** | `index.json`, `course.json` | Firestore `courses` | Serve content |
-| **Backend** | `course.json` (TOC), `chapters/*.md`, `labs/*.yaml` | Firestore `users`, `enrollments` | Run Docker containers |
-| **Orchestrator** | (no content) | Docker containers | Serve course content |
-| **Frontend** | Nothing (all from backend API) | — | Directly access filesystem or orchestrator |
+| **Worker** | `index.json`, `course.yaml`/`course.json`, `module.yaml`, `lab.yaml` | Firestore `courses` | Serve content |
+| **Backend** | `course.yaml`/`course.json`, `module.yaml`, `chapters/*.md`, `labs/*/lab.yaml`, `environments/*.yaml` | Firestore `users`, `enrollments` | Run Docker containers |
+| **Orchestrator** | (no content) | Docker containers | Serve course content, read lab files |
+| **Frontend** | Nothing (all from backend API) | — | Directly access filesystem or orchestrator directly |
 
 ### Decision 3: Data flow (unidirectional)
 ```
@@ -101,19 +112,25 @@ content-v2/ (source of truth on disk / S3)
     │
     ├──→ Worker ──→ Firestore courses (metadata cache, idempotent sync)
     │
-    ├──→ Backend ──→ Frontend (TOC, chapter content, lab metadata)
+    ├──→ Backend ──→ Frontend (TOC, chapter content, lab config, tasks)
     │       │
-    │       └──→ Orchestrator (lab lifecycle: start, validate, stop)
+    │       └──→ Orchestrator (lab lifecycle: start, exec, stop, destroy)
     │
     └──→ Orchestrator (Docker lifecycle only: start, exec, stop, destroy)
 ```
 
-### Decision 4: Quiz/validation model
-No static quizzes. All validation is dynamic and runs in the lab container:
-- Frontend shows prompt + dynamic options
-- Student answers → backend → orchestrator runs validation command in container
-- Orchestrator returns output, backend compares, returns pass/fail
-- **Correct answers never leave the server**
+### Decision 4: Validation model
+All validation is exec-based. The frontend drives validation by sending commands through the backend to the orchestrator:
+
+1. Frontend reads task definitions from backend's content API
+2. Student completes the task in the lab terminal
+3. Student clicks "Check"
+4. Frontend sends `POST /labs/{id}/exec` with the validation command
+5. Orchestrator runs the command in the container, returns output
+6. Frontend compares output to `expected_output` using `match_type`
+7. **Correct answers never leave the server** (expected_output is in the YAML, only the comparison happens client-side)
+
+A legacy `validator.sh` endpoint still exists but is being phased out.
 
 ### Decision 5: No dead code policy
 - Old `content/` directory deleted
@@ -139,7 +156,7 @@ Enrollment progress is stored as `{moduleId: {chapterId: "completed"}}`. The enr
 |-------------|----------|-------------------------------|
 | Fix typo in chapter markdown | Yes | None — content changes don't affect structure |
 | Fix typo in lab YAML | Yes | None — validation commands may change but structure doesn't |
-| Fix typo in course.json title/description | Yes | None — metadata only |
+| Fix typo in course.yaml title/description | Yes | None — metadata only |
 | Add a new module at the end | Yes | Existing users' `totalChapters` is stale. New module doesn't appear in their curriculum until they re-enroll or we add migration logic |
 | Add a chapter to an existing module at the end | Yes | Existing users' `totalChapters` is stale — their percentage becomes inaccurate until they complete the new chapter. This is acceptable |
 | Add a lab to an existing module | Yes | Same as adding a chapter |
@@ -159,7 +176,7 @@ Before the course has real users, these rules are relaxed. During active authori
 ### Enforcement post-launch
 
 Once real users exist:
-1. **Worker validator rejects structural changes.** Add a `--check-structure` mode that diffs the new course.json against the Firestore document and fails if modules/chapters/labs are removed or reordered.
+1. **Worker validator rejects structural changes.** Add a `--check-structure` mode that diffs the new course TOC against the Firestore document and fails if modules/chapters/labs are removed or reordered.
 2. **Firestore courses document gets a `structuralHash`** (separate from `contentHash`) that covers only module/chapter/lab IDs and ordering. Worker checks this before writing.
 3. **Backend refuses to serve a course whose structuralHash doesn't match Firestore** — prevents stale content from reaching users.
 
@@ -215,9 +232,9 @@ Worker polls the filesystem every 300s. Fine for development with 2 courses.
 - Lambda cold start is acceptable for content sync (runs few times per day during development)
 
 **What changes for backend:**
-- Backend reads `course.json` and markdown from S3 (or a local cache seeded from S3)
+- Backend reads course TOC and markdown from S3 (or a local cache seeded from S3)
 - Backend serves chapter content directly — no filesystem mount needed
-- Orchestrator still reads lab YAMLs from S3 for environment config
+- Orchestrator still receives environment config from backend (no changes needed)
 
 ### How S3 + event-driven sync affects enrollments
 
@@ -253,16 +270,17 @@ The same immutability rules apply, but the enforcement path changes:
 6. ~~Add `pyyaml` to backend requirements~~ — Done
 7. ~~All content API endpoints verified — backend serves content without orchestrator~~ — Done
 
-**New endpoints added:**
+**Content API endpoints:**
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /api/v1/content/courses` | Course catalog (from index.json) |
-| `GET /api/v1/content/courses/{id}` | Course TOC (from course.json) |
+| `GET /api/v1/content/courses/{id}` | Course TOC (from course.yaml with module.yaml resolution) |
 | `GET /api/v1/content/courses/{id}/chapters/{chapterId}` | Chapter markdown + metadata |
 | `GET /api/v1/content/courses/{id}/labs` | Lab list for a course |
 | `GET /api/v1/content/courses/{id}/labs/{labId}/instructions` | Lab instructions markdown |
-| `GET /api/v1/content/courses/{id}/labs/{labId}/config` | Lab YAML config (env + validation tasks) |
+| `GET /api/v1/content/courses/{id}/labs/{labId}/config` | Lab YAML config (environment resolved + tasks) |
+| `GET /api/v1/content/courses/{id}/labs/{labId}/tasks` | Lab tasks (extracted from both flat and monolithic formats) |
 
 **Content provider architecture:**
 
@@ -281,18 +299,30 @@ To swap to S3: implement `S3Provider`, add `CONTENT_SOURCE=s3` env var, remove v
 4. ~~Remove `content-v2` volume mount from orchestrator in docker-compose~~ — Done
 5. Update orchestrator README — Done
 
-Orchestrator now has zero content knowledge. Backend reads lab YAML, extracts environment config, and forwards to orchestrator. `COURSE_LAB_MAP` removed — orchestrator accepts `{image, lab_id}` directly.
+Orchestrator now has zero content knowledge. Backend reads lab YAML, resolves environment config, and forwards to orchestrator. `COURSE_LAB_MAP` removed — orchestrator accepts `{image, lab_id}` directly.
 
 Backend proxy endpoints:
 
 | Endpoint | Proxies to |
 |----------|-----------|
 | `POST /api/v1/labs/courses/{id}/labs/{labId}/start` | `POST /labs` |
+| `GET /api/v1/labs/courses/{id}/labs/{labId}/active` | `GET /labs/{sid}` |
 | `GET /api/v1/labs/courses/{id}/labs/{labId}/status/{sid}` | `GET /labs/{sid}` |
 | `POST /api/v1/labs/courses/{id}/labs/{labId}/stop/{sid}` | `POST /labs/{sid}/stop` |
 | `POST /api/v1/labs/courses/{id}/labs/{labId}/resume/{sid}` | `POST /labs/{sid}/resume` |
 | `DELETE /api/v1/labs/courses/{id}/labs/{labId}/{sid}` | `DELETE /labs/{sid}` |
 | `POST /api/v1/labs/courses/{id}/labs/{labId}/exec/{sid}` | `POST /labs/{sid}/exec` |
+| `POST /api/v1/labs/courses/{id}/labs/{labId}/token/{sid}` | (JWT generation, no proxy) |
+
+### Phase 3.5: Content format evolution
+1. Added `course.yaml` support (YAML-first, JSON fallback) — Done
+2. Added `module.yaml` resolution for module references — Done
+3. Added per-lab directory format (`labs/{lab-id}/lab.yaml` + `instructions.md`) — Done
+4. Added shared environment definitions (`environments/{name}.yaml`) — Done
+5. Added `GET /tasks` endpoint extracting tasks from both formats — Done
+6. Updated lab schema to validate both flat and monolithic formats — Done
+7. Updated validator to accept both YAML and JSON course files — Done
+8. Old monolithic `lab-1.yaml` still works for backward compat — Done
 
 ### Phase 4: Frontend adapts to new data model
 1. Rewrite `content-types.ts` (remove static quiz types, add lab task types)
@@ -301,16 +331,13 @@ Backend proxy endpoints:
 4. Remove all references to `correct_answer` / `explanation` in frontend
 
 ### Phase 5: Clean up
-1. Delete old `orchestrator/schemas/lab-sample.yaml` (lab YAMLs live in content-v2)
-2. Remove dead imports, unused types, stale env vars
-3. Update READMEs
-4. Write all 18 remaining lab YAML files (authoring work, not engineering)
+1. Remove dead imports, unused types, stale env vars
+2. Verify task definitions for all labs (3 done, 7 metadata-shells pending)
 
 ---
 
 ## Risks
 
-1. **Lab YAML authoring** — 2 of 20 labs have YAML files. 18 more need creation. This is content authoring, not engineering.
+1. **Lab YAML authoring** — 3 labs have full task definitions (lab-1/hello-world, images, env-vars). 7 more need task definitions (labs 4-10 have metadata-only shells). This is content authoring, not engineering.
 2. **Frontend lab task runner** — replacing static quizzes with dynamic task runners that interact with a running container through the backend is a significant rewrite.
 3. **No quiz = no lightweight assessment** — theory chapters have no way to check understanding without spinning up a container. Consider optional static comprehension quizzes as a future addition.
-4. **Backend-orchestrator API contract** — what does `POST /labs/{id}/validate` look like? Needs definition before Phase 3.

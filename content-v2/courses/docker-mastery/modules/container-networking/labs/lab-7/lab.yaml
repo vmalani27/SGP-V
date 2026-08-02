@@ -1,0 +1,17 @@
+id: lab-7
+title: Container Networking
+difficulty: intermediate
+estimated_time: 20
+xp: 100
+tags:
+  - docker
+  - networking
+environment: docker-basic
+
+objectives:
+  - Create custom bridge networks
+  - Connect containers to networks
+  - Verify container-to-container communication
+
+completion:
+  required_tasks: all

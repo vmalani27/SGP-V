@@ -1,0 +1,17 @@
+id: lab-8
+title: Docker Compose
+difficulty: intermediate
+estimated_time: 25
+xp: 125
+tags:
+  - docker
+  - compose
+environment: docker-basic
+
+objectives:
+  - Define multi-service apps with Docker Compose
+  - Use docker-compose.yml
+  - Start and stop composed services
+
+completion:
+  required_tasks: all
