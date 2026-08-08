@@ -213,6 +213,16 @@ def _fetch_latest(db) -> dict | None:
         return None
 
 
+def _clear_dir(path: Path) -> None:
+    """Remove a directory's contents. s3_dir may be a mount point, which
+    rmtree cannot delete — remove children instead."""
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def download_content(s3_dir: Path, db) -> str | None:
     """Make the latest published content available on s3_dir.
 
@@ -268,9 +278,19 @@ def download_content(s3_dir: Path, db) -> str | None:
                 raise RuntimeError(f"Extracted file missing: {entry['path']}")
             if hashlib.sha256(path.read_bytes()).hexdigest()[:16] != entry["sha256"]:
                 raise RuntimeError(f"Extracted file checksum mismatch: {entry['path']}")
-        if s3_dir.exists():
-            shutil.rmtree(s3_dir)
-        tmp_dir.rename(s3_dir)
+
+        # Swap the extracted tree into s3_dir. s3_dir is typically a volume
+        # mount point, so neither rmtree nor rename can operate on it
+        # directly — move the verified contents in instead.
+        s3_dir.mkdir(parents=True, exist_ok=True)
+        for child in tmp_dir.iterdir():
+            target = s3_dir / child.name
+            if target.exists():
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            shutil.move(str(child), str(target))
     except Exception:
         if tmp_dir.exists():
             shutil.rmtree(tmp_dir)
@@ -312,6 +332,8 @@ def sync_courses(db: firestore.Client, content_dir: Path, content_version: str |
 
         existing_doc = existing.get(cid)
         if existing_doc and existing_doc.get("contentHash") == content_hash:
+            if content_version is not None and existing_doc.get("contentVersion") != content_version:
+                courses_ref.document(cid).set({"contentVersion": content_version}, merge=True)
             skipped += 1
             continue
 
