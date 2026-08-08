@@ -60,17 +60,25 @@ services:
       - "8002:8000"
     volumes:
       - ./worker:/app
-      - ./content-v2:/app/content:ro
+      - worker_content:/data/content
       - ./backend/app/core/credentials.json:/app/credentials.json:ro
+    extra_hosts:
+      - "localhost.floci.io:host-gateway"
     environment:
-      - CONTENT_DIR=/app/content
+      - CONTENT_DIR_S3=/data/content
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
       - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON:-}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
       - SYNC_INTERVAL_SECONDS=300
+      - S3_BUCKET=course-content
+      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://localhost.floci.io:4566}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
     depends_on:
       - backend
     restart: unless-stopped
 
 volumes:
   frontend_next:
+  worker_content:

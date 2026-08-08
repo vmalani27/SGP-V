@@ -32,9 +32,12 @@ Synced document shape (Firestore courses collection):
 
 from __future__ import annotations
 
+import io
 import json
 import hashlib
 import logging
+import shutil
+import tarfile
 from datetime import datetime
 from pathlib import Path
 
@@ -42,11 +45,9 @@ import yaml
 
 from firebase_admin import firestore
 
-from app.config import CONTENT_DIR
+from app.config import AWS_ENDPOINT_URL, AWS_REGION, S3_BUCKET
 
 logger = logging.getLogger("worker.seeder")
-
-_content_dir = Path(CONTENT_DIR)
 
 
 def _read_json(path: Path) -> dict | None:
@@ -169,12 +170,122 @@ def _content_hash(course_dir: Path) -> str:
     return h.hexdigest()[:16]
 
 
-def sync_courses(db: firestore.Client) -> dict:
+# ── S3 content source ─────────────────────────────────────────────────────────
+
+def _s3_client():
+    import boto3
+    return boto3.client(
+        "s3",
+        region_name=AWS_REGION,
+        endpoint_url=AWS_ENDPOINT_URL or None,
+    )
+
+
+def _seeded_content_version(db) -> str | None:
+    """Version of the last content seeded from S3 (any course doc carries it)."""
+    for doc in db.collection("courses").stream():
+        version = doc.to_dict().get("contentVersion")
+        if version:
+            return version
+    return None
+
+
+class ContentNotPublished(Exception):
+    """Raised when the bucket is reachable but nothing has been published yet."""
+
+
+def _fetch_latest(db) -> dict | None:
+    """Fetch latest.json from S3.
+
+    Returns the parsed manifest, or None when S3 is unconfigured/unreachable.
+    Raises ContentNotPublished when the bucket is reachable but has no content.
     """
-    Read index.json + course content (yaml or json), upsert to Firestore.
+    if not S3_BUCKET:
+        return None
+    try:
+        client = _s3_client()
+        resp = client.get_object(Bucket=S3_BUCKET, Key="latest.json")
+        return json.loads(resp["Body"].read().decode("utf-8"))
+    except client.exceptions.NoSuchKey:
+        raise ContentNotPublished() from None
+    except Exception:
+        logger.warning("S3 content source unavailable", exc_info=True)
+        return None
+
+
+def download_content(s3_dir: Path, db) -> str | None:
+    """Make the latest published content available on s3_dir.
+
+    Returns the published version when S3 is the active source (downloading
+    it first if the version changed), or None when S3 is unconfigured,
+    unreachable, or has no published content yet — the caller treats that as
+    a hard failure, never a fallback.
+
+    Raises on integrity failures — a corrupt download must not seed silently.
+    """
+    try:
+        latest = _fetch_latest(db)
+    except ContentNotPublished:
+        logger.info("No published content in bucket '%s' yet (latest.json not found)", S3_BUCKET)
+        return None
+    if latest is None:
+        return None
+
+    version = latest.get("version")
+    if not version:
+        raise ValueError("latest.json is missing 'version'")
+
+    if version == _seeded_content_version(db) and (s3_dir / "index.json").exists():
+        return version  # already current
+
+    client = _s3_client()
+    prefix = f"published/{version}/"
+
+    tarball = client.get_object(Bucket=S3_BUCKET, Key=f"{prefix}content.tar.gz")["Body"].read()
+    artifact_sha256 = hashlib.sha256(tarball).hexdigest()[:16]
+    expected = latest.get("artifact_sha256")
+    if expected and artifact_sha256 != expected:
+        raise RuntimeError(f"Content tarball checksum mismatch for version {version}")
+
+    manifest = json.loads(
+        client.get_object(Bucket=S3_BUCKET, Key=f"{prefix}manifest.json")["Body"].read().decode("utf-8")
+    )
+    if manifest.get("version") != version:
+        raise RuntimeError("manifest.json version does not match latest.json")
+    files = manifest.get("files", [])
+
+    # Extract to a temp sibling dir, verify every file, then atomically swap.
+    tmp_dir = s3_dir.with_name(s3_dir.name + ".tmp")
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir(parents=True)
+    try:
+        with tarfile.open(fileobj=io.BytesIO(tarball), mode="r:*") as tar:
+            tar.extractall(path=tmp_dir, filter="data")
+        for entry in files:
+            path = tmp_dir / entry["path"]
+            if not path.is_file():
+                raise RuntimeError(f"Extracted file missing: {entry['path']}")
+            if hashlib.sha256(path.read_bytes()).hexdigest()[:16] != entry["sha256"]:
+                raise RuntimeError(f"Extracted file checksum mismatch: {entry['path']}")
+        if s3_dir.exists():
+            shutil.rmtree(s3_dir)
+        tmp_dir.rename(s3_dir)
+    except Exception:
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir)
+        raise
+
+    logger.info("Downloaded content version %s from S3", version)
+    return version
+
+
+def sync_courses(db: firestore.Client, content_dir: Path, content_version: str | None = None) -> dict:
+    """
+    Read index.json + course content, upsert to Firestore.
     Returns a summary dict with counts.
     """
-    index_path = _content_dir / "index.json"
+    index_path = content_dir / "index.json"
     catalog = _read_json(index_path)
     if catalog is None:
         return {"synced": 0, "skipped": 0, "errors": ["index.json not found or invalid"]}
@@ -191,7 +302,7 @@ def sync_courses(db: firestore.Client) -> dict:
         if not cid:
             continue
 
-        course_dir = _content_dir / "courses" / cid
+        course_dir = content_dir / "courses" / cid
         course_data = _read_course_data(course_dir)
         if course_data is None:
             errors.append(f"courses/{cid}: course.yaml not found")
@@ -263,6 +374,9 @@ def sync_courses(db: firestore.Client) -> dict:
             "contentHash": content_hash,
             "updatedAt": datetime.utcnow(),
         }
+
+        if content_version is not None:
+            doc_data["contentVersion"] = content_version
 
         if not existing_doc:
             doc_data["createdAt"] = datetime.utcnow()

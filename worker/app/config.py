@@ -3,8 +3,13 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-CONTENT_DIR = os.environ.get("CONTENT_DIR", "/app/content-v2")
+CONTENT_DIR_S3 = os.environ.get("CONTENT_DIR_S3", "/data/content")
 SYNC_INTERVAL_SECONDS = int(os.environ.get("SYNC_INTERVAL_SECONDS", "300"))
+AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL", "")
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+S3_BUCKET = os.environ.get("S3_BUCKET", "")
 FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "")
 FIREBASE_CREDENTIALS_JSON = os.environ.get("FIREBASE_CREDENTIALS_JSON", "")
 FIREBASE_CREDENTIALS_PATH = os.environ.get("FIREBASE_CREDENTIALS_PATH", "")

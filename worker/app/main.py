@@ -16,14 +16,14 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from app.config import CONTENT_DIR, SYNC_INTERVAL_SECONDS, get_firestore
+from app.config import CONTENT_DIR_S3, S3_BUCKET, SYNC_INTERVAL_SECONDS, get_firestore
 from app.validator import validate_all
-from app.seeder import sync_courses
+from app.seeder import download_content, sync_courses
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("worker")
 
-_content_dir = Path(CONTENT_DIR)
+_content_dir_s3 = Path(CONTENT_DIR_S3)
 
 # ── Shared state ──────────────────────────────────────────────
 
@@ -32,11 +32,27 @@ _state = {
     "last_result": None,
     "running": False,
     "consecutive_errors": 0,
+    "content_source": None,
+    "published_version": None,
 }
 
 
 def _get_db():
     return get_firestore()
+
+
+def _active_content_dir(db) -> tuple[Path, str]:
+    """Resolve the S3 content source, downloading the latest published version.
+
+    The worker is S3-only — a missing or unreachable S3 source is a hard
+    failure, never a fallback to a filesystem mount.
+    """
+    if not S3_BUCKET:
+        raise RuntimeError("S3_BUCKET is not configured — worker requires an S3 content source")
+    version = download_content(_content_dir_s3, db)
+    if version is None:
+        raise RuntimeError("S3 content source unavailable (unreachable or nothing published yet)")
+    return _content_dir_s3, version
 
 
 # ── Background loop ───────────────────────────────────────────
@@ -63,9 +79,14 @@ async def sync_loop():
 
 def _run_sync():
     """Validate content, then seed to Firestore."""
-    logger.info("Validating content in %s", _content_dir)
+    db = _get_db()
+    content_dir, published_version = _active_content_dir(db)
+    _state["content_source"] = "s3"
+    _state["published_version"] = published_version
 
-    result = validate_all(_content_dir)
+    logger.info("Validating content in %s (source=%s, version=%s)", content_dir, _state["content_source"], published_version)
+
+    result = validate_all(content_dir)
 
     for warning in result.warnings:
         logger.warning("Validation warning: %s", warning)
@@ -83,8 +104,7 @@ def _run_sync():
 
     logger.info("Content validation passed — seeding to Firestore")
 
-    db = _get_db()
-    sync_result = sync_courses(db)
+    sync_result = sync_courses(db, content_dir=content_dir, content_version=published_version)
 
     if sync_result["errors"]:
         logger.warning("Seed completed with warnings: %s", sync_result["errors"])
@@ -95,6 +115,8 @@ def _run_sync():
         "skipped": sync_result["skipped"],
         "errors": sync_result["errors"],
         "warnings": [str(w) for w in result.warnings],
+        "content_source": _state["content_source"],
+        "published_version": published_version,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     logger.info(
@@ -121,7 +143,8 @@ app = FastAPI(title="SGP Content Worker", lifespan=lifespan)
 def health():
     return {
         "status": "ok",
-        "content_dir": str(_content_dir),
+        "content_dir": str(_content_dir_s3),
+        "content_source": "s3",
         "sync_interval_seconds": SYNC_INTERVAL_SECONDS,
     }
 
@@ -133,6 +156,8 @@ def status():
         "last_result": _state["last_result"],
         "running": _state["running"],
         "consecutive_errors": _state["consecutive_errors"],
+        "content_source": _state["content_source"],
+        "published_version": _state["published_version"],
     }
 
 
