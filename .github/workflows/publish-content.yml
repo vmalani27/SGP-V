@@ -12,6 +12,7 @@ permissions:
 jobs:
   validate-and-publish:
     runs-on: self-hosted
+    environment: dev
     steps:
       - name: Checkout
         uses: actions/checkout@v4
