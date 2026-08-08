@@ -21,12 +21,11 @@
 
 - `content-v2/index.json` — course catalog with `version: "2.0"`
 - `content-v2/environments/{name}.yaml` — shared environment definitions (base_image, pre_pull, apt_packages)
-- `content-v2/courses/{id}/course.yaml` — primary TOC (module references). Falls back to `course.json`.
-- `content-v2/courses/{id}/modules/{module-id}/module.yaml` — module metadata with lab/chapter references
+- `content-v2/courses/{id}/course.yaml` — course TOC (module references)
+- `content-v2/courses/{id}/modules/{module-id}/module.yaml` — module metadata with ordered `items`
 - `content-v2/courses/{id}/modules/{module-id}/chapters/{chapter-id}.md` — theory markdown
 - `content-v2/courses/{id}/modules/{module-id}/labs/{lab-id}/lab.yaml` + `instructions.md` — per-lab directory format
-- `content-v2/courses/{id}/modules/{module-id}/labs/lab-{n}.yaml` — old monolithic format (backward compat)
-- Worker `validator.py` validates both YAML and JSON course files, both flat and monolithic lab formats
+- Worker `validator.py` validates the canonical YAML course format
 - Worker `seeder.py` syncs nested module/chapter/lab structure to Firestore with `contentHash` for idempotent upserts; removes orphaned courses
 - Backend `PUT /api/v1/courses/{courseId}/progress` endpoint persists `{moduleId: {chapterId: status}}` to enrollment
 - Backend `GET /api/v1/users/me/enrollments` computes `percentage` per enrollment using `totalChapters` from Firestore courses
@@ -43,14 +42,14 @@
 | Area | Before | After | Why |
 |------|--------|-------|-----|
 | Source of truth | `content/` (old) + `content-v2/` (new) coexisting | `content-v2/` only | Single authority eliminates confusion |
-| Course TOC format | `course.json` only | `course.yaml` (primary) + `course.json` (fallback) | YAML is more author-friendly; JSON kept for backward compat |
+| Course TOC format | `course.json` only | `course.yaml` only | YAML is more author-friendly |
 | Folder structure | Flat `module-1/` with 21 files from 4 modules | `modules/{module-id}/chapters/` + `modules/{module-id}/labs/{lab-id}/` | Hierarchy is self-documenting |
 | Lab format | Monolithic `lab-1.yaml` with phases + inline env | Per-lab `lab.yaml` + `instructions.md`, shared env ref | One lab per file, environment config externalized |
 | Environment config | Inline dict in each lab YAML | Shared `environments/{name}.yaml` referenced by string | Single source of truth for base images, pre-pull lists |
 | course.json | 664 lines: TOC + quiz questions + correct answers + explanations | Pure TOC (~180 lines): IDs, titles, ordering only | No answers leak to frontend |
 | Quiz system | Static: frontend receives `correct_answer` in JSON | Dynamic: validation runs in Docker container via exec | Correct answers never leave the server |
 | Worker sync | Synced monolithic course.json | Syncs nested module structure with `contentHash` | Idempotent, detects changes |
-| Worker validator | Validated only JSON course.json | Validates YAML + JSON, both flat and monolithic lab formats | Supports both content structures |
+| Worker validator | Validated only JSON course.json | Validates canonical YAML course format | Single format, less code |
 | Backend content serving | Proxy to orchestrator | Direct filesystem reads via `ContentProvider` abstraction | Removes unnecessary network hop; S3 swap is one class away |
 | Backend lab proxy | Frontend→Orchestrator directly | Frontend→Backend→Orchestrator | Auth, session tracking, usage analytics |
 | Enrollment progress | Flat chapter completion | Nested `{moduleId: {chapterId: status}}` | Matches v2 TOC structure |
@@ -85,10 +84,9 @@
 - Orchestrator has zero knowledge of course structure — it only manages Docker containers.
 - `CONTENT_DIR` env var removed from orchestrator config and docker-compose.
 
-**7. Two lab formats coexist**
-- Old monolithic `lab-1.yaml` with phases + inline environment still works (backward compat).
-- New flat format `hello-world/lab.yaml` with environment reference is the future direction.
-- Content provider reads both transparently. No router changes needed.
+**7. Content format converged to one canonical layout**
+- One format everywhere: `course.yaml` → `module.yaml` (`items`) → `labs/{id}/lab.yaml` + `instructions.md`, shared env refs.
+- Old monolithic `lab-{n}.yaml` files, flat per-lab YAML, `course.json`, and `chapterId`-anchored interleave fallbacks were removed. Provider/validator/seeder read only the canonical layout.
 
 ---
 
@@ -101,8 +99,8 @@
 
 | Service | Reads from content-v2 | Writes to | Does NOT do |
 |---------|----------------------|-----------|-------------|
-| **Worker** | `index.json`, `course.yaml`/`course.json`, `module.yaml`, `lab.yaml` | Firestore `courses` | Serve content |
-| **Backend** | `course.yaml`/`course.json`, `module.yaml`, `chapters/*.md`, `labs/*/lab.yaml`, `environments/*.yaml` | Firestore `users`, `enrollments` | Run Docker containers |
+| **Worker** | `index.json`, `course.yaml`, `module.yaml`, `lab.yaml` | Firestore `courses` | Serve content |
+| **Backend** | `course.yaml`, `module.yaml`, `chapters/*.md`, `labs/*/lab.yaml`, `environments/*.yaml` | Firestore `users`, `enrollments` | Run Docker containers |
 | **Orchestrator** | (no content) | Docker containers | Serve course content, read lab files |
 | **Frontend** | Nothing (all from backend API) | — | Directly access filesystem or orchestrator directly |
 
@@ -280,7 +278,7 @@ The same immutability rules apply, but the enforcement path changes:
 | `GET /api/v1/content/courses/{id}/labs` | Lab list for a course |
 | `GET /api/v1/content/courses/{id}/labs/{labId}/instructions` | Lab instructions markdown |
 | `GET /api/v1/content/courses/{id}/labs/{labId}/config` | Lab YAML config (environment resolved + tasks) |
-| `GET /api/v1/content/courses/{id}/labs/{labId}/tasks` | Lab tasks (extracted from both flat and monolithic formats) |
+| `GET /api/v1/content/courses/{id}/labs/{labId}/tasks` | Lab tasks (from the canonical flat lab format) |
 
 **Content provider architecture:**
 
@@ -319,10 +317,10 @@ Backend proxy endpoints:
 2. Added `module.yaml` resolution for module references — Done
 3. Added per-lab directory format (`labs/{lab-id}/lab.yaml` + `instructions.md`) — Done
 4. Added shared environment definitions (`environments/{name}.yaml`) — Done
-5. Added `GET /tasks` endpoint extracting tasks from both formats — Done
-6. Updated lab schema to validate both flat and monolithic formats — Done
+5. Added `GET /tasks` endpoint extracting tasks from the canonical format — Done
+6. Updated lab schema to validate the canonical format — Done
 7. Updated validator to accept both YAML and JSON course files — Done
-8. Old monolithic `lab-1.yaml` still works for backward compat — Done
+8. **Format convergence**: removed `course.json`, monolithic phases, and flat per-lab YAML; module TOC is now `items`-only; validator/seeder/backend read one canonical layout — Done
 
 ### Phase 4: Frontend adapts to new data model
 1. Rewrite `content-types.ts` (remove static quiz types, add lab task types)
@@ -332,12 +330,12 @@ Backend proxy endpoints:
 
 ### Phase 5: Clean up
 1. Remove dead imports, unused types, stale env vars
-2. Verify task definitions for all labs (3 done, 7 metadata-shells pending)
+2. Author task definitions for skeleton labs (16 pending: git labs 2-10 + docker labs 4-10)
 
 ---
 
 ## Risks
 
-1. **Lab YAML authoring** — 3 labs have full task definitions (lab-1/hello-world, images, env-vars). 7 more need task definitions (labs 4-10 have metadata-only shells). This is content authoring, not engineering.
+1. **Lab YAML authoring** — docker labs 1-3 and git lab-1 have full task definitions. 16 labs are metadata-only skeletons (git labs 2-10, docker labs 4-10). This is content authoring, not engineering.
 2. **Frontend lab task runner** — replacing static quizzes with dynamic task runners that interact with a running container through the backend is a significant rewrite.
 3. **No quiz = no lightweight assessment** — theory chapters have no way to check understanding without spinning up a container. Consider optional static comprehension quizzes as a future addition.

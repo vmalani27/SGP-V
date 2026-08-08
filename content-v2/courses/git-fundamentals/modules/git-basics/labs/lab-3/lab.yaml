@@ -1,0 +1,17 @@
+id: lab-3
+title: Staging Selectively and Understanding the Working Tree
+difficulty: beginner
+estimated_time: 15
+xp: 60
+tags:
+  - git
+  - fundamentals
+environment: linux-basic
+
+objectives:
+  - Stage files selectively with git add
+  - Use .gitignore to exclude files
+  - Understand the working tree and the staging area
+
+completion:
+  required_tasks: all

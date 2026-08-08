@@ -1,0 +1,17 @@
+id: lab-5
+title: Branches
+difficulty: intermediate
+estimated_time: 15
+xp: 65
+tags:
+  - git
+  - branches
+environment: linux-basic
+
+objectives:
+  - Create and switch between branches
+  - Understand what a branch points to
+  - Delete branches after merging
+
+completion:
+  required_tasks: all

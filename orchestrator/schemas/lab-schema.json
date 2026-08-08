@@ -2,214 +2,83 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sgp.dev/schemas/lab.yaml",
   "title": "SGP Lab Definition Schema",
-  "description": "Schema for lab YAML files. Supports both the new flat format (one lab per YAML) and the old monolithic format (multiple labs with phases).",
+  "description": "Schema for the canonical lab YAML format (one lab per file). See docs/CONTENT-PIPELINE.md for the full pipeline.",
   "type": "object",
-  "oneOf": [
-    { "$ref": "#/$defs/flat_format" },
-    { "$ref": "#/$defs/monolithic_format" }
-  ],
+  "required": ["id", "title", "environment"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Lab identifier. Must match the directory name (e.g. lab-1, hello-world)."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable lab title."
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["beginner", "intermediate", "advanced"],
+      "description": "Lab difficulty level."
+    },
+    "estimated_time": {
+      "type": "integer",
+      "description": "Estimated completion time in minutes."
+    },
+    "xp": {
+      "type": "integer",
+      "description": "Experience points awarded on completion."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Topic tags for filtering and discovery."
+    },
+    "objectives": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Learning objectives displayed to the student."
+    },
+    "setup": {
+      "type": "array",
+      "description": "Optional commands to run before this lab starts. Resets container state.",
+      "items": {
+        "type": "object",
+        "required": ["command"],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Shell command to execute inside the container."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "environment": {
+      "type": "string",
+      "description": "Reference to an environment definition file (e.g. 'docker-basic' → environments/docker-basic.yaml)."
+    },
+    "tasks": {
+      "type": "array",
+      "description": "Ordered list of tasks the student must complete. Omit for a skeleton lab (the worker emits a warning, not an error).",
+      "items": { "$ref": "#/$defs/task" }
+    },
+    "completion": {
+      "type": "object",
+      "description": "Completion rules for the lab.",
+      "properties": {
+        "required_tasks": {
+          "oneOf": [
+            { "type": "string", "enum": ["all"] },
+            { "type": "array", "items": { "type": "string" } }
+          ],
+          "description": "'all' or a list of task IDs that must be completed."
+        }
+      },
+      "required": ["required_tasks"],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
   "$defs": {
-
-    "flat_format": {
-      "description": "New flat format: one lab per YAML file. environment is a string reference to an external file.",
-      "type": "object",
-      "required": ["id", "title", "environment", "tasks"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Lab identifier (e.g. hello-world, images, lab-4)."
-        },
-        "title": {
-          "type": "string",
-          "description": "Human-readable lab title."
-        },
-        "difficulty": {
-          "type": "string",
-          "enum": ["beginner", "intermediate", "advanced"],
-          "description": "Lab difficulty level."
-        },
-        "estimated_time": {
-          "type": "integer",
-          "description": "Estimated completion time in minutes."
-        },
-        "xp": {
-          "type": "integer",
-          "description": "Experience points awarded on completion."
-        },
-        "tags": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Topic tags for filtering and discovery."
-        },
-        "objectives": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Learning objectives displayed to the student."
-        },
-        "setup": {
-          "type": "array",
-          "description": "Optional commands to run before this lab starts. Resets container state.",
-          "items": {
-            "type": "object",
-            "required": ["command"],
-            "properties": {
-              "command": {
-                "type": "string",
-                "description": "Shell command to execute inside the container."
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "environment": {
-          "type": "string",
-          "description": "Reference to an environment definition file (e.g. 'docker-basic' → environments/docker-basic.yaml)."
-        },
-        "tasks": {
-          "type": "array",
-          "description": "Ordered list of tasks the student must complete.",
-          "minItems": 1,
-          "items": { "$ref": "#/$defs/task" }
-        },
-        "completion": {
-          "type": "object",
-          "description": "Completion rules for the lab.",
-          "properties": {
-            "required_tasks": {
-              "oneOf": [
-                { "type": "string", "enum": ["all"] },
-                { "type": "array", "items": { "type": "string" } }
-              ],
-              "description": "'all' or a list of task IDs that must be completed."
-            }
-          },
-          "required": ["required_tasks"],
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-
-    "monolithic_format": {
-      "description": "Old monolithic format: multiple labs grouped under phases in a single YAML file.",
-      "type": "object",
-      "required": ["environment", "phases"],
-      "properties": {
-        "environment": {
-          "type": "object",
-          "description": "Inline environment definition.",
-          "required": ["base_image"],
-          "properties": {
-            "base_image": {
-              "type": "string",
-              "description": "Docker image to use as the base. Must be Sysbox-compatible."
-            },
-            "apt_packages": {
-              "type": "array",
-              "items": { "type": "string" },
-              "description": "System packages to install via apt when the container starts."
-            },
-            "pre_pull": {
-              "type": "array",
-              "items": { "type": "string" },
-              "description": "Docker images to pre-pull before the student sees the terminal."
-            }
-          },
-          "additionalProperties": false
-        },
-        "phases": {
-          "type": "array",
-          "description": "Ordered list of phases. Phase 0 is environment setup.",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "required": ["id", "title"],
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^phase-[0-9]+$",
-                "description": "Phase identifier. Must match 'phase-N' where N is a number."
-              },
-              "title": {
-                "type": "string",
-                "description": "Human-readable phase title."
-              },
-              "description": {
-                "type": "string",
-                "description": "What this phase covers."
-              },
-              "type": {
-                "type": "string",
-                "enum": ["setup"],
-                "description": "Set to 'setup' for phase-0 (environment setup). Omit for content phases."
-              },
-              "steps": {
-                "type": "array",
-                "description": "Setup steps (only for type: setup phases).",
-                "items": {
-                  "type": "object",
-                  "required": ["id", "command", "description"],
-                  "properties": {
-                    "id": { "type": "string" },
-                    "command": {
-                      "type": "string",
-                      "description": "Shell command to execute inside the container."
-                    },
-                    "description": {
-                      "type": "string",
-                      "description": "What this step does."
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              },
-              "labs": {
-                "type": "array",
-                "description": "Labs in this phase (omit for setup phases).",
-                "items": {
-                  "type": "object",
-                  "required": ["id", "title", "tasks"],
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "pattern": "^lab-[0-9]+$",
-                      "description": "Lab identifier. Must match 'lab-N' where N is a number."
-                    },
-                    "title": { "type": "string" },
-                    "description": { "type": "string" },
-                    "order": { "type": "integer" },
-                    "setup": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": ["command"],
-                        "properties": {
-                          "command": {
-                            "type": "string",
-                            "description": "Shell command to execute inside the container."
-                          }
-                        },
-                        "additionalProperties": false
-                      }
-                    },
-                    "tasks": {
-                      "type": "array",
-                      "description": "Ordered list of tasks.",
-                      "minItems": 1,
-                      "items": { "$ref": "#/$defs/task" }
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-
     "task": {
       "type": "object",
       "description": "A single task the student must complete.",
@@ -217,7 +86,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "Task identifier (e.g. task-1, pass-env, count-images)."
+          "description": "Task identifier (e.g. count-images, pass-env, port-mapping)."
         },
         "title": {
           "type": "string",
@@ -233,8 +102,8 @@
         },
         "type": {
           "type": "string",
-          "enum": ["multiple_choice", "terminal_action", "file_check", "informational"],
-          "description": "Task type. multiple_choice: student picks from options. terminal_action: student runs a command in the terminal. file_check: student creates or modifies a file. informational: read-only, auto-passes."
+          "enum": ["multiple_choice", "terminal_action", "port_check", "file_check"],
+          "description": "Task type. multiple_choice: student picks from options. terminal_action: student runs a command in the terminal. port_check: student verifies a published port/path. file_check: student creates or modifies a file."
         },
         "options": {
           "type": "array",
@@ -270,11 +139,15 @@
             },
             "path": {
               "type": "string",
-              "description": "File path inside the container (for file_check)."
+              "description": "File path inside the container (for file_check, or port_check)."
             },
             "contains": {
               "type": "string",
               "description": "String the file must contain (for file_check)."
+            },
+            "port": {
+              "type": "integer",
+              "description": "Port number the container must be listening on (for port_check)."
             }
           }
         },
@@ -289,6 +162,5 @@
       },
       "additionalProperties": false
     }
-
   }
 }

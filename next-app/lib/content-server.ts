@@ -1,4 +1,4 @@
-import type { ContentCourse, CourseCatalogEntry, CourseItem, Chapter } from './content-types';
+import type { ContentCourse, CourseCatalogEntry, CourseItem, Chapter, ContentModule } from './content-types';
 
 const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:8000';
 
@@ -32,15 +32,41 @@ export function getChapterById(course: ContentCourse, chapterId: string) {
 }
 
 export function getAllItems(course: ContentCourse): CourseItem[] {
-  return course.modules.flatMap((mod) =>
-    mod.chapters.map((ch) => ({
+  return course.modules.flatMap((mod) => getModuleItems(mod));
+}
+
+export function getModuleItems(module: ContentModule): CourseItem[] {
+  if (module.items && module.items.length > 0) {
+    return module.items.map((it) => ({
+      type: it.type,
+      id: it.id,
+      title: it.title,
+      moduleId: module.id,
+      moduleTitle: module.title,
+    }));
+  }
+  return [
+    ...module.chapters.map((ch) => ({
       type: 'chapter' as const,
       id: ch.id,
       title: ch.title,
-      moduleId: mod.id,
-      moduleTitle: mod.title,
-    }))
-  );
+      moduleId: module.id,
+      moduleTitle: module.title,
+    })),
+    ...(module.labs ?? []).map((lb) => ({
+      type: 'lab' as const,
+      id: lb.id,
+      title: lb.title,
+      moduleId: module.id,
+      moduleTitle: module.title,
+    })),
+  ];
+}
+
+export function itemHref(courseId: string, item: { type: string; id: string }): string {
+  return item.type === 'lab'
+    ? `/courses/${courseId}/labs/${item.id}`
+    : `/courses/${courseId}/chapters/${item.id}`;
 }
 
 export function getPrevNextItems(course: ContentCourse, itemId: string) {

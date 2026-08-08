@@ -30,7 +30,7 @@ ContentProvider (ABC)
   └── S3Provider           ← future (CONTENT_SOURCE=s3)
 ```
 
-The provider reads `course.yaml` (primary) with `course.json` fallback, resolves `module.yaml` references, and extracts lab YAML from either flat per-lab directories or old monolithic files. Environment references (string values in `environment` field) are resolved to shared files in `environments/`.
+The provider reads `course.yaml`, resolves `module.yaml` references (ordered `items`), and serves lab config from `labs/{id}/lab.yaml` + `instructions.md`. Environment references (string values in `environment` field) are resolved to shared files in `environments/`.
 
 ### Content API Endpoints
 
@@ -50,10 +50,14 @@ All content endpoints are unauthenticated (served publicly).
 
 The backend proxies all lab lifecycle calls to the orchestrator. The frontend never talks to the orchestrator directly. These endpoints require Firebase auth (Bearer token) for state-changing operations.
 
+The terminal WebSocket is proxied too: the browser connects to the backend's own WS endpoint (`WS /api/v1/labs/ws/lab`) and sends the JWT as its **first message** (`{"type":"auth","token":...}`) — never in the URL. The backend validates it and bridges terminal input/output/resize frames to the orchestrator's internal `/ws/terminal`.
+
+Sessions use a read-through cache: the orchestrator is the source of truth (containers carry `com.sgp.*` labels and are queryable via `GET /labs/by_key`). `start` re-attaches to an existing live container instead of spawning a duplicate, so restarts can't leave zombie containers.
+
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/v1/labs/courses/{id}/labs/{labId}/active` | Yes | Reconnect to existing session |
-| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/start` | Yes | Start lab container (reads lab YAML, forwards env config) |
+| `GET` | `/api/v1/labs/courses/{id}/labs/{labId}/active` | Yes | Reconnect to existing session (label-based, survives restarts) |
+| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/start` | Yes | Start lab container (reads lab YAML, forwards env config; re-attaches if a live container already exists) |
 | `GET` | `/api/v1/labs/courses/{id}/labs/{labId}/status/{sid}` | No | Session status |
 | `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/stop/{sid}` | No | Stop container |
 | `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/resume/{sid}` | No | Resume container |
@@ -61,6 +65,7 @@ The backend proxies all lab lifecycle calls to the orchestrator. The frontend ne
 | `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/exec/{sid}` | No | Run command in container |
 | `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/validate` | Yes | Validate a task answer (runs the validation command in the container, matches server-side) |
 | `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/token/{sid}` | Yes | Refresh WebSocket JWT token |
+| `WS` | `/api/v1/labs/ws/lab` | Handshake | Proxied terminal WebSocket (JWT as first message) |
 
 ## Other API Endpoints
 
@@ -148,7 +153,8 @@ The backend proxies all lab lifecycle calls to the orchestrator. The frontend ne
 | `GOOGLE_APPLICATION_CREDENTIALS` | No* | — | Standard Google auth variable |
 | `CONTENT_DIR` | No | `/app/content` | Path to content-v2 mount |
 | `CONTENT_SOURCE` | No | `filesystem` | Content provider backend |
-| `ORCHESTRATOR_URL` | No | `http://orchestrator:8000` | Orchestrator base URL |
+| `ORCHESTRATOR_URL` | No | `http://orchestrator:8000` | Orchestrator REST base URL |
+| `WS_ORCHESTRATOR_URL` | No | `ws://localhost:8001` | Orchestrator WS base URL (internal, server-side only — never sent to the browser) |
 | `JWT_SECRET` | No | `dev-secret` | WebSocket JWT signing key |
 | `JWT_ALGORITHM` | No | `HS256` | JWT algorithm |
 | `JWT_EXPIRY_MINUTES` | No | `60` | WebSocket token expiry |
@@ -182,7 +188,7 @@ backend/
 │   │   ├── content.py          # Content API (TOC, chapters, labs, tasks)
 │   │   └── labs.py             # Lab lifecycle proxy + task validation
 │   ├── services/
-│   │   └── content_provider.py # FilesystemProvider (reads YAML + JSON, resolves env refs)
+│   │   └── content_provider.py # FilesystemProvider (reads course.yaml + module.yaml, resolves env refs)
 │   └── utils/
 │       └── firebase_util.py    # Token verification dependency
 ├── Dockerfile

@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 
+from google.cloud.firestore import FieldFilter
+
 from app.core.firestore_db import db
 from app.utils.firebase_util import verify_firebase_token
 from app.models.user import UserSyncResponse
@@ -93,7 +95,7 @@ async def get_enrollments(firebase_data: dict = Depends(verify_firebase_token)) 
     uid = firebase_data["uid"]
     enrollments = (
         db.collection("enrollments")
-        .where("userId", "==", uid)
+        .where(filter=FieldFilter("userId", "==", uid))
         .stream()
     )
     results = []

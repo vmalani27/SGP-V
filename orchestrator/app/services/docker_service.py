@@ -33,7 +33,7 @@ class DockerService:
     def _init_client(self):
         self.client = docker.DockerClient(base_url=DOCKER_HOST)
 
-    def start_lab(self, image: str, name: str) -> dict:
+    def start_lab(self, image: str, name: str, labels: dict[str, str] | None = None) -> dict:
         try:
             self.client.images.get(image)
         except ImageNotFound:
@@ -50,6 +50,7 @@ class DockerService:
                 hostname=name,
                 runtime=RUNTIME,
                 detach=True,
+                labels=labels or {},
             )
             logger.info(f"Started container '{name}' ({container.short_id}) with image '{image}'")
             return self._container_info(container)
@@ -133,6 +134,16 @@ class DockerService:
         )
         return [self._container_info(c) for c in containers]
 
+    def get_labs_by_labels(self, labels: dict[str, str]) -> list[dict]:
+        """Return lab containers matching ALL given labels (e.g. user_id + lab_id).
+
+        This is the source-of-truth lookup used to recover a session after an
+        orchestrator or backend restart, instead of trusting in-memory state.
+        """
+        filters = {"label": [f"{key}={value}" for key, value in labels.items()]}
+        containers = self.client.containers.list(all=True, filters=filters)
+        return [self._container_info(c) for c in containers]
+
     def get_lab(self, name: str) -> dict:
         container = self._get_container(name)
         return self._container_info(container)
@@ -191,6 +202,7 @@ class DockerService:
             "status": container.status,
             "image": container.image.tags[0] if container.image.tags else str(container.image.id)[:12],
             "created": container.attrs.get("Created", ""),
+            "labels": dict(container.labels or {}),
         }
 
 

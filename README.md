@@ -48,24 +48,29 @@ A KodeKloud-style platform for learning Git and Docker through hands-on interact
 - Tracks enrollment and progress in Firestore (`enrollments` collection)
 - Serves all course content via `ContentProvider` abstraction (filesystem now, S3 later)
 - Proxies lab lifecycle to orchestrator (start, stop, resume, restart, destroy, exec)
+- Proxies the terminal WebSocket: browser connects to the backend (`/api/v1/labs/ws/lab`), the backend bridges frames to the orchestrator's internal `/ws/terminal` — the orchestrator address is never exposed to the browser and the JWT is sent as a first-message handshake, not in the URL
 - Validates lab task answers server-side (exec in container — answers never leave the container)
 - Tracks chapter and lab completion in Firestore (`progress` + `labsProgress`)
 - Computes enrollment percentage from `totalChapters` in Firestore courses
 
 ### Orchestrator (`orchestrator/`)
-- Creates Sysbox Docker containers for lab environments
+- Creates Sysbox Docker containers for lab environments (labelled `com.sgp.user_id` / `course_id` / `lab_id`)
 - Runs arbitrary commands inside containers (`POST /labs/{id}/exec`)
-- Provides WebSocket terminal (xterm.js ↔ container bash) with tmux persistence
+- Provides WebSocket terminal (`/ws/terminal`, JWT first-message handshake) with tmux persistence — the browser connects via the backend proxy
+- Source of truth for sessions: `GET /labs/by_key` recovers a live container from its labels after a restart
 - Resizes the remote PTY to match the client (`resize` frames), so terminals stay in sync
 - Auto-destroys labs after timeout
 - Zero content knowledge — reads no course files
 
 ### Worker (`worker/`)
-- Validates `content-v2/` schema (index.json, course.yaml/course.json TOC, markdown existence, lab YAML structure)
+- Validates `content-v2/` schema (index.json, course.yaml + module.yaml TOC, markdown existence, lab YAML structure)
 - Syncs course metadata to Firestore `courses` collection
 - Idempotent: uses `contentHash` to skip unchanged courses
 - Removes orphaned courses from Firestore
 - Runs on a polling loop (300s interval)
+- **Does NOT do anything at lab runtime** — no Docker socket, no container/image management. Base lab images
+  (`sgp-lab-ubuntu/docker/git`) are built from `orchestrator/lab-images/` and ensured (pull/build) by the
+  orchestrator at start; the worker only reads content and writes course metadata to Firestore.
 
 ### Content (`content-v2/`)
 Single source of truth for all course data. Mounted read-only into all services.
@@ -76,21 +81,19 @@ content-v2/
   environments/
     {name}.yaml                           # shared environment definitions (e.g. docker-basic)
   courses/{id}/
-    course.yaml                           # TOC — module references (fallback: course.json)
+    course.yaml                           # TOC — module references
     modules/{module-id}/
-      module.yaml                         # module metadata + lab/chapter references
+      module.yaml                         # module metadata + ordered `items`
       chapters/{chapter-id}.md            # theory content (markdown)
       labs/
         {lab-id}/
-          lab.yaml                        # tasks + environment reference (or inline env)
+          lab.yaml                        # tasks + environment reference
           instructions.md                 # lab instructions (markdown)
 ```
 
-Two lab formats are supported:
-
-**New flat format (per-lab directory):**
+Canonical lab format (per-lab directory):
 ```yaml
-id: hello-world
+id: lab-1
 title: Hello World Container
 environment: docker-basic          # references environments/docker-basic.yaml
 tasks:
@@ -101,17 +104,11 @@ tasks:
       command: "docker images -q | wc -l"
       match_type: exact
 ```
+Lab config lives at `labs/{lab-id}/lab.yaml`, instructions at `labs/{lab-id}/instructions.md`.
+The environment is always a string reference to a shared `environments/{name}.yaml`.
 
-**Old monolithic format (single file per module):**
-```yaml
-environment:
-  base_image: "sgp-lab-docker:latest"
-phases:
-  - id: "phase-1"
-    labs:
-      - id: "lab-1"
-        tasks: [...]
-```
+> End-to-end reference (file templates, validation, Firestore seeding, serving,
+> frontend rendering, authoring workflow): see [docs/CONTENT-PIPELINE.md](docs/CONTENT-PIPELINE.md).
 
 ### Validation model
 - All validation is exec-based and server-side. The frontend calls `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` with the task id (and selected option for multiple-choice tasks).
@@ -265,27 +262,22 @@ SGP_V/
 │   │   └── docker-basic.yaml          # base_image, pre_pull for DinD labs
 │   └── courses/
 │       ├── git-fundamentals/
-│       │   ├── course.json            # TOC only (no quiz data, no answers)
+│       │   ├── course.yaml            # TOC — module refs (canonical YAML)
 │       │   └── modules/
 │       │       ├── git-basics/
+│       │       │   ├── module.yaml    # ordered items (chapters + labs)
 │       │       │   ├── chapters/      # chapter-1.md, chapter-2.md, chapter-3.md
-│       │       │   └── labs/          # lab-1.md, lab-1.yaml, ...
+│       │       │   └── labs/          # lab-N/lab.yaml + lab-N/instructions.md
 │       │       ├── branching-history/
 │       │       ├── remote-collaboration/
 │       │       └── complete-workflow/
 │       └── docker-mastery/
-│           ├── course.yaml            # Primary TOC — YAML format (JSON fallback)
+│           ├── course.yaml            # TOC — module refs
 │           └── modules/
 │               ├── docker-fundamentals/
-│               │   ├── module.yaml    # Module refs + lab/chapter lists
+│               │   ├── module.yaml    # ordered items (chapters + labs)
 │               │   ├── chapters/      # chapter-1.md, chapter-2.md, chapter-3.md
-│               │   └── labs/
-│               │       ├── lab-1.yaml # Old monolithic format (phases + tasks)
-│               │       ├── hello-world/
-│               │       │   ├── lab.yaml        # New flat format (id, env ref, tasks)
-│               │       │   └── instructions.md
-│               │       ├── images/ ...
-│               │       └── env-vars/ ...
+│               │   └── labs/          # lab-N/lab.yaml + lab-N/instructions.md
 │               ├── building-images/ ...
 │               ├── container-networking/ ...
 │               └── persistent-storage/ ...
@@ -306,10 +298,10 @@ SGP_V/
 │   │   ├── models/
 │   │   │   └── session.py             # LabSession, LabStatus
 │   │   └── websocket/
-│   │       └── terminal.py            # WS /ws/{id}/terminal
+│   │       └── terminal.py            # WS /ws/terminal (JWT handshake)
 │   ├── schemas/                       # Lab YAML reference (sample + JSON schema)
-│   │   ├── lab-schema.json            # Validates both flat + monolithic formats
-│   │   ├── lab-sample.yaml            # Working examples of both formats
+│   │   ├── lab-schema.json            # Validates the canonical flat lab format
+│   │   ├── lab-sample.yaml            # Working example of the canonical format
 │   │   └── README.md                  # Course author guide
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -387,7 +379,8 @@ SGP_V/
 | `FIREBASE_CREDENTIALS_JSON` | — | Service account JSON (or use `GOOGLE_APPLICATION_CREDENTIALS`) |
 | `CONTENT_DIR` | `/app/content` | Path to content-v2 mount |
 | `CONTENT_SOURCE` | `filesystem` | Content provider backend (`filesystem` or `s3` in future) |
-| `ORCHESTRATOR_URL` | `http://orchestrator:8000` | Orchestrator base URL |
+| `ORCHESTRATOR_URL` | `http://orchestrator:8000` | Orchestrator REST base URL (internal) |
+| `WS_ORCHESTRATOR_URL` | `ws://localhost:8001` | Orchestrator WS base URL (internal, server-side only — never sent to the browser) |
 
 ### Orchestrator
 
@@ -461,16 +454,15 @@ Target: S3-backed content with event-driven sync.
 - WebSocket terminal with tmux persistence, binary resize frames, and PTY resize so the remote size matches the local terminal
 - Restart preserves the container (stop + resume) so student changes (e.g. docker group membership) persist
 - Lab completion shown in the course curriculum TOC (`labsProgress`)
-- Tasks endpoint: extracts tasks from both flat and monolithic formats
-- Shared environment definitions (`environments/docker-basic.yaml`)
-- Lab YAML schema: validates both flat and monolithic formats
-- All 10 Docker Mastery labs are discoverable through course TOC (lab-1 has authored tasks, the rest are placeholder stubs)
+- Tasks endpoint: extracts tasks from the canonical per-lab YAML format
+- Shared environment definitions (`environments/docker-basic.yaml`, `environments/linux-basic.yaml`)
+- Canonical course format: `course.yaml` → `module.yaml` (`items`) → `labs/{id}/lab.yaml` + `instructions.md`, shared env refs. No course.json, monolithic phases, or flat lab YAML remain
+- All 10 Docker Mastery labs are discoverable through course TOC (lab-1..3 have authored tasks, the rest are skeleton stubs)
+- Worker validates cleanly with warnings (skeleton labs) and seeds accurate Firestore docs (real `order`, `description`, `chapterId`, resolved titles); graceful `validation_failed` state without blocking the cycle
 
 ### In Progress
-- Content authoring: task definitions for labs 2-10
-- Making the flat per-lab directory format the canonical course layout
+- Content authoring: task definitions for labs 4-10 (both courses)
 
 ### Remaining
 - S3 deployment architecture (swap `FilesystemProvider` for `S3Provider`) — see `docs/deferred-improvements.md`
-- Worker fixes: validation gating on seed, `order`/`estimatedHours`/`description`/`chapterId` seeding — see `docs/deferred-improvements.md`
 - Course immutability enforcement in worker (`structuralHash`)

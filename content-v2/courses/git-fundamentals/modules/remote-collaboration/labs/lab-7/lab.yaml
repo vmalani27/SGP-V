@@ -1,0 +1,17 @@
+id: lab-7
+title: Working with Remote Repositories
+difficulty: intermediate
+estimated_time: 20
+xp: 70
+tags:
+  - git
+  - remotes
+environment: linux-basic
+
+objectives:
+  - Add a remote repository
+  - Push and pull commits
+  - Understand remote tracking branches
+
+completion:
+  required_tasks: all

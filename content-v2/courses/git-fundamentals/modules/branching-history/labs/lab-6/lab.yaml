@@ -1,0 +1,18 @@
+id: lab-6
+title: Merging and Resolving Conflicts
+difficulty: intermediate
+estimated_time: 20
+xp: 75
+tags:
+  - git
+  - branches
+  - merge
+environment: linux-basic
+
+objectives:
+  - Merge a branch into main
+  - Resolve a merge conflict manually
+  - Understand fast-forward vs. merge commits
+
+completion:
+  required_tasks: all

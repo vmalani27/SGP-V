@@ -80,10 +80,14 @@ The backend calls this endpoint with the environment config extracted from the l
 {
   "lab_id": "lab-1",
   "image": "sgp-lab-docker:latest",
+  "user_id": "uid-123",
+  "course_id": "linux-fundamentals",
   "apt_packages": ["docker.io"],
   "pre_pull": ["nginx:alpine"]
 }
 ```
+
+The container is labelled with `com.sgp.user_id`, `com.sgp.course_id` and `com.sgp.lab_id` so sessions can be recovered by label (see `GET /labs/by_key`).
 
 **Response `200`:**
 ```json
@@ -102,6 +106,10 @@ The backend calls this endpoint with the environment config extracted from the l
 #### `GET /labs` — List all labs
 
 Returns all lab containers managed by the orchestrator.
+
+#### `GET /labs/by_key?user_id=&lab_id=` — Recover a session
+
+Returns the live `LabSession` for a user+lab by querying Docker labels (source of truth after a restart), or `404` if no labelled container exists.
 
 #### `GET /labs/{session_id}` — Get session info
 
@@ -186,17 +194,36 @@ Check types: `exists`, `permissions`, `owner`, `contains`
 
 ### WebSocket Terminal
 
-#### `WS /ws/{session_id}/terminal`
+#### `WS /ws/terminal`
 
 Opens an interactive terminal session into the lab container.
 
-**Protocol:** Raw UTF-8 text frames in both directions (no JSON framing).
+**Auth:** the JWT is sent as the **first message** — `{"type":"auth","token":...}` — never in the URL. The browser never connects here directly; the backend proxies (`/api/v1/labs/ws/lab`) and forwards the token.
+
+**Protocol:** Raw UTF-8/binary frames in both directions (no JSON framing), except the auth handshake and optional `{"type":"resize","cols":N,"rows":N}` frames.
 
 ```javascript
-const ws = new WebSocket("ws://localhost:8001/ws/" + sessionId + "/terminal");
+const ws = new WebSocket("ws://localhost:8001/ws/terminal");
+ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token: jwt }));
 ws.onmessage = (event) => term.write(event.data);
 term.onData((data) => ws.send(data));
 ```
+
+---
+
+### Session Source of Truth
+
+#### `GET /labs/by_key?user_id=&lab_id=`
+
+The orchestrator is the source of truth for lab sessions. Containers are labelled at creation:
+
+| Label | Value |
+|-------|-------|
+| `com.sgp.user_id` | student UID |
+| `com.sgp.course_id` | course id |
+| `com.sgp.lab_id` | lab id |
+
+`GET /labs/by_key` queries Docker by those labels and returns the live `LabSession` (or `404`). The backend uses this as a read-through cache in front of `start`, so a restart never leaves zombie containers or duplicate sessions behind.
 
 ---
 
@@ -296,7 +323,7 @@ orchestrator/
 │   ├── models/
 │   │   └── session.py          # LabSession, LabStatus
 │   └── websocket/
-│       └── terminal.py         # WS /ws/{id}/terminal
+│       └── terminal.py         # WS /ws/terminal (JWT handshake)
 ├── schemas/
 │   ├── lab-schema.json         # JSON Schema for lab.yaml
 │   ├── lab-sample.yaml         # Working example

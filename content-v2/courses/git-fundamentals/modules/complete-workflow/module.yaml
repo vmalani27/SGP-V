@@ -1,0 +1,9 @@
+id: complete-workflow
+title: Complete Workflow
+description: Bring it all together with a complete Git workflow.
+order: 4
+items:
+  - type: chapter
+    id: chapter-10
+  - type: lab
+    id: lab-10

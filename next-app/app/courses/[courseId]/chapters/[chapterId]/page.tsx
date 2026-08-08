@@ -25,13 +25,13 @@ export default async function ChapterPage({
     <LearningPlayer
       course={course}
       courseId={courseId}
-      currentChapter={chapterData}
+      currentItem={chapterData}
     >
       <ChapterClient
         courseId={courseId}
         chapterId={chapterId}
         moduleId={chapterData.moduleId}
-        nextChapterId={next?.id ?? null}
+        nextItem={next}
       />
     </LearningPlayer>
   );

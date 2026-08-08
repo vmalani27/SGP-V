@@ -1,0 +1,17 @@
+id: lab-10
+title: A Complete Git Workflow
+difficulty: advanced
+estimated_time: 25
+xp: 90
+tags:
+  - git
+  - workflow
+environment: linux-basic
+
+objectives:
+  - Follow a daily branch-based workflow
+  - Combine every skill into one exercise
+  - Keep history clean and reviewable
+
+completion:
+  required_tasks: all

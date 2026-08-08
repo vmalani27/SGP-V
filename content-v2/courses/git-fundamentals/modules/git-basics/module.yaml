@@ -1,0 +1,17 @@
+id: git-basics
+title: Git Basics
+description: Learn the core concepts of version control and Git basics.
+order: 1
+items:
+  - type: chapter
+    id: chapter-1
+  - type: lab
+    id: lab-1
+  - type: chapter
+    id: chapter-2
+  - type: lab
+    id: lab-2
+  - type: chapter
+    id: chapter-3
+  - type: lab
+    id: lab-3

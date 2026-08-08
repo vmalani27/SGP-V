@@ -2,31 +2,26 @@
 
 import Link from 'next/link';
 import type { ContentCourse } from '@/lib/content-types';
+import { getModuleItems, getAllItems, itemHref } from '@/lib/content-server';
 
 export default function PlayerSidebar({
   course,
   courseId,
-  currentChapterId,
+  currentItemId,
   completedChapterIds = [],
+  completedLabIds = [],
   onToggle,
 }: {
   course: ContentCourse;
   courseId: string;
-  currentChapterId?: string;
+  currentItemId?: string;
   completedChapterIds?: string[];
+  completedLabIds?: string[];
   onToggle?: () => void;
 }) {
-  const allItems = course.modules.flatMap((mod) =>
-    mod.chapters.map((ch) => ({
-      type: 'chapter' as const,
-      id: ch.id,
-      title: ch.title,
-      moduleId: mod.id,
-      moduleTitle: mod.title,
-    }))
-  );
+  const allItems = getAllItems(course);
 
-  const currentIdx = allItems.findIndex((item) => item.id === currentChapterId);
+  const currentIdx = allItems.findIndex((item) => item.id === currentItemId);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto border-r border-line bg-panel">
@@ -46,9 +41,11 @@ export default function PlayerSidebar({
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-5">
         {course.modules.map((mod, modIdx) => {
-          const modItems = allItems.filter((item) => item.moduleId === mod.id);
-          const modCompleted = modItems.filter(
-            (item) => item.type === 'chapter' && completedChapterIds.includes(item.id)
+          const modItems = getModuleItems(mod);
+          const modCompleted = modItems.filter((item) =>
+            item.type === 'lab'
+              ? completedLabIds.includes(item.id)
+              : completedChapterIds.includes(item.id)
           ).length;
 
           return (
@@ -59,7 +56,7 @@ export default function PlayerSidebar({
                 </span>
                 {modCompleted > 0 && (
                   <span className="text-[10px] text-muted/40 tabular-nums">
-                    {modCompleted}/{mod.chapters.length}
+                    {modCompleted}/{modItems.length}
                   </span>
                 )}
               </div>
@@ -67,16 +64,19 @@ export default function PlayerSidebar({
               <div className="space-y-px">
                 {modItems.map((item, idx) => {
                   const globalIdx = allItems.findIndex((i) => i.id === item.id);
-                  const isCurrent = item.id === currentChapterId;
-                  const isCompleted = item.type === 'chapter' && completedChapterIds.includes(item.id);
+                  const isCurrent = item.id === currentItemId;
+                  const isCompleted = item.type === 'lab'
+                    ? completedLabIds.includes(item.id)
+                    : completedChapterIds.includes(item.id);
                   const isBefore = globalIdx < currentIdx;
                   const isLocked = !isCurrent && !isCompleted && !isBefore && currentIdx !== -1;
 
-                  const href = `/courses/${courseId}/chapters/${item.id}`;
+                  const href = itemHref(courseId, item);
+                  const isLab = item.type === 'lab';
 
                   return (
                     <Link
-                      key={item.id}
+                      key={`${item.type}-${item.id}`}
                       href={href}
                       className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition ${
                         isCurrent
@@ -93,11 +93,17 @@ export default function PlayerSidebar({
                             ? 'bg-accent text-bg'
                             : isCompleted
                             ? 'bg-emerald-500/15 text-emerald-400'
+                            : isLab
+                            ? 'bg-amber-500/15 text-amber-400'
                             : 'bg-line/15 text-muted/50'
                         }`}>
                           {isCompleted ? (
                             <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                            </svg>
+                          ) : isLab ? (
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
                             </svg>
                           ) : (
                             idx + 1

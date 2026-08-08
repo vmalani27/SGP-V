@@ -2,9 +2,12 @@ id: container-networking
 title: Container Networking
 description: Understand how containers communicate and orchestrate multi-container apps.
 order: 3
-chapters:
-  - chapter-7
-  - chapter-8
-labs:
-  - lab-7
-  - lab-8
+items:
+  - type: chapter
+    id: chapter-7
+  - type: lab
+    id: lab-7
+  - type: chapter
+    id: chapter-8
+  - type: lab
+    id: lab-8

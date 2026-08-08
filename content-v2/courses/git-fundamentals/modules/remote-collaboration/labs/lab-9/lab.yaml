@@ -1,0 +1,17 @@
+id: lab-9
+title: Viewing and Searching History
+difficulty: intermediate
+estimated_time: 15
+xp: 65
+tags:
+  - git
+  - history
+environment: linux-basic
+
+objectives:
+  - Read a repository's history with git log
+  - Compare changes with git diff
+  - Search commits and blame lines
+
+completion:
+  required_tasks: all

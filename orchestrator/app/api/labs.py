@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.config import LAB_PREFIX
+from app.config import LAB_PREFIX, LABEL_LAB_ID, LABEL_USER_ID, LABEL_COURSE_ID
 from app.models.session import LabSession, LabStatus
 from app.services.docker_service import DockerService, get_docker_service, lab_id_to_number
 
@@ -24,8 +24,31 @@ class StartLabRequest(BaseModel):
     lab_id: str
     image: str
     user_id: str = ""
+    course_id: str = ""
     apt_packages: list[str] = []
     pre_pull: list[str] = []
+
+
+def _session_from_container(c: dict) -> LabSession | None:
+    """Reconstruct a LabSession from a Docker container (label-based recovery)."""
+    name = c.get("name", "")
+    if not name.startswith(LAB_PREFIX + "-"):
+        return None
+
+    labels = c.get("labels") or {}
+    session_id = name[len(LAB_PREFIX) + 1:]
+    docker_status = c.get("status", "")
+    status = LabStatus.RUNNING if docker_status == "running" else LabStatus.STOPPED
+
+    return LabSession(
+        session_id=session_id,
+        lab_type="custom",
+        lab_id=labels.get(LABEL_LAB_ID, ""),
+        user_id=labels.get(LABEL_USER_ID, ""),
+        container_id=c.get("id"),
+        container_name=name,
+        status=status,
+    )
 
 
 class ActivateLabRequest(BaseModel):
@@ -49,8 +72,14 @@ def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_dock
     session = LabSession(lab_type="custom", lab_id=req.lab_id, user_id=req.user_id)
     session.container_name = f"{LAB_PREFIX}-{session.session_id}"
 
+    labels = {
+        LABEL_USER_ID: req.user_id,
+        LABEL_COURSE_ID: req.course_id,
+        LABEL_LAB_ID: req.lab_id,
+    }
+
     try:
-        info = docker_svc.start_lab(req.image, session.container_name)
+        info = docker_svc.start_lab(req.image, session.container_name, labels=labels)
         session.container_id = info["id"]
         session.status = LabStatus.RUNNING
     except (RuntimeError, ValueError) as e:
@@ -93,6 +122,43 @@ def list_labs(docker_svc: DockerService = Depends(get_docker_service)):
                 break
         result.append(entry)
     return {"labs": result, "active_sessions": len(sessions)}
+
+
+@router.get("/by_key")
+def get_lab_by_key(
+    user_id: str,
+    lab_id: str,
+    docker_svc: DockerService = Depends(get_docker_service),
+):
+    """Return the live session for a user+lab by querying Docker labels.
+
+    The orchestrator is the source of truth for sessions: after a restart the
+    in-memory `sessions` dict is rebuilt from labelled containers, so the
+    backend can re-attach to an existing lab instead of spawning a duplicate
+    (which previously left zombie containers behind).
+    """
+    containers = docker_svc.get_labs_by_labels({
+        LABEL_USER_ID: user_id,
+        LABEL_LAB_ID: lab_id,
+    })
+    if not containers:
+        raise HTTPException(
+            status_code=404,
+            detail="No live container for this user and lab",
+        )
+
+    containers.sort(key=lambda c: c.get("created", ""), reverse=True)
+    for c in containers:
+        session = _session_from_container(c)
+        if not session:
+            continue
+        sessions[session.session_id] = session
+        return session
+
+    raise HTTPException(
+        status_code=404,
+        detail="No live container for this user and lab",
+    )
 
 
 @router.get("/{session_id}")

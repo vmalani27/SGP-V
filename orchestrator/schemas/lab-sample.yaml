@@ -2,31 +2,19 @@
 # lab.yaml — Lab Definition Reference
 # ──────────────────────────────────────────────────────────────
 #
-# This file shows both supported formats.
+# This file shows the canonical (flat) format — the ONLY format the
+# pipeline reads. One lab per directory:
+#
+#   courses/{course}/modules/{module}/labs/{lab-id}/lab.yaml
+#   courses/{course}/modules/{module}/labs/{lab-id}/instructions.md
+#
+# Environment config is shared and referenced by string from
+# content-v2/environments/{name}.yaml.
 #
 # The orchestrator never reads lab.yaml — it only runs commands
 # the frontend sends via exec. The backend reads it for the
-# environment config.
-#
-# Course authors: choose ONE format per lab file.
-#
-# Format A (New — Flat): Each lab gets its own .yaml file.
-#   courses/{course}/modules/{module}/labs/{lab-id}/lab.yaml
-#
-# Format B (Old — Monolithic): All labs for a module in one .yaml.
-#   courses/{course}/modules/{module}/labs/lab-1.yaml
-#
+# environment config. The frontend reads it for task prompts.
 # ──────────────────────────────────────────────────────────────
-
-
-
-# ══════════════════════════════════════════════════════════════
-# FORMAT A: FLAT (one lab per file)
-# ══════════════════════════════════════════════════════════════
-#
-# Use this when each lab has its own directory with lab.yaml +
-# instructions.md. Environment config lives in a shared file at
-# environments/{name}.yaml and is referenced by string.
 
 id: hello-world
 title: Hello World Container
@@ -85,99 +73,26 @@ tasks:
     error_message: "Check docker ps — one of those numbers matches."
     hint: "What command lists running containers?"
 
+  - id: check-port
+    title: Port is published
+    prompt: Is host port 8080 published by the web container?
+    type: port_check
+    validation:
+      command: docker port web 80 2>/dev/null | grep -q 8080 && echo MAPPED
+      match_type: exact
+      expected_output: MAPPED
+    error_message: "Port 8080 is not mapped to web."
+    hint: "What command shows port mappings for a container?"
+
+  - id: write-file
+    title: Create a config file
+    prompt: Create a file /tmp/app.conf containing the string DEBUG=false.
+    type: file_check
+    validation:
+      path: /tmp/app.conf
+      contains: DEBUG=false
+    error_message: "The file is missing or does not contain DEBUG=false."
+    hint: "What command writes text to a file?"
+
 completion:
   required_tasks: all
-
-# ──────────────────────────────────────────────────────────────
-# ══════════════════════════════════════════════════════════════
-# FORMAT B: MONOLITHIC (all labs in one file)
-# ══════════════════════════════════════════════════════════════
-#
-# Use this for backward compatibility. Environment is defined
-# inline. Labs are grouped into phases with setup steps.
-# ──────────────────────────────────────────────────────────────
-
-# ── Environment ──────────────────────────────────────────────
-environment:
-  base_image: "sgp-lab-docker:latest"
-  apt_packages:
-    - docker.io
-  pre_pull:
-    - nginx:alpine
-    - alpine:latest
-
-# ── Phases ───────────────────────────────────────────────────
-# Phase 0 is special — it runs once as environment setup.
-# Subsequent phases contain labs with tasks.
-phases:
-
-  # ── Phase 0: Environment Setup ───────────────────────────
-  - id: "phase-0"
-    title: "Environment Setup"
-    type: "setup"
-    description: "Install Docker and pull required images."
-    steps:
-      - id: "install-docker"
-        command: "apt-get update && apt-get install -y docker.io"
-        description: "Install Docker Engine"
-      - id: "pull-images"
-        command: "docker pull nginx:alpine && docker pull alpine:latest"
-        description: "Pull required images"
-
-  # ── Phase 1: Container Basics ────────────────────────────
-  - id: "phase-1"
-    title: "Container Basics"
-    description: "Run, inspect, and manage containers."
-    labs:
-
-      - id: "lab-1"
-        title: "Running Your First Container"
-        order: 1
-        tasks:
-
-          - id: "task-1"
-            prompt: "How many images are available?"
-            type: "multiple_choice"
-            options_source: "dynamic"
-            validation:
-              command: "docker images -q | wc -l | tr -d ' '"
-              match_type: "exact"
-            error_message: "Unexpected image count."
-            hint: "Run docker images to see what's available."
-
-          - id: "task-2"
-            prompt: "Run nginx named 'web' in detached mode."
-            type: "terminal_action"
-            validation:
-              command: "docker ps --format '{{.Names}}'"
-              expected_output: "web"
-              match_type: "contains"
-            error_message: "No running container named 'web'."
-            hint: "How do you name a container and run it detached?"
-
-      - id: "lab-2"
-        title: "Container Networking"
-        order: 2
-        setup:
-          - command: "docker rm -f web || true"
-        tasks:
-
-          - id: "task-1"
-            prompt: "Create a Docker network called 'lab-net'."
-            type: "terminal_action"
-            validation:
-              command: "docker network ls --format '{{.Names}}'"
-              expected_output: "lab-net"
-              match_type: "contains"
-            error_message: "Network 'lab-net' not found."
-            hint: "How do you create a user-defined network?"
-
-          - id: "task-2"
-            prompt: "Run alpine named 'app' on 'lab-net'."
-            type: "terminal_action"
-            validation:
-              command: "docker inspect app --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}'"
-              expected_output: "."
-              match_type: "regex"
-            error_message: "Container not found or not on lab-net."
-            hint: "Which flag specifies the network?"

@@ -1,0 +1,103 @@
+id: lab-2
+title: Inspecting and Configuring Containers
+difficulty: beginner
+estimated_time: 15
+xp: 70
+tags:
+  - docker
+  - containers
+  - configuration
+  - debugging
+environment: docker-basic
+
+objectives:
+  - Configure a container at runtime with environment variables
+  - Read a running container's configuration with docker inspect
+  - View container logs with docker logs
+  - Observe that a container's writable layer is ephemeral
+
+tasks:
+  - id: docker-access
+    title: Confirm Docker access
+    description: Make sure you can talk to the Docker daemon before configuring anything.
+    prompt: >-
+      Verify you can talk to the Docker daemon with `docker info`. Your lab user
+      is set up to use Docker already, so this should just work.
+    type: terminal_action
+    validation:
+      command: "docker info >/dev/null 2>&1 && echo DOCKER_OK"
+      match_type: exact
+      expected_output: DOCKER_OK
+    error_message: You do not have permission to talk to the Docker daemon yet.
+    hint: "docker info"
+
+  - id: configure-web
+    title: Configure a container with environment variables
+    description: Start a web server and give it a runtime setting without rebuilding anything.
+    prompt: >-
+      Start an nginx web server in the background named `web`, publish host port 8080
+      to container port 80, and pass the environment variable `SITE_MODE=production`
+      with the `-e` flag.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect web --format '{{.State.Status}}' 2>/dev/null | grep -qx running &&
+        docker inspect web --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
+        grep -q '^SITE_MODE=production$' && echo CONFIG_OK
+      match_type: exact
+      expected_output: CONFIG_OK
+    error_message: >-
+      The web container is not running with SITE_MODE=production set. Check
+      `docker ps` and `docker inspect web`.
+    hint: "docker run -d --name web -p 8080:80 -e SITE_MODE=production nginx:alpine"
+
+  - id: inspect-container
+    title: Inspect a running container
+    description: Read the full configuration Docker keeps about the container.
+    prompt: >-
+      Run `docker inspect web` and look for the Env section. Confirm the SITE_MODE
+      variable you set appears in the container's configuration.
+    type: terminal_action
+    validation:
+      command: "docker inspect web 2>/dev/null | grep -q 'SITE_MODE=production' && echo ENV_FOUND"
+      match_type: exact
+      expected_output: ENV_FOUND
+    error_message: SITE_MODE=production is not visible in `docker inspect web`. Look for the Env section of the output.
+    hint: "docker inspect web | grep -A 5 Env"
+
+  - id: read-logs
+    title: Read the container logs
+    description: Use docker logs to see what the container has been doing.
+    prompt: >-
+      Run `docker logs web` to view the server's startup logs. The entrypoint
+      prints a line when the configuration is complete and nginx is ready to
+      start up.
+    type: terminal_action
+    validation:
+      command: "docker logs web 2>&1 | grep -qi 'Configuration complete; ready for start up' && echo LOG_OK"
+      match_type: exact
+      expected_output: LOG_OK
+    error_message: The logs do not show nginx's startup banner. Run `docker logs web`.
+    hint: "docker logs web"
+
+  - id: ephemeral
+    title: Containers are ephemeral
+    description: Prove that data written to a container vanishes when the container is removed.
+    prompt: >-
+      Write the file /tmp/note.txt inside the `web` container, then stop and remove
+      the container. Start a fresh container named `web2` and confirm the file is gone.
+    type: terminal_action
+    validation:
+      command: "docker exec web2 test ! -f /tmp/note.txt 2>/dev/null && echo DATA_GONE"
+      match_type: exact
+      expected_output: DATA_GONE
+    error_message: >-
+      The file still exists in web2, or web2 is not running. Data written to a
+      container's writable layer is lost when the container is removed.
+    hint: >-
+      docker exec web touch /tmp/note.txt && docker stop web && docker rm web &&
+      docker run -d --name web2 -p 8081:80 nginx:alpine &&
+      docker exec web2 test ! -f /tmp/note.txt
+
+completion:
+  required_tasks: all

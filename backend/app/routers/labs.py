@@ -5,20 +5,26 @@ The backend reads the lab YAML from content-v2, extracts the environment
 config, and forwards it to the orchestrator. The frontend never talks
 to the orchestrator directly.
 
-JWT tokens are generated for WebSocket auth — the frontend connects
-directly to the orchestrator WebSocket with a short-lived token.
+The browser connects to the backend's own WebSocket endpoint
+(/api/v1/labs/ws/lab) and authenticates with a short-lived JWT sent as the
+first message — never in the URL. The backend validates it and bridges
+terminal frames to the orchestrator's internal WebSocket.
 
-Active sessions are tracked in-memory so users can reconnect to a paused
-lab instead of creating a duplicate session.
+Active sessions are a read-through cache: the orchestrator is the source of
+truth, queryable by Docker labels via GET /labs/by_key. This lets the backend
+re-attach to a live container after a restart instead of spawning a duplicate.
 """
 
+import asyncio
+import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, HTTPException
+import websockets
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -30,8 +36,9 @@ logger = logging.getLogger("backend.labs")
 
 router = APIRouter(prefix="/api/v1/labs", tags=["labs"])
 
-# Track active sessions per user per lab so we can reconnect on page reload.
+# Read-through cache of active sessions per user per lab.
 # Key: f"{user_id}:{course_id}:{lab_id}"  Value: session info dict
+# Source of truth is the orchestrator (Docker labels via /labs/by_key).
 active_sessions: dict[str, dict] = {}
 
 
@@ -78,32 +85,101 @@ def _generate_ws_token(session_id: str, user_id: str, lab_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def _build_ws_url(container_name: str, token: str) -> str:
-    return f"{WS_ORCHESTRATOR_URL}/ws/{container_name}/terminal?token={token}"
+def _verify_ws_token(token: str) -> dict | None:
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.PyJWTError:
+        return None
 
 
-def _require_active_session(user_id: str, course_id: str, lab_id: str) -> dict:
-    """Return the tracked session for this user+lab, or 404."""
+def _build_ws_url(request: Request) -> str:
+    """Browser-facing WebSocket URL on the backend itself.
+
+    The token is never placed in the URL — it is sent as the first message
+    on the WebSocket. The browser reaches the backend on the same host it
+    used for REST, so the orchestrator's internal address is never leaked.
+    """
+    host = request.headers.get("host", "localhost:8000")
+    scheme = "wss" if request.url.scheme == "https" else "ws"
+    return f"{scheme}://{host}/api/v1/labs/ws/lab"
+
+
+def _extract_auth_token(message: dict) -> str | None:
+    """Pull the JWT out of the first WS message ({'type': 'auth', 'token': ...})."""
+    if message.get("type") != "websocket.receive":
+        return None
+    text = message.get("text")
+    if text is None:
+        raw = message.get("bytes")
+        if raw is None:
+            return None
+        text = raw.decode(errors="replace")
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    token = data.get("token")
+    return token if isinstance(token, str) and token else None
+
+
+async def _get_orchestrator_session_by_key(user_id: str, lab_id: str) -> dict | None:
+    """Ask the orchestrator for the live session for this user+lab.
+
+    The orchestrator queries Docker labels, so this works even after this
+    process or the orchestrator restarted (no reliance on in-memory state).
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(
+                f"{ORCHESTRATOR_URL}/labs/by_key",
+                params={"user_id": user_id, "lab_id": lab_id},
+            )
+        except httpx.ConnectError:
+            raise HTTPException(status_code=502, detail="Cannot connect to orchestrator")
+
+    if resp.status_code == 404:
+        return None
+    if resp.status_code != 200:
+        detail = resp.json().get("detail", resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+
+    data = resp.json()
+    return {
+        "session_id": data["session_id"],
+        "container_name": data.get("container_name", ""),
+        "status": data.get("status", ""),
+    }
+
+
+async def _require_active_session(user_id: str, course_id: str, lab_id: str) -> dict:
+    """Return the live session for this user+lab, or 404.
+
+    Checks the local cache first, then falls back to the orchestrator's
+    label-based lookup (read-through cache).
+    """
     key = _session_key(user_id, course_id, lab_id)
     entry = active_sessions.get(key)
-    if not entry:
+    if entry:
+        return entry
+
+    found = await _get_orchestrator_session_by_key(user_id, lab_id)
+    if not found:
         raise HTTPException(
             status_code=404,
             detail="No active session for this lab. Start the lab first.",
         )
-    return entry
+    active_sessions[key] = {
+        "session_id": found["session_id"],
+        "container_name": found["container_name"],
+    }
+    return found
 
 
 def _extract_tasks(config: dict, lab_id: str) -> list[dict]:
-    """Extract the ordered task list from flat or monolithic lab YAML."""
-    tasks = config.get("tasks", [])
-    if tasks:
-        return tasks
-    for phase in config.get("phases", []):
-        for lab in phase.get("labs", []):
-            if lab.get("id") == lab_id:
-                return lab.get("tasks", [])
-    return []
+    """Extract the task list from the canonical flat lab YAML."""
+    return config.get("tasks", [])
 
 
 def _find_lab_task(config: dict, lab_id: str, task_id: str) -> dict:
@@ -174,46 +250,36 @@ def _build_options(correct: str) -> list[str]:
 async def get_active_session(
     course_id: str,
     lab_id: str,
+    request: Request,
     firebase_data=Depends(verify_firebase_token),
 ):
     """Return the active session for this user+lab, or null if none exists.
 
-    Verifies the session still exists in the orchestrator before returning.
+    The orchestrator is the source of truth (Docker labels), so a session is
+    found even after this process restarted.
     """
     user_id = firebase_data.get("uid", "")
     key = _session_key(user_id, course_id, lab_id)
-    entry = active_sessions.get(key)
-    if not entry:
+
+    found = await _get_orchestrator_session_by_key(user_id, lab_id)
+    if not found:
+        active_sessions.pop(key, None)
         return None
 
-    # Verify session still exists in orchestrator
-    session_id = entry["session_id"]
-    container_name = entry["container_name"]
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            resp = await client.get(f"{ORCHESTRATOR_URL}/labs/{session_id}")
-        except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="Cannot connect to orchestrator")
+    active_sessions[key] = {
+        "session_id": found["session_id"],
+        "container_name": found["container_name"],
+    }
 
-    if resp.status_code == 404:
-        # Session was destroyed externally — clean up
-        del active_sessions[key]
-        return None
-
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail="Failed to verify session")
-
-    data = resp.json()
-    ws_token = _generate_ws_token(session_id, user_id, lab_id)
-    ws_url = _build_ws_url(container_name, ws_token)
+    ws_token = _generate_ws_token(found["session_id"], user_id, lab_id)
 
     return ActiveSessionResponse(
-        session_id=session_id,
-        lab_id=data.get("lab_id", lab_id),
-        container_name=container_name,
-        status=data["status"],
+        session_id=found["session_id"],
+        lab_id=lab_id,
+        container_name=found["container_name"],
+        status=found["status"],
         ws_token=ws_token,
-        ws_url=ws_url,
+        ws_url=_build_ws_url(request),
     )
 
 
@@ -221,21 +287,42 @@ async def get_active_session(
 async def start_lab(
     course_id: str,
     lab_id: str,
+    request: Request,
     firebase_data=Depends(verify_firebase_token),
 ):
-    """Read lab YAML, extract environment config, forward to orchestrator."""
-    user_id = firebase_data.get("uid", "")
+    """Read lab YAML, extract environment config, forward to orchestrator.
 
-    # Destroy any existing session for this user+lab first
+    If a live container already exists for this user+lab, reuse it instead of
+    spawning a duplicate (prevents zombie containers after a restart).
+    """
+    user_id = firebase_data.get("uid", "")
     key = _session_key(user_id, course_id, lab_id)
-    existing = active_sessions.get(key)
+
+    existing = await _get_orchestrator_session_by_key(user_id, lab_id)
     if existing:
+        active_sessions[key] = {
+            "session_id": existing["session_id"],
+            "container_name": existing["container_name"],
+        }
+        ws_token = _generate_ws_token(existing["session_id"], user_id, lab_id)
+        return StartLabResponse(
+            session_id=existing["session_id"],
+            lab_id=lab_id,
+            container_name=existing["container_name"],
+            status=existing["status"],
+            ws_token=ws_token,
+            ws_url=_build_ws_url(request),
+        )
+
+    # No live container — the cached entry (if any) is stale. Best-effort
+    # cleanup, then provision fresh.
+    cached = active_sessions.pop(key, None)
+    if cached:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                await client.delete(f"{ORCHESTRATOR_URL}/labs/{existing['session_id']}")
+                await client.delete(f"{ORCHESTRATOR_URL}/labs/{cached['session_id']}")
         except Exception:
             pass
-        del active_sessions[key]
 
     provider = get_content_provider()
     config = provider.get_lab_config(course_id, lab_id)
@@ -257,6 +344,7 @@ async def start_lab(
         "lab_id": lab_id,
         "image": image,
         "user_id": user_id,
+        "course_id": course_id,
         "apt_packages": environment.get("apt_packages", []),
         "pre_pull": environment.get("pre_pull", []),
     }
@@ -276,9 +364,8 @@ async def start_lab(
 
     data = resp.json()
     ws_token = _generate_ws_token(data["session_id"], user_id, lab_id)
-    ws_url = _build_ws_url(data["container_name"], ws_token)
 
-    # Track this session
+    # Track this session (read-through cache)
     active_sessions[key] = {
         "session_id": data["session_id"],
         "container_name": data["container_name"],
@@ -290,7 +377,7 @@ async def start_lab(
         container_name=data["container_name"],
         status=data["status"],
         ws_token=ws_token,
-        ws_url=ws_url,
+        ws_url=_build_ws_url(request),
     )
 
 
@@ -299,6 +386,7 @@ async def refresh_token(
     course_id: str,
     lab_id: str,
     session_id: str,
+    request: Request,
     firebase_data=Depends(verify_firebase_token),
 ):
     """Issue a fresh WebSocket token for an existing session."""
@@ -314,11 +402,9 @@ async def refresh_token(
     if resp.status_code != 200:
         raise HTTPException(status_code=resp.status_code, detail="Session not found")
 
-    container_name = resp.json().get("container_name", "")
     ws_token = _generate_ws_token(session_id, user_id, lab_id)
-    ws_url = _build_ws_url(container_name, ws_token)
 
-    return TokenResponse(ws_token=ws_token, ws_url=ws_url)
+    return TokenResponse(ws_token=ws_token, ws_url=_build_ws_url(request))
 
 
 @router.get("/courses/{course_id}/labs/{lab_id}/status/{session_id}")
@@ -426,7 +512,7 @@ async def get_lab_tasks(
     running the task's validation command inside the container.
     """
     user_id = firebase_data.get("uid", "")
-    entry = _require_active_session(user_id, course_id, lab_id)
+    entry = await _require_active_session(user_id, course_id, lab_id)
 
     provider = get_content_provider()
     config = provider.get_lab_config(course_id, lab_id)
@@ -469,7 +555,7 @@ async def validate_task(
     - file_check: validation.path must contain validation.contains.
     """
     user_id = firebase_data.get("uid", "")
-    entry = _require_active_session(user_id, course_id, lab_id)
+    entry = await _require_active_session(user_id, course_id, lab_id)
 
     provider = get_content_provider()
     config = provider.get_lab_config(course_id, lab_id)
@@ -526,3 +612,121 @@ async def validate_task(
         })
     output = await _run_orchestrator_exec(entry["session_id"], cmd)
     return _result(_match_output(output, validation), output)
+
+
+# The frontend sends an application-level ping every 15s while connected. If
+# no browser frame arrives within this window, the tab is gone or wedged and
+# the bridge should be torn down so the orchestrator can clean up its attach
+# client instead of leaking it.
+_BROWSER_IDLE_TIMEOUT_SECONDS = 45
+# Bound a single send to a slow/blocked peer so one stuck direction can't
+# freeze the whole terminal (backpressure would stall the exec stream).
+_SEND_TIMEOUT_SECONDS = 15
+
+
+async def _bridge(browser: WebSocket, orch) -> None:
+    """Bidirectionally forward frames between the browser and the orchestrator.
+
+    - browser -> orchestrator: binary terminal input and resize JSON frames
+    - orchestrator -> browser: binary terminal output
+
+    When either side closes, the close condition is propagated to the caller
+    so the browser receives the orchestrator's close code (e.g. 4001/4003).
+    Both directions are watchdogged so a silently-dead peer tears the bridge
+    down instead of leaving an orphaned connection on the orchestrator.
+    """
+
+    async def browser_to_orch():
+        while True:
+            try:
+                message = await asyncio.wait_for(
+                    browser.receive(), timeout=_BROWSER_IDLE_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError:
+                return
+            if message.get("type") == "websocket.disconnect":
+                return
+            if message.get("type") != "websocket.receive":
+                continue
+            data = message.get("bytes")
+            if data is None:
+                text = message.get("text")
+                if text is None:
+                    continue
+                data = text.encode()
+            await asyncio.wait_for(orch.send(data), timeout=_SEND_TIMEOUT_SECONDS)
+
+    async def orch_to_browser():
+        async for raw in orch:
+            try:
+                if isinstance(raw, bytes):
+                    await asyncio.wait_for(
+                        browser.send_bytes(raw), timeout=_SEND_TIMEOUT_SECONDS
+                    )
+                else:
+                    await asyncio.wait_for(
+                        browser.send_text(raw), timeout=_SEND_TIMEOUT_SECONDS
+                    )
+            except asyncio.TimeoutError:
+                return
+
+    send_task = asyncio.create_task(browser_to_orch())
+    recv_task = asyncio.create_task(orch_to_browser())
+
+    done, pending = await asyncio.wait(
+        [send_task, recv_task],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for task in pending:
+        task.cancel()
+
+    # Propagate the first task exception (e.g. ConnectionClosed carrying the
+    # orchestrator's close code) so the proxy handler can forward it.
+    for task in done:
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            continue
+        if exc is not None:
+            raise exc
+
+
+@router.websocket("/ws/lab")
+async def lab_terminal_ws(websocket: WebSocket):
+    """Proxy the browser terminal WebSocket to the orchestrator.
+
+    The browser connects to the backend (never the orchestrator). The JWT is
+    sent as the first message — a {"type": "auth", "token": ...} handshake —
+    and is validated here before an internal client connection is opened to
+    the orchestrator. Terminal input/output and resize frames are bridged
+    transparently, so tmux persistence and resize handling are unchanged.
+    """
+    await websocket.accept()
+
+    try:
+        message = await websocket.receive()
+    except WebSocketDisconnect:
+        return
+
+    token = _extract_auth_token(message)
+    if not token or not _verify_ws_token(token):
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+
+    try:
+        async with websockets.connect(f"{WS_ORCHESTRATOR_URL}/ws/terminal") as orch:
+            await orch.send(json.dumps({"type": "auth", "token": token}))
+            await _bridge(websocket, orch)
+    except WebSocketDisconnect:
+        return
+    except websockets.exceptions.ConnectionClosed as e:
+        try:
+            await websocket.close(code=e.code or 1011, reason=(e.reason or "Closed")[:120])
+        except Exception:
+            pass
+    except Exception:
+        logger.exception("Terminal proxy error")
+        try:
+            await websocket.close(code=1011, reason="Internal error")
+        except Exception:
+            pass

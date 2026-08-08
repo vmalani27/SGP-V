@@ -1,0 +1,17 @@
+id: lab-2
+title: Initializing a Repository and Making Your First Commit
+difficulty: beginner
+estimated_time: 15
+xp: 60
+tags:
+  - git
+  - fundamentals
+environment: linux-basic
+
+objectives:
+  - Initialize a Git repository
+  - Create files and stage them
+  - Make your first commit
+
+completion:
+  required_tasks: all

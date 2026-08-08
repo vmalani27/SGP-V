@@ -1,0 +1,17 @@
+id: lab-8
+title: Stashing Work in Progress
+difficulty: intermediate
+estimated_time: 15
+xp: 65
+tags:
+  - git
+  - stash
+environment: linux-basic
+
+objectives:
+  - Save uncommitted work with git stash
+  - Restore stashed changes
+  - Handle stashes when switching branches
+
+completion:
+  required_tasks: all

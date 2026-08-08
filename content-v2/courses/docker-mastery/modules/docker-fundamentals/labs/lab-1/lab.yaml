@@ -1,4 +1,4 @@
-id: hello-world
+id: lab-1
 title: Hello World Container
 difficulty: beginner
 estimated_time: 10
@@ -13,6 +13,7 @@ objectives:
   - Diagnose why Docker commands fail
   - Grant your user access to the Docker daemon
   - Inspect the local image cache
+  - Run a simple container
 
 tasks:
   - id: access-daemon
@@ -47,6 +48,17 @@ tasks:
       expected_output: "2"
     error_message: Unexpected image count.
     hint: Run `docker images` to count them.
+
+  - id: run-simple-container
+    title: Run a simple container
+    prompt: Run a simple container that prints a greeting to the screen.
+    type: terminal_action
+    validation:
+      command: "docker run --rm alpine:latest echo GREETING_FROM_ALPINE"
+      match_type: exact
+      expected_output: GREETING_FROM_ALPINE
+    error_message: The container did not print the greeting. Make sure you run a container that echoes a greeting.
+    hint: Run `docker run --rm alpine:latest echo GREETING_FROM_ALPINE`.
 
 completion:
   required_tasks: all

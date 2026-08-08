@@ -16,6 +16,7 @@ export interface ContentModule {
   order?: number;
   chapters: Chapter[];
   labs?: ContentLab[];
+  items?: CourseItem[];
 }
 
 // ─── Lab ──────────────────────────────────────────────────────────────────────
@@ -35,7 +36,6 @@ export interface ContentCourse {
   title: string;
   description: string;
   level: string;
-  estimatedHours: number;
   modules: ContentModule[];
 }
 
@@ -46,13 +46,12 @@ export interface CourseCatalogEntry {
   title: string;
   description: string;
   level: string;
-  estimatedHours?: number;
 }
 
 // ─── Flat item type for sidebar/navigation ────────────────────────────────────
 
 export interface CourseItem {
-  type: 'chapter';
+  type: 'chapter' | 'lab';
   id: string;
   title: string;
   moduleId: string;

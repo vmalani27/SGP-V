@@ -11,7 +11,7 @@ The UI layer for LabOps. Handles authentication, course browsing, chapter viewer
 | Chapter viewer | Renders markdown theory + embedded quizzes |
 | Lab viewer | Intro → provision → running with task runner, xterm.js terminal, and toolbar (pause/resume/restart/destroy) |
 | Task runner | Renders `multiple_choice`, `terminal_action`, `port_check` tasks; validates via backend |
-| Terminal | WebSocket to orchestrator (`WS /ws/{id}/terminal`) via JWT token from backend |
+| Terminal | WebSocket to backend proxy (`WS /api/v1/labs/ws/lab`), JWT sent as first message; backend bridges to orchestrator |
 | Submit flow | Success animation per correct answer; Submit Lab modal records completion, destroys the container, returns to course |
 | Progress tracking | Calls backend API to mark chapters complete + labs complete |
 
@@ -34,7 +34,7 @@ Frontend → Backend (content + lab proxy) → Orchestrator (container exec)
 - **Course content** (TOC, chapters, lab instructions, tasks): `GET /api/v1/content/...`
 - **Lab lifecycle**: `POST /api/v1/labs/courses/{id}/labs/{labId}/start` (backend proxies to orchestrator)
 - **Command execution**: `POST /api/v1/labs/courses/{id}/labs/{labId}/exec/{sid}`
-- **WebSocket terminal**: `ws://localhost:8001/ws/{container}/terminal?token={jwt}` (direct, with JWT from backend)
+- **WebSocket terminal**: the browser connects to the backend's own WS endpoint (`ws://{backend}/api/v1/labs/ws/lab`) and sends the JWT as the **first message** (`{"type":"auth","token":...}`) — never in the URL. The backend bridges frames to the orchestrator's internal `/ws/terminal`. The orchestrator's address is never exposed to the browser.
 
 ## Validation Flow
 
@@ -86,7 +86,6 @@ NEXT_PUBLIC_FIREBASE_APP_ID=
 
 # API endpoints
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8001
 ```
 
 ## Pages

@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import { getCourse, getAllItems } from '@/lib/content-server';
+import { getCourse, getAllItems, itemHref } from '@/lib/content-server';
 import CourseProgressHeader from './CourseProgressHeader';
 import CourseCurriculum from './CourseCurriculum';
 
@@ -14,11 +14,9 @@ export default async function CoursePage({
   if (!course) return notFound();
 
   const allItems = getAllItems(course);
-  const firstChapter = allItems[0];
+  const firstItem = allItems[0];
 
-  const firstChapterHref = firstChapter
-    ? `/courses/${courseId}/chapters/${firstChapter.id}`
-    : '#';
+  const firstItemHref = firstItem ? itemHref(courseId, firstItem) : '#';
 
   return (
     <main className="min-h-screen bg-bg text-text">
@@ -32,7 +30,7 @@ export default async function CoursePage({
       <CourseProgressHeader
         courseId={courseId}
         course={course}
-        firstChapterHref={firstChapterHref}
+        firstItemHref={firstItemHref}
       />
 
       <section className="mx-auto max-w-6xl px-6 py-8">

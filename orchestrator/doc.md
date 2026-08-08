@@ -19,7 +19,9 @@ A background checker destroys labs after 40 minutes (configurable via `LAB_TIMEO
 
 ## Terminal Management
 
-The orchestrator provides an interactive Linux terminal via WebSocket at `WS /ws/{container_name}/terminal`. It uses aiodocker's async exec streaming to bridge stdin/stdout between xterm.js (browser) and the container's bash shell. The student gets a bash session as the `student` user.
+The orchestrator provides an interactive Linux terminal via WebSocket at `WS /ws/terminal`. The JWT is sent as the **first message** (`{"type":"auth","token":...}`) — never in the URL. The browser does not connect here directly; the backend proxies it from `/api/v1/labs/ws/lab`. It uses aiodocker's async exec streaming to bridge stdin/stdout between the backend proxy and the container's bash shell. The student gets a bash session as the `student` user.
+
+Sessions are recovered from Docker labels: containers are labelled `com.sgp.user_id`, `com.sgp.course_id` and `com.sgp.lab_id` at creation, and `GET /labs/by_key?user_id=&lab_id=` returns the live session after a restart.
 
 ## Validation System
 
@@ -53,6 +55,7 @@ All endpoints live under `http://localhost:8001`:
 | `GET` | `/health` | Docker daemon connectivity check |
 | `POST` | `/labs` | Start a lab container |
 | `GET` | `/labs` | List all active sessions |
+| `GET` | `/labs/by_key` | Recover session from Docker labels (`?user_id=&lab_id=`) |
 | `GET` | `/labs/{id}` | Session info |
 | `POST` | `/labs/{id}/activate` | Switch active lab (symlinks) |
 | `POST` | `/labs/{id}/stop` | Pause container |
@@ -61,6 +64,6 @@ All endpoints live under `http://localhost:8001`:
 | `POST` | `/labs/{id}/exec` | Run command in container |
 | `POST` | `/labs/{id}/validate` | Legacy: run validator.sh |
 | `POST` | `/labs/{id}/inspect` | Check file state |
-| `WS` | `/ws/{name}/terminal` | WebSocket terminal |
+| `WS` | `/ws/terminal` | WebSocket terminal (JWT first-message handshake) |
 | `GET` | `/schemas/yaml` | Lab YAML JSON Schema |
 | `GET` | `/schemas/sample` | Sample lab YAML |

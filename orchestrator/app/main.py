@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def recover_sessions():
     from app.api.labs import sessions
-    from app.config import LAB_PREFIX
+    from app.config import LAB_PREFIX, LABEL_LAB_ID, LABEL_USER_ID
     from app.models.session import LabSession, LabStatus
     from app.services.docker_service import DockerService
 
@@ -34,6 +34,8 @@ def recover_sessions():
         session_id = name[len(LAB_PREFIX) + 1:]
         if session_id in sessions:
             continue
+
+        labels = c.get("labels") or {}
 
         docker_status = c["status"]
         if docker_status == "running":
@@ -56,6 +58,8 @@ def recover_sessions():
             container_id=c["id"],
             container_name=name,
             status=status,
+            lab_id=labels.get(LABEL_LAB_ID, ""),
+            user_id=labels.get(LABEL_USER_ID, ""),
         )
         sessions[session_id] = session
         recovered += 1

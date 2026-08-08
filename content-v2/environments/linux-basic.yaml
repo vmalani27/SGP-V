@@ -1,4 +1,3 @@
-id: linux-basic
 base_image: sgp-lab-ubuntu:latest
 apt_packages:
   - git

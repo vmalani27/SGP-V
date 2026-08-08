@@ -67,15 +67,19 @@ def _run_sync():
 
     result = validate_all(_content_dir)
 
+    for warning in result.warnings:
+        logger.warning("Validation warning: %s", warning)
+
     if not result.ok:
-        error_summary = str(result)
-        logger.error("Content validation failed:\n%s", error_summary)
+        error_summary = "\n".join(str(e) for e in result.errors)
+        logger.error("Content validation failed (%d errors):\n%s", len(result.errors), error_summary)
         _state["last_result"] = {
             "status": "validation_failed",
             "errors": [str(e) for e in result.errors],
+            "warnings": [str(w) for w in result.warnings],
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        raise ValueError(f"Content validation failed: {len(result.errors)} error(s)")
+        return
 
     logger.info("Content validation passed — seeding to Firestore")
 
@@ -90,6 +94,7 @@ def _run_sync():
         "synced": sync_result["synced"],
         "skipped": sync_result["skipped"],
         "errors": sync_result["errors"],
+        "warnings": [str(w) for w in result.warnings],
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     logger.info(
@@ -134,8 +139,5 @@ def status():
 @app.post("/sync")
 def trigger_sync():
     """Manually trigger a validation + sync cycle."""
-    try:
-        _run_sync()
-        return {"status": "ok", "result": _state["last_result"]}
-    except ValueError as e:
-        return {"status": "error", "message": str(e), "result": _state["last_result"]}
+    _run_sync()
+    return {"status": "ok", "result": _state["last_result"]}

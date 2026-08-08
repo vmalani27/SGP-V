@@ -6,42 +6,31 @@ land these, and re-verify end-to-end.
 
 ---
 
-## Item A — Worker: content validation gating + Firestore seed correctness
+## Item A — Worker: content validation gating + Firestore seed correctness ✅ DONE
 
-**Type:** Bug fix (Worker microservice)
-**Service:** `worker/`
+**Type:** Bug fix (Worker microservice)  
+**Service:** `worker/`  
+**Branch:** `fix/worker-validation-seeding`  
 **Files:** `worker/app/validator.py`, `worker/app/seeder.py`, `worker/app/main.py`
 
-### Problem (verified)
-- `_run_sync` (`worker/app/main.py:64-78`) raises on validation failure and
-  **never calls `sync_courses`** — Firestore is not updated when content is
-  invalid. Running `validate_all` showed it failing with 1 error.
-- Validator bug: the monolithic branch requires `validation.command` on *every*
-  task, so `multiple_choice` tasks (e.g. task-3 in `lab-1.yaml`) fail with
-  `validation.command: Missing required field 'command'`.
-- Validator blind spots: `module.yaml` `labs:` refs that resolve to no YAML pass
-  silently; labs with zero tasks validate cleanly.
-- Seeder quality: `estimatedHours` reads `course_data.get("estimatedHours")` but
-  YAML uses `estimated_hours` → always 0; chapter/lab `order` hardcoded to 0;
-  `description`/`chapterId` always empty — the Firestore course reference is
-  skeletal even after a successful sync.
-
-### Fixes
-1. Exempt `multiple_choice` (and file/port check) tasks from the `command`
-   requirement in the monolithic branch → `validate_all` = 0 errors.
-2. Add a check that each `module.yaml` `labs:` entry resolves to YAML (dir
-   `lab.yaml` or flat `{id}.yaml`); warn (not fail) on zero-task labs so
-   skeleton labs pass.
-3. Seeder: read `estimated_hours`, `order`, `description`, `chapterId` from YAML
-   instead of hardcoding defaults.
+### Fixes landed
+1. Task validation is per-type: `file_check` requires `path` + `contains`, `port_check`
+   requires `port` or `path`, `multiple_choice` is exempt from `command`, everything
+   else requires `command`.
+2. Validator emits **warnings** (not failures) for: `module.yaml` refs that don't exist,
+   lab refs with no `labs/{id}/lab.yaml`, environment refs that don't resolve to
+   `environments/{name}.yaml`, and skeleton labs with zero tasks. `validate_all` = 0
+   errors; warnings don't block seeding.
+3. Seeder reads real metadata: 1-based module/chapter/lab `order` (with dict overrides
+   preserved), and `description` / `chapterId` from chapter/lab dicts.
+4. `_run_sync` no longer raises on validation failure — it records
+   `status: validation_failed` and skips seeding gracefully instead of crashing the
+   cycle and blocking Firestore updates entirely.
 
 ### Verification
-- Start worker → `curl :8002/status` → `docker logs sgp-worker` shows
-  `Content validation passed — seeding to Firestore`.
-- `courses/{docker-mastery,git-fundamentals}` docs updated with correct hash,
-  chapter/lab counts and orders.
-- No log files currently exist (container stdout only). Consider persistent
-  logging here if wanted.
+- `validate_all(content-v2)` → 0 errors, 7 skeleton-lab warnings (lab-4…lab-10).
+- Seeder writes ordered modules/chapters/labs, resolved lab titles, and preserved
+  `chapterId`/`description` for both courses; idempotent (skip on unchanged hash).
 
 ---
 

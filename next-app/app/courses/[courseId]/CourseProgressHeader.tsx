@@ -3,15 +3,16 @@
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import type { ContentCourse } from '@/lib/content-types';
+import { getAllItems, itemHref } from '@/lib/content-server';
 
 export default function CourseProgressHeader({
   courseId,
   course,
-  firstChapterHref,
+  firstItemHref,
 }: {
   courseId: string;
   course: ContentCourse;
-  firstChapterHref: string;
+  firstItemHref: string;
 }) {
   const { getEnrollment } = useAuth();
   const enrollment = getEnrollment(courseId);
@@ -20,6 +21,7 @@ export default function CourseProgressHeader({
   const hasProgress = percentage > 0;
 
   const completedChapterIds: string[] = [];
+  const completedLabIds: string[] = [];
   if (enrollment?.progress) {
     for (const modVal of Object.values(enrollment.progress)) {
       if (modVal && typeof modVal === 'object') {
@@ -29,13 +31,26 @@ export default function CourseProgressHeader({
       }
     }
   }
+  if (enrollment?.labsProgress) {
+    for (const modVal of Object.values(enrollment.labsProgress)) {
+      if (modVal && typeof modVal === 'object') {
+        for (const [labId, status] of Object.entries(modVal as Record<string, unknown>)) {
+          if (status === 'completed') completedLabIds.push(labId);
+        }
+      }
+    }
+  }
 
-  let continueHref = firstChapterHref;
+  let continueHref = firstItemHref;
   if (hasProgress) {
-    const allChapters = course.modules.flatMap((mod) => mod.chapters);
-    const nextIncomplete = allChapters.find((ch) => !completedChapterIds.includes(ch.id));
+    const allItems = getAllItems(course);
+    const nextIncomplete = allItems.find((item) =>
+      item.type === 'lab'
+        ? !completedLabIds.includes(item.id)
+        : !completedChapterIds.includes(item.id)
+    );
     if (nextIncomplete) {
-      continueHref = `/courses/${courseId}/chapters/${nextIncomplete.id}`;
+      continueHref = itemHref(courseId, nextIncomplete);
     }
   }
 

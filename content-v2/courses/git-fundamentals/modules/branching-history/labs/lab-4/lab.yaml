@@ -1,0 +1,17 @@
+id: lab-4
+title: Undoing Mistakes
+difficulty: intermediate
+estimated_time: 15
+xp: 65
+tags:
+  - git
+  - history
+environment: linux-basic
+
+objectives:
+  - Discard changes in the working tree
+  - Unstage files with git restore
+  - Revert commits safely
+
+completion:
+  required_tasks: all

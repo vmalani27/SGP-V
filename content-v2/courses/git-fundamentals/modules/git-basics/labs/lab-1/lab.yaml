@@ -1,0 +1,51 @@
+id: lab-1
+title: Setting Up Git
+difficulty: beginner
+estimated_time: 10
+xp: 50
+tags:
+  - git
+  - fundamentals
+environment: linux-basic
+
+objectives:
+  - Verify Git is installed
+  - Configure your Git identity
+  - Understand why Git needs your name and email
+
+tasks:
+  - id: check-version
+    title: Check the installed Git version
+    prompt: Check the installed Git version.
+    type: terminal_action
+    validation:
+      command: "git --version"
+      match_type: contains
+      expected_output: "git version"
+    error_message: Git does not appear to be installed.
+    hint: What command shows the installed version of a program?
+
+  - id: set-user-name
+    title: Configure your Git user name
+    prompt: Configure your Git user name to 'Student'.
+    type: terminal_action
+    validation:
+      command: "git config --global user.name"
+      match_type: exact
+      expected_output: "Student"
+    error_message: Git user name is not set to 'Student'.
+    hint: Use git config --global user.name to set it.
+
+  - id: set-user-email
+    title: Configure your Git user email
+    prompt: Configure your Git email to 'student@example.com'.
+    type: terminal_action
+    validation:
+      command: "git config --global user.email"
+      match_type: exact
+      expected_output: "student@example.com"
+    error_message: Git email is not set correctly.
+    hint: Use git config --global user.email to set it.
+
+completion:
+  required_tasks: all

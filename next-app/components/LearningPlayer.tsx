@@ -4,17 +4,24 @@ import { useState, type ReactNode } from 'react';
 import Navbar from '@/components/Navbar';
 import PlayerSidebar from '@/components/PlayerSidebar';
 import { useAuth } from '@/lib/auth-context';
-import type { ContentCourse, Chapter } from '@/lib/content-types';
+import type { ContentCourse } from '@/lib/content-types';
+
+interface PlayerItem {
+  id: string;
+  title: string;
+  moduleId: string;
+  moduleTitle: string;
+}
 
 export default function LearningPlayer({
   course,
   courseId,
-  currentChapter,
+  currentItem,
   children,
 }: {
   course: ContentCourse;
   courseId: string;
-  currentChapter: Chapter & { moduleId: string; moduleTitle: string };
+  currentItem: PlayerItem;
   children: ReactNode;
 }) {
   const { getEnrollment } = useAuth();
@@ -38,7 +45,7 @@ export default function LearningPlayer({
         breadcrumb={[
           { label: 'Dashboard', href: '/dashboard' },
           { label: course.title, href: `/courses/${courseId}` },
-          { label: currentChapter.title },
+          { label: currentItem.title },
         ]}
       />
 
@@ -54,7 +61,7 @@ export default function LearningPlayer({
             <PlayerSidebar
               course={course}
               courseId={courseId}
-              currentChapterId={currentChapter.id}
+              currentItemId={currentItem.id}
               completedChapterIds={completedChapterIds}
               onToggle={() => setSidebarOpen(false)}
             />

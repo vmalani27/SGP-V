@@ -31,6 +31,10 @@ RUN apt-get update && apt-get install -y \
 # Ensure docker daemon starts with systemd
 RUN systemctl enable docker.service
 
+# Allow the student user to run docker commands against the inner daemon.
+# Baked into the image so docker exec -u student picks it up at container start.
+RUN usermod -aG docker student
+
 WORKDIR /home/student
 
 ENTRYPOINT ["/sbin/init"]

@@ -8,7 +8,7 @@ The frontend calls the **backend** (`localhost:8000`), which proxies to the **or
 Frontend → Backend (8000) → Orchestrator (8001) → Docker
 ```
 
-The backend reads the lab YAML from content-v2, extracts the environment config, and forwards it to the orchestrator. This lets the backend track user ID, session duration, and lab attempts.
+The backend reads the lab YAML from content-v2, extracts the environment config, and forwards it to the orchestrator. This lets the backend track user ID, session duration, and lab attempts. The terminal WebSocket is also proxied: the browser connects to the backend (`/api/v1/labs/ws/lab`) and the backend bridges frames to the orchestrator's internal `/ws/terminal`. The orchestrator address is never exposed to the browser.
 
 ---
 
@@ -166,9 +166,20 @@ curl -X POST http://localhost:8001/labs/<session_id>/inspect \
 ```
 
 ### WebSocket Terminal
+
+Auth is a first-message handshake (`{"type":"auth","token":<jwt>}`) — the token is never in the URL. In the running stack the browser connects to the **backend** proxy instead; this tests the orchestrator directly:
+
 ```bash
-websocat ws://localhost:8001/ws/<session_id>/terminal
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/token/<session_id> | python3 -c "import sys, json; print(json.load(sys.stdin)['ws_token'])")
+websocat --text ws://localhost:8001/ws/terminal
+# then type: {"type":"auth","token":"$TOKEN"}
 ```
+
+### Session recovery (labels)
+```bash
+curl "http://localhost:8001/labs/by_key?user_id=<uid>&lab_id=lab-1"
+```
+Returns the live session if a labelled container exists, `404` otherwise.
 
 ### Schemas
 ```bash

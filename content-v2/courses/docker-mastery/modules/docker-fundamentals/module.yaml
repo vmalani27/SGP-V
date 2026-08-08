@@ -1,11 +1,17 @@
 id: docker-fundamentals
 title: Docker Fundamentals
+description: Master the container CLI — from your first container to inspecting, configuring, and cleaning up after them.
 order: 1
-chapters:
-  - chapter-1
-  - chapter-2
-  - chapter-3
-labs:
-  - lab-1
-  - lab-2
-  - lab-3
+items:
+  - type: chapter
+    id: chapter-1
+  - type: chapter
+    id: chapter-2
+  - type: lab
+    id: lab-1
+  - type: chapter
+    id: chapter-3
+  - type: lab
+    id: lab-2
+  - type: lab
+    id: lab-3

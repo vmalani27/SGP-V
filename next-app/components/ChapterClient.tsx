@@ -5,17 +5,19 @@ import { useRouter } from 'next/navigation';
 import TheorySection from './TheorySection';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { itemHref } from '@/lib/content-server';
+import type { CourseItem } from '@/lib/content-types';
 
 export default function ChapterClient({
   courseId,
   chapterId,
   moduleId,
-  nextChapterId,
+  nextItem,
 }: {
   courseId: string;
   chapterId: string;
   moduleId: string;
-  nextChapterId?: string | null;
+  nextItem?: CourseItem | null;
 }) {
   const router = useRouter();
   const { refreshEnrollments } = useAuth();
@@ -60,8 +62,8 @@ export default function ChapterClient({
   };
 
   const handleNext = () => {
-    if (nextChapterId) {
-      router.push(`/courses/${courseId}/chapters/${nextChapterId}`);
+    if (nextItem) {
+      router.push(itemHref(courseId, nextItem));
     } else {
       router.push(`/courses/${courseId}`);
     }
@@ -110,7 +112,11 @@ export default function ChapterClient({
             onClick={handleNext}
             className="flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-bg transition hover:bg-accent/90"
           >
-            {nextChapterId ? 'Next Chapter' : 'Back to Course'}
+            {nextItem
+              ? nextItem.type === 'lab'
+                ? 'Start Lab'
+                : 'Next Chapter'
+              : 'Back to Course'}
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
             </svg>

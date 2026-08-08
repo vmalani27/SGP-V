@@ -33,7 +33,7 @@ services:
       - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON:-}
       - CONTENT_DIR=/app/content
       - ORCHESTRATOR_URL=http://orchestrator:8000
-      - WS_ORCHESTRATOR_URL=ws://localhost:8001
+      - WS_ORCHESTRATOR_URL=ws://orchestrator:8000
       - JWT_SECRET=${JWT_SECRET:-dev-only-change-in-production}
     restart: unless-stopped
 
