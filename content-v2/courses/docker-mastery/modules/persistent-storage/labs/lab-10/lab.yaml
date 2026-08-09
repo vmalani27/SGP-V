@@ -9,6 +9,9 @@ tags:
   - healthchecks
 environment: docker-basic
 
+setup:
+  - command: "usermod -aG docker student"
+
 objectives:
   - Add HEALTHCHECK to a Dockerfile
   - Configure restart policies

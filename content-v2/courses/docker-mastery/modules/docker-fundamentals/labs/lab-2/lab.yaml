@@ -3,6 +3,9 @@ title: Inspecting and Configuring Containers
 difficulty: beginner
 environment: docker-basic
 
+setup:
+  - command: "usermod -aG docker student"
+
 objectives:
   - Configure a container at runtime with environment variables
   - Read a running container's configuration with docker inspect

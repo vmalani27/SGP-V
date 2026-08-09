@@ -4,8 +4,10 @@ export type TaskStatus = 'pending' | 'correct' | 'incorrect';
 
 export interface TaskValidation {
   command?: string;
-  match_type: MatchType;
+  match_type?: MatchType;
   expected_output?: string;
+  expected_answer?: string;
+  expected_exit_code?: number;
   port?: number;
   path?: string;
   expected_status?: number;

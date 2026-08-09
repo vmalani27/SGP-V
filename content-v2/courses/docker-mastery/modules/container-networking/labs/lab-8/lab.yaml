@@ -8,6 +8,9 @@ tags:
   - compose
 environment: docker-basic
 
+setup:
+  - command: "usermod -aG docker student"
+
 objectives:
   - Define multi-service apps with Docker Compose
   - Use docker-compose.yml

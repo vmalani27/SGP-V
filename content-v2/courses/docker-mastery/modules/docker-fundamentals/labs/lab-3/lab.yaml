@@ -3,6 +3,9 @@ title: Environment Variables
 difficulty: beginner
 environment: docker-basic
 
+setup:
+  - command: "usermod -aG docker student"
+
 objectives:
   - Pass environment variables into a container
   - Map host ports to container ports
