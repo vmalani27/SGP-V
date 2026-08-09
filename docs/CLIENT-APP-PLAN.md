@@ -11,11 +11,60 @@ the **client** (frontend + orchestrator on the student's machine) downloads the
 published content artifact from a public-read S3 bucket, extracts it into a
 local folder, and renders course content from there.
 
+## The flow in plain words (user/dev story)
+
+The whole product flow, end to end, with no component names. This is the reason
+the rest of the plan exists.
+
+**A bug is found in a lesson.**
+
+1. **The developer fixes the content.** They edit the course files in the repo
+   (a chapter, a lab, a typo in a title). Nothing else — no database edits, no
+   manual uploads.
+
+2. **A push publishes it.** Pushing to `dev` triggers CI, which automatically:
+   - validates the content (chapters and labs must be well-formed),
+   - computes a version from the content itself (same content = same version,
+     so an unchanged push changes nothing),
+   - uploads **only the files that changed** to the public content store (S3).
+
+3. **The system notices.** The worker checks the store periodically (a few
+   minutes), sees the new version, downloads it, verifies its integrity, and
+   updates the course metadata (titles, chapter/lab lists, counts) in the
+   database.
+
+4. **The learner's app finds out on its own.** The next time a learner opens the
+   app, it compares the content version it has stored locally against the live
+   one. If they differ, the app:
+   - downloads the new content **directly from the public store** — the backend
+     is never in the path of moving content around,
+   - verifies the download is intact and unmodified,
+   - uses it locally from then on.
+
+5. **The learner sees what's new.** The app shows a small **NEW** badge on
+   exactly the course, chapter, or lab that changed — only what's actually new,
+   not everything.
+
+6. **The badge doesn't nag.** A badge disappears as soon as the learner opens
+   that new item — but it can never vanish before they've had a chance to
+   notice it (a 48-hour floor), and it can never linger longer than a week (a
+   7-day cap). Learners who ignore it get it cleaned up for them.
+
+That's it. Content has exactly one source of truth (the published store), the
+backend stays a metadata + auth API, and the learner's app is self-sufficient
+with the content it has downloaded.
+
+**Local-development note:** while this plan is being built, the app may still
+read content straight from the repo for fast iteration. That is a temporary
+convenience for testing — the flow above is the product behavior once the plan
+lands.
+
 ## Target architecture
 
 | Component | Role |
 |-----------|------|
 | Backend | Firestore API: auth, catalog/TOC metadata, progress, content-integrity checks. `GET /api/v1/content/version` → `{version, download_url, artifact_sha256}`. No file reads, no `content-v2` mount, no `FilesystemProvider`. |
+
 | Worker | S3 → validate → seed Firestore (unchanged) |
 | CI | validate + publish artifact to S3 (unchanged) |
 | S3 | canonical content bytes, **public read** |
@@ -100,11 +149,17 @@ frontend until it can serve locally).
 - **Verify:** editing content → republishing → an un-synced client gets the
   warning on its next progress call; boot sync pulls the new version.
 
-### 6. `feat/new-content-badges` — NEW badge with visit-based expiry
+### 6. `feat/new-content-badges` — NEW badge with engage-to-dismiss expiry
 
 - On a version change, diff the new item IDs against the previous version's.
-- Persist `{itemId: remainingVisits}` locally (default 2–3).
-- Render a NEW badge in the curriculum/sidebar; decrement `remainingVisits` on
-  each app load; clear the badge when it reaches 0.
-- **Verify:** after a content update, new items show the badge; after N app
-  loads the badge disappears and content renders normally.
+- Persist `{itemId: firstSeenAt}` locally for each newly added item.
+- Render a NEW badge in the curriculum/sidebar for those items.
+- Dismiss the badge when the learner **opens the new item** — reuse the existing
+  "chapter read / lab started" progress events, so no separate tracking system.
+- Expiry rule — the badge disappears on the **first** of:
+  - the item was opened **and** at least 48 hours have passed since it appeared
+    (an accidental glance or automated load must never hide it early), or
+  - 7 days since it first appeared (hard cap — it can never linger longer).
+- **Verify:** after a content update, new items show the badge; opening one
+  after the 48h floor removes its badge; double-visits/reloads never hide a
+  badge early; untouched badges disappear after 7 days.
