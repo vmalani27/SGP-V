@@ -7,7 +7,6 @@ Synced document shape (Firestore courses collection):
   "id": "git-fundamentals",
   "title": "Git Fundamentals",
   "description": "...",
-  "slug": "git-fundamentals",
   "level": "beginner",
   "modules": [
     {
@@ -15,6 +14,10 @@ Synced document shape (Firestore courses collection):
       "title": "Git Basics",
       "description": "...",
       "order": 1,
+      "items": [
+        { "type": "chapter", "id": "chapter-1", "title": "...", "order": 1 },
+        { "type": "lab", "id": "lab-1", "title": "...", "chapterId": "chapter-1", "order": 2 }
+      ],
       "chapters": [
         { "id": "chapter-1", "title": "...", "description": "...", "order": 1 }
       ],
@@ -26,8 +29,19 @@ Synced document shape (Firestore courses collection):
   "totalChapters": 10,
   "totalLabs": 10,
   "contentHash": "abc123...",
-  "updatedAt": <timestamp>
+  "contentVersion": "abc123...",
+  "updatedAt": <timestamp>,
+  "createdAt": <timestamp>
 }
+
+Field contract:
+  - Source (authored):      title, description, level, modules[].{id,title,description,order}, items[]
+  - Derived (by this file): modules[].chapters, modules[].labs, modules[].items (with titles),
+                            totalChapters, totalLabs, contentHash
+  - Programmatic:           id (= doc id), contentVersion, updatedAt, createdAt
+
+slug and estimatedHours are intentionally absent — id already is the slug, and
+estimatedHours was stale data with no source in content-v2/.
 """
 
 from __future__ import annotations
@@ -170,6 +184,87 @@ def _content_hash(course_dir: Path) -> str:
     return h.hexdigest()[:16]
 
 
+def _build_modules(course_data: dict) -> tuple[list[dict], int, int]:
+    """Derive the Firestore module structure + totals from parsed course data.
+
+    Returns (modules, total_chapters, total_labs). Every field here is
+    *derived* — recomputed from the source content on every sync so it can
+    never go stale the way a one-shot seed can.
+    """
+    modules = []
+    total_chapters = 0
+    total_labs = 0
+
+    for mi, mod in enumerate(course_data.get("modules", [])):
+        chapters = []
+        for ci, ch in enumerate(mod.get("chapters", [])):
+            cid_val = ch["id"] if isinstance(ch, dict) else ch
+            ctitle = ch.get("title", cid_val) if isinstance(ch, dict) else cid_val
+            chapters.append({
+                "id": cid_val,
+                "title": ctitle,
+                "description": ch.get("description", "") if isinstance(ch, dict) else "",
+                "order": ch.get("order", ci + 1) if isinstance(ch, dict) else ci + 1,
+            })
+            total_chapters += 1
+
+        labs = []
+        for li, lab in enumerate(mod.get("labs", [])):
+            if isinstance(lab, dict):
+                labs.append({
+                    "id": lab["id"],
+                    "title": lab.get("title", ""),
+                    "description": lab.get("description", ""),
+                    "chapterId": lab.get("chapterId", ""),
+                    "order": lab.get("order", li + 1),
+                })
+            else:
+                labs.append({
+                    "id": lab,
+                    "title": "",
+                    "description": "",
+                    "chapterId": "",
+                    "order": li + 1,
+                })
+            total_labs += 1
+
+        # The linear learning path (canonical ordering, with titles resolved).
+        items = []
+        for item in mod.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            items.append({
+                "type": item.get("type", "chapter"),
+                "id": item.get("id", ""),
+                "title": item.get("title", "") or item.get("id", ""),
+            })
+
+        modules.append({
+            "id": mod.get("id", ""),
+            "title": mod.get("title", ""),
+            "description": mod.get("description", ""),
+            "order": mod.get("order", mi + 1),
+            "items": items,
+            "chapters": chapters,
+            "labs": labs,
+        })
+
+    return modules, total_chapters, total_labs
+
+
+def _doc_key(doc: dict) -> tuple:
+    """Return a comparable key for a courses doc, excluding timestamps.
+
+    createdAt/updatedAt are programmatic bookkeeping — they are not part of
+    the content contract and must not drive a rewrite.
+    """
+    return tuple(sorted(
+        (k, json.dumps(v, sort_keys=True, default=str))
+        for k, v in doc.items()
+        if k not in ("createdAt", "updatedAt")
+    ))
+
+
 # ── S3 content source ─────────────────────────────────────────────────────────
 
 def _s3_client():
@@ -303,6 +398,12 @@ def download_content(s3_dir: Path, db) -> str | None:
 def sync_courses(db: firestore.Client, content_dir: Path, content_version: str | None = None) -> dict:
     """
     Read index.json + course content, upsert to Firestore.
+
+    Full reconciliation: every cycle rebuilds the derived document from source
+    content and rewrites Firestore whenever the stored document differs from
+    what would be produced now. contentHash is kept in the document for
+    introspection, but it never gates a write by itself — a stale derived
+    field (e.g. a module seeded with empty chapters) can never persist.
     Returns a summary dict with counts.
     """
     index_path = content_dir / "index.json"
@@ -328,82 +429,37 @@ def sync_courses(db: firestore.Client, content_dir: Path, content_version: str |
             errors.append(f"courses/{cid}: course.yaml not found")
             continue
 
-        content_hash = _content_hash(course_dir)
-
-        existing_doc = existing.get(cid)
-        if existing_doc and existing_doc.get("contentHash") == content_hash:
-            if content_version is not None and existing_doc.get("contentVersion") != content_version:
-                courses_ref.document(cid).set({"contentVersion": content_version}, merge=True)
-            skipped += 1
-            continue
-
-        # Build full module structure for Firestore
-        modules = []
-        total_chapters = 0
-        total_labs = 0
-
-        for mi, mod in enumerate(course_data.get("modules", [])):
-            chapters = []
-            for ci, ch in enumerate(mod.get("chapters", [])):
-                cid_val = ch["id"] if isinstance(ch, dict) else ch
-                ctitle = ch.get("title", cid_val) if isinstance(ch, dict) else cid_val
-                chapters.append({
-                    "id": cid_val,
-                    "title": ctitle,
-                    "description": ch.get("description", "") if isinstance(ch, dict) else "",
-                    "order": ch.get("order", ci + 1) if isinstance(ch, dict) else ci + 1,
-                })
-                total_chapters += 1
-
-            labs = []
-            for li, lab in enumerate(mod.get("labs", [])):
-                if isinstance(lab, dict):
-                    labs.append({
-                        "id": lab["id"],
-                        "title": lab.get("title", ""),
-                        "description": lab.get("description", ""),
-                        "chapterId": lab.get("chapterId", ""),
-                        "order": lab.get("order", li + 1),
-                    })
-                else:
-                    labs.append({
-                        "id": lab,
-                        "title": "",
-                        "description": "",
-                        "chapterId": "",
-                        "order": li + 1,
-                    })
-                total_labs += 1
-
-            modules.append({
-                "id": mod.get("id", ""),
-                "title": mod.get("title", ""),
-                "description": mod.get("description", ""),
-                "order": mod.get("order", mi + 1),
-                "chapters": chapters,
-                "labs": labs,
-            })
+        modules, total_chapters, total_labs = _build_modules(course_data)
 
         doc_data = {
             "id": cid,
             "title": course_data.get("title", entry.get("title", "")),
             "description": course_data.get("description", entry.get("description", "")),
-            "slug": cid,
             "level": course_data.get("level", entry.get("level", "")),
             "modules": modules,
             "totalChapters": total_chapters,
             "totalLabs": total_labs,
-            "contentHash": content_hash,
+            "contentHash": _content_hash(course_dir),
             "updatedAt": datetime.utcnow(),
         }
 
         if content_version is not None:
             doc_data["contentVersion"] = content_version
 
-        if not existing_doc:
+        existing_doc = existing.get(cid)
+        if existing_doc:
+            created_at = existing_doc.get("createdAt")
+            if created_at is not None:
+                doc_data["createdAt"] = created_at
+
+        if existing_doc and _doc_key(existing_doc) == _doc_key(doc_data):
+            skipped += 1
+            continue
+
+        if not existing_doc or "createdAt" not in doc_data:
             doc_data["createdAt"] = datetime.utcnow()
 
-        courses_ref.document(cid).set(doc_data, merge=True)
+        courses_ref.document(cid).set(doc_data)
         synced += 1
         logger.info("Synced course: %s (%d chapters, %d labs)", cid, total_chapters, total_labs)
 
