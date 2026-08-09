@@ -53,8 +53,8 @@ def _active_content_dir(db) -> tuple[Path, str, str]:
     resolved = download_content(_content_dir_s3, db)
     if resolved is None:
         raise RuntimeError("S3 content source unavailable (unreachable or nothing published yet)")
-    content_dir, version, artifact_sha256 = resolved
-    return content_dir, version, artifact_sha256
+    version, artifact_sha256 = resolved
+    return _content_dir_s3, version, artifact_sha256
 
 
 # ── Background loop ───────────────────────────────────────────
