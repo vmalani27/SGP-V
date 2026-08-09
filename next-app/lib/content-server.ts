@@ -13,12 +13,11 @@ async function backendFetch<T>(path: string): Promise<T | null> {
 }
 
 export async function getCourseCatalog(): Promise<CourseCatalogEntry[]> {
-  const data = await backendFetch<{ courses: CourseCatalogEntry[] }>('/api/v1/content/courses');
-  return data?.courses ?? [];
+  return (await backendFetch<CourseCatalogEntry[]>('/api/v1/courses')) ?? [];
 }
 
 export async function getCourse(courseId: string): Promise<ContentCourse | null> {
-  return backendFetch<ContentCourse>(`/api/v1/content/courses/${courseId}`);
+  return backendFetch<ContentCourse>(`/api/v1/courses/${courseId}`);
 }
 
 export function getAllChapters(course: ContentCourse): (Chapter & { moduleId: string; moduleTitle: string })[] {
