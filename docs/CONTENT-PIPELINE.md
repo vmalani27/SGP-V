@@ -1,22 +1,46 @@
 # Content Pipeline (`content-v2/`)
 
 End-to-end reference for the course content system: how `content-v2/` is
-structured, validated, seeded into Firestore, served by the backend, and
-rendered by the frontend.
+structured, validated, published to S3, seeded into Firestore, and consumed
+by the worker (cloud) today and by the client app in the target model.
+
+## Current vs target
+
+| Component | Now | Target |
+|-----------|-----|--------|
+| Validator | `scripts/validate_content.py` (CI gate) + worker re-validation | unchanged |
+| Publisher | CI → S3 (`latest.json` + `published/{version}/…`) | unchanged |
+| S3 bucket | Floci (dev, host loopback) | public-read S3-compatible bucket |
+| Worker | S3-only: download → validate → seed Firestore | unchanged (stays cloud) |
+| Backend | serves content files via `FilesystemProvider` (mounted `content-v2`) | pure Firestore API (history/progress/catalog) + `GET /content/version` pointer |
+| Frontend | Next.js, fetches content via backend API | client-side, serves from locally extracted content |
+| Orchestrator | cloud service, proxies lab lifecycle | client-side, runs labs on the student's docker |
+
+---
 
 ## Data flow
 
+### Now
+
 ```
-content-v2/  (single source of truth, mounted read-only as /app/content)
+content-v2/  (canonical format, source of truth for authoring)
     │
-    ├──→  Worker  (validator.py + seeder.py)
-    │         1. validate_all()           — schema checks (errors vs warnings)
-    │         2. sync_courses()           — idempotent upsert to Firestore `courses`
-    │            (every 300s; also POST /sync on the worker to trigger manually)
+    ├──→  CI  (.github/workflows/publish-content.yml, self-hosted runner)
+    │         validate_content.py  →  generate_manifest.py  →  aws s3 sync
+    │         ──►  S3 bucket: latest.json + published/{version}/{content.tar.gz, manifest.json}
     │
-    ├──→  Backend  (content_provider.py + routers/content.py)
+S3 bucket ──→  Worker  (S3-only; no filesystem mount)
+    │            1. download_content()   — fetch latest.json, compare contentVersion,
+    │               download tarball, verify artifact_sha256 + per-file hashes,
+    │               extract into CONTENT_DIR_S3 (/data/content)
+    │            2. validate_all()       — schema checks on the downloaded artifact
+    │            3. sync_courses()       — idempotent upsert to Firestore `courses`
+    │               (writes contentHash + contentVersion; every 300s, or POST /sync)
+    │
+    ├──→  Backend  (content_provider.py + routers/content.py)   [transitional]
     │         GET /api/v1/content/...     — TOC, chapters, lab instructions, tasks
     │         GET /api/v1/labs/...        — lab lifecycle proxy → orchestrator
+    │         (reads the still-mounted ./content-v2 via FilesystemProvider)
     │
     └──→  Frontend  (Next.js)
               /courses/[courseId]         — curriculum from course TOC
@@ -24,8 +48,29 @@ content-v2/  (single source of truth, mounted read-only as /app/content)
               /labs/[labId]               — intro → provision → tasks + terminal
 ```
 
+### Target (client-side app)
+
+```
+content-v2/ ──► CI ──► S3 bucket   (canonical content bytes, public read)
+
+S3 ──► Worker (cloud) ──► Firestore (catalog metadata + contentVersion)
+Backend (cloud) = Firestore API: auth, history, progress, catalog
+                  + GET /content/version  (current contentVersion, from Firestore)
+
+Student machine — downloaded docker-compose (Linux + docker CLI + sysbox):
+  frontend + orchestrator
+      startup:  GET /content/version  →  compare with local version marker
+                if changed: download {content.tar.gz} from S3 (public read),
+                verify artifact_sha256, extract into a local content dir
+      frontend:    serves course TOC / chapters / lab instructions from local files
+      orchestrator: spawns lab containers from the same local lab.yaml
+                    (it receives image/apt_packages/pre_pull in the start request —
+                    no orchestrator content access needed)
+```
+
 Orchestrator never reads content files. It only runs containers and executes
-commands the backend sends.
+commands that are sent to it (by the backend today, by the frontend in the
+target model).
 
 ---
 
@@ -234,8 +279,8 @@ apt_packages:
   - git
 ```
 
-Fields consumed by the backend lab `start` endpoint: `base_image`
-(required), `apt_packages`, `pre_pull`. Base images are built from
+Fields consumed by the lab `start` endpoint: `base_image` (required),
+`apt_packages`, `pre_pull`. Base images are built from
 `orchestrator/lab-images/`.
 
 ---
@@ -252,10 +297,17 @@ time (never stored in `module.yaml`):
 
 ---
 
-## 4. Validation (`worker/app/validator.py`)
+## 4. Validation
 
-`validate_all(content_dir)` runs on the worker at startup, every
-`SYNC_INTERVAL_SECONDS` (default 300s), and on `POST /sync`. It checks:
+Validation runs in two places:
+
+1. **CI gate (pre-publish)** — `scripts/validate_content.py content-v2/`
+   reuses `worker/app/validator.py` and gates publishing. Exit codes: `0` ok
+   (warnings allowed), `1` errors, `2` usage error.
+2. **Worker (post-download)** — the worker re-validates the artifact it
+   downloaded into `CONTENT_DIR_S3` on every cycle before seeding.
+
+`validate_all(content_dir)` checks:
 
 **`index.json`** — parses, requires `courses[]`, each entry has
 `id`/`title`/`description`/`level`; ids are lowercase-hyphen, unique, valid
@@ -274,49 +326,104 @@ other types need `command`).
 
 **Errors vs warnings**
 
-- **Error** → seed is blocked (`/status` shows `validation_failed`).
-- **Warning** → seed proceeds. Current warnings: module ref without
+- **Error** → publish blocked (CI) / seed blocked (worker, `/status` shows
+  `validation_failed`).
+- **Warning** → proceeds. Current warnings: module ref without
   `module.yaml`, missing `lab.yaml` for a lab, environment ref that doesn't
   resolve, and skeleton labs (no `tasks`).
-
-Run it standalone:
-
-```bash
-cd worker
-python -c "from pathlib import Path; from app.validator import validate_all; r=validate_all(Path('content-v2')); [print('ERROR', e) for e in r.errors]; [print('WARN', w) for w in r.warnings]; print('ok' if r.ok else 'FAILED')"
-```
 
 Current state: 0 errors, 16 skeleton warnings (git labs 2–10, docker labs 4–10).
 
 ---
 
-## 5. Seeding to Firestore (`worker/app/seeder.py`)
+## 5. Publishing to S3 (CI)
 
-`sync_courses(db)` reads `index.json`, then for each course reads
-`course.yaml` → `module.yaml` → titles, and upserts a `courses` document.
+`.github/workflows/publish-content.yml` (`publish-content`):
 
-- **`contentHash`** = sha256 over `course.yaml` + all `module.yaml` +
-  all `lab.yaml` (chapter markdown is intentionally excluded). If the hash
-  matches the existing Firestore doc, the course is **skipped** (idempotent).
-- **Document shape**: `{id, title, description, slug, level, modules:[{
-  id, title, description, order, chapters:[{id,title,description,order}],
-  labs:[{id,title,description,chapterId,order}] }], totalChapters,
-  totalLabs, contentHash, updatedAt}` (+ `createdAt` on first write).
-- **Orphan cleanup**: Firestore courses not in `index.json` are deleted.
-- Cadence: on startup, then every `SYNC_INTERVAL_SECONDS`.
+- **Triggers**: push to `dev` touching `content-v2/**`; also
+  `workflow_dispatch` (manual). Runs on the repo's **self-hosted** runner.
+- **Secrets** (defined under the `dev` environment): `S3_BUCKET`,
+  `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  `AWS_REGION`. The publish steps are gated on `S3_BUCKET` being set.
+- **Steps**: checkout → setup-python 3.12 → `pip install pyyaml awscli` →
+  `python scripts/validate_content.py content-v2/` (gate) →
+  `python scripts/generate_manifest.py content-v2/ out/` →
+  `aws s3 sync out/ s3://${S3_BUCKET}/`.
 
-Check the worker: `GET /status` on the worker service, or `POST /sync` to
-force a cycle.
+Artifact layout in the bucket:
+
+```
+latest.json                                     # {version, artifact_sha256, published_at}
+published/{version}/content.tar.gz              # deterministic tar of content-v2/
+published/{version}/manifest.json               # {version, files: [{path, sha256}]}
+```
+
+`scripts/generate_manifest.py`:
+
+- `version` = content-derived sha256 (over sorted `"path sha256"` lines) —
+  identical content → identical version → no re-download.
+- Tarball is deterministic (mtime 0, uid/gid 0, mode 0644).
+- `manifest.json` `files[]` drives the worker's per-file integrity check.
 
 ---
 
-## 6. Serving — backend content API
+## 6. Seeding to Firestore (`worker/app/seeder.py`)
 
-Backend is the only content server (via `ContentProvider` —
-`FilesystemProvider` today, `S3Provider` future). Resolving a course builds
-`items`/`chapters`/`labs` from `module.yaml` and resolves titles (see §3);
-lab configs get `lab_id`/`module_id` injected and `environment` replaced by
-the parsed `environments/{ref}.yaml`.
+The worker is **S3-only** — it never reads a mounted `content-v2`. Every cycle:
+
+1. **`download_content(s3_dir, db)`**
+   - Fetches `latest.json` from the bucket.
+   - Compares `version` with the `contentVersion` already seeded in Firestore
+     (`_seeded_content_version`); if unchanged and `s3_dir/index.json`
+     exists, it skips (already current).
+   - Otherwise downloads `published/{version}/content.tar.gz`, verifies its
+     sha256 against `latest.json` `artifact_sha256`, downloads
+     `manifest.json` (must match the version), extracts to a temp dir,
+     verifies every file against the manifest, then moves the verified
+     contents into `s3_dir` (volume-mount-safe — moves children rather than
+     renaming/rmtree'ing the mount point).
+   - Returns the version, or `None` when S3 is unconfigured, unreachable, or
+     nothing has been published yet. Integrity failures **raise** — a corrupt
+     download never seeds silently.
+
+2. **`validate_all(s3_dir)`** — see §4.
+
+3. **`sync_courses(db, content_dir, content_version)`**
+   - Reads `index.json`, then per course reads `course.yaml` → `module.yaml`
+     → titles, and upserts a `courses` document.
+   - **Full reconciliation**: every cycle rebuilds the derived document from
+     source content and rewrites Firestore whenever the stored document
+     differs from what would be produced now. `contentHash` (= sha256 over
+     `course.yaml` + all `module.yaml` + all `lab.yaml`, chapter markdown
+     excluded) is kept in the document for introspection but never gates a
+     write by itself — so a stale derived field (e.g. a module seeded with
+     empty chapters) can never persist.
+   - **Document shape**: `{id, title, description, level, modules:[{
+     id, title, description, order, items:[{type,id,title}],
+     chapters:[{id,title,description,order}],
+     labs:[{id,title,description,chapterId,order}] }], totalChapters,
+     totalLabs, contentHash, contentVersion, updatedAt, createdAt}`.
+     `slug` and `estimatedHours` are intentionally absent (see
+     `docs/CLIENT-APP-PLAN.md` metadata contract).
+   - **Orphan cleanup**: Firestore courses not in `index.json` are deleted.
+
+Cadence: on startup, then every `SYNC_INTERVAL_SECONDS` (default 300s).
+`GET /status` exposes `content_source` (`s3`), `published_version`, and the
+last result; `POST /sync` forces a cycle. `GET /health` reports the S3
+content dir.
+
+---
+
+## 7. Serving — backend content API (transitional)
+
+> Transitional: today the backend serves content from the still-mounted
+> `./content-v2` via `FilesystemProvider` (`CONTENT_SOURCE=filesystem`). In
+> the target model the backend **stops serving file bytes** (see §9); no
+> backend `S3Provider` will be built.
+
+Resolving a course builds `items`/`chapters`/`labs` from `module.yaml` and
+resolves titles (see §3); lab configs get `lab_id`/`module_id` injected and
+`environment` replaced by the parsed `environments/{ref}.yaml`.
 
 | Endpoint | Returns |
 |----------|---------|
@@ -342,7 +449,7 @@ the parsed `environments/{ref}.yaml`.
 
 ---
 
-## 7. Frontend rendering (Next.js)
+## 8. Frontend rendering (Next.js)
 
 | Page | Data source | Renders |
 |------|-------------|---------|
@@ -350,6 +457,10 @@ the parsed `environments/{ref}.yaml`.
 | `/courses/[courseId]` | `GET /content/courses/{id}` | curriculum accordion from module `items` |
 | `/courses/[courseId]/chapters/[chapterId]` | `GET /content/chapters/{id}` | markdown via react-markdown |
 | `/courses/[courseId]/labs/[labId]` | instructions + `GET .../tasks` | intro → provision → running |
+
+Today these all fetch through the backend API (`next-app/lib/content-server.ts`
+→ `BACKEND_URL`). In the target model (§9) the same data is served from the
+locally extracted content directory.
 
 **Lab page phases**: `loading → intro → provisioning → running → error`.
 
@@ -367,12 +478,60 @@ records completion and destroys the container.
 
 ---
 
-## 8. Authoring workflow
+## 9. Target: client-side app
+
+The student downloads a **docker-compose** running `frontend` + `orchestrator`
+on their own machine (Linux; requires the Docker CLI and sysbox). Cloud
+components stay cloud-hosted.
+
+Responsibilities:
+
+| Side | Component | Role |
+|------|-----------|------|
+| Cloud | `backend` | Firestore API: auth, user history, progress, course catalog metadata; `GET /content/version` (current `contentVersion`, from Firestore) |
+| Cloud | `worker` | S3 → validate → seed Firestore (unchanged from §6) |
+| CI | validator | gate + publish artifact to S3 (unchanged from §5) |
+| S3 | bucket | canonical content bytes, **public read** |
+| Client | `frontend` | content bootstrap + serves course UI from local files |
+| Client | `orchestrator` | runs lab containers on the student's docker (via local `docker.sock`) |
+
+**Content bootstrap** (frontend, on startup):
+
+1. `GET /content/version` from the backend → compare with the local version
+   marker (e.g. a `version` file next to the extracted content).
+2. If changed (or absent): download `published/{version}/content.tar.gz`
+   directly from S3 (public read — no credentials), verify sha256 against
+   `latest.json` `artifact_sha256`, extract into the local content dir,
+   write the version marker.
+3. Frontend serves TOC/chapters/instructions from that dir; the orchestrator
+   spawns labs from the same `lab.yaml` files (it already receives
+   `image`/`apt_packages`/`pre_pull` in the `start` request).
+
+This mirrors the worker's `download_content()` logic; identical content →
+identical version → no re-download.
+
+**Distribution caveats**
+
+- Local Floci (`http://localhost.floci.io:4566`) is dev-only. The target
+  requires an internet-reachable S3-compatible bucket with **public read** for
+  the artifact (course content is non-sensitive).
+- The client must reach the backend API over the internet (Firestore-backed);
+  the content bytes come from S3.
+- sysbox + Docker CLI are the only host requirements today; install automation
+  is future work.
+
+---
+
+## 10. Authoring workflow
 
 1. Edit files under `content-v2/` (see §2 templates).
-2. Run the validator (§4) — fix errors, review warnings.
-3. Wait for the worker sync (or `POST /sync`) — check `/status`.
-4. Verify in the frontend: course page → chapter → lab.
+2. Run `python scripts/validate_content.py content-v2/` locally — fix errors,
+   review warnings.
+3. Commit + push to `dev` (path `content-v2/**`) → CI validates and publishes
+   to S3 (§5).
+4. The worker picks up the new version on its next cycle (or `POST /sync`) —
+   check `/status` for `published_version` and `status: ok`.
+5. Verify in the frontend: course page → chapter → lab.
 
 **Course immutability**: once users are enrolled, structure is append-only —
 don't reorder or delete modules/chapters/labs, don't rename IDs. See
@@ -387,3 +546,5 @@ don't reorder or delete modules/chapters/labs, don't rename IDs. See
 - `next-app/README.md` — frontend structure, validation flow
 - `orchestrator/schemas/README.md` — lab authoring guide + JSON Schema
 - `MIGRATION.md` — how the canonical format evolved, locked decisions
+- `deferred-improvements.md` — backlog (Item B, the old backend S3Provider
+  plan, is superseded by §9)
