@@ -71,6 +71,24 @@ function buildLabMeta(
   return meta;
 }
 
+// The environment config the orchestrator needs to provision the container.
+// Comes from the lab config's resolved environment ({base_image, apt_packages,
+// pre_pull}) plus the lab's top-level setup commands.
+function envConfigFrom(labConfig: Record<string, unknown> | null): {
+  image: string;
+  apt_packages: string[];
+  pre_pull: string[];
+  setup: unknown[];
+} {
+  const env = (labConfig?.environment as Record<string, unknown> | undefined) ?? {};
+  return {
+    image: (env.base_image as string | undefined) ?? '',
+    apt_packages: Array.isArray(env.apt_packages) ? (env.apt_packages as string[]) : [],
+    pre_pull: Array.isArray(env.pre_pull) ? (env.pre_pull as string[]) : [],
+    setup: Array.isArray(labConfig?.setup) ? (labConfig.setup as unknown[]) : [],
+  };
+}
+
 // Difficulty shown as a compact 3-bar meter placeholder (value stays in YAML).
 const DIFFICULTY_LEVELS = ['beginner', 'intermediate', 'advanced'];
 
@@ -102,6 +120,7 @@ export default function LabPage() {
 
   const [labInfo, setLabInfo] = useState<LabInfo | null>(null);
   const [labMeta, setLabMeta] = useState<LabMeta | null>(null);
+  const [labConfig, setLabConfig] = useState<Record<string, unknown> | null>(null);
   const [course, setCourse] = useState<ContentCourse | null>(null);
   const [labState, setLabState] = useState<LabState | null>(null);
   const [phase, setPhase] = useState<LabPhase>('loading');
@@ -146,7 +165,10 @@ export default function LabPage() {
     }).finally(() => {
       // After fetching instructions, build lab meta and check for active session
       api.content.getLabConfig(courseId, labId)
-        .then((config) => setLabMeta(buildLabMeta(config, labId, labInfoResult?.title || labId)))
+        .then((config) => {
+          setLabConfig(config);
+          setLabMeta(buildLabMeta(config, labId, labInfoResult?.title || labId));
+        })
         .catch(() => setLabMeta(buildLabMeta(null, labId, labInfoResult?.title || labId)));
 
       api.labs.active(courseId, labId).then((active) => {
@@ -198,7 +220,16 @@ export default function LabPage() {
     setPhase('provisioning');
     setError(null);
     try {
-      const result = await api.labs.start(courseId, labId);
+      // The client owns the lab config — fetch it if it didn't arrive on mount.
+      let config = labConfig;
+      if (!config) {
+        try {
+          config = await api.content.getLabConfig(courseId, labId);
+        } catch {
+          config = null;
+        }
+      }
+      const result = await api.labs.start(courseId, labId, envConfigFrom(config));
       setLabState({
         sessionId: result.session_id,
         wsUrl: result.ws_url,
@@ -212,7 +243,7 @@ export default function LabPage() {
       setError(msg);
       setPhase('error');
     }
-  }, [courseId, labId]);
+  }, [courseId, labId, labConfig]);
 
   const handleRestart = async () => {
     if (!labState) return;
@@ -237,7 +268,7 @@ export default function LabPage() {
       }
       setLabState(null);
       try {
-        const result = await api.labs.start(courseId, labId);
+        const result = await api.labs.start(courseId, labId, envConfigFrom(labConfig));
         setLabState({
           sessionId: result.session_id,
           wsUrl: result.ws_url,
@@ -338,7 +369,10 @@ export default function LabPage() {
     if (phase !== 'running' || taskProgress) return;
     let cancelled = false;
 
-    api.labs.tasks(courseId, labId)
+    // Tasks come from the client's local lab config; the backend enriches
+    // dynamic multiple-choice options against the live container.
+    const tasks = (labConfig?.tasks as unknown[] | undefined) ?? [];
+    api.labs.tasks(courseId, labId, tasks)
       .then((data) => {
         if (cancelled) return;
         if (data.tasks.length === 0) {
@@ -353,14 +387,18 @@ export default function LabPage() {
       });
 
     return () => { cancelled = true; };
-  }, [phase, taskProgress, courseId, labId]);
+  }, [phase, taskProgress, courseId, labId, labConfig]);
 
   const handleValidate = useCallback(async (taskId: string, answer?: string) => {
     if (!labState) return;
     setValidating(true);
     setTaskErrors((prev) => ({ ...prev, [taskId]: '' }));
     try {
-      const result = await api.labs.validate(courseId, labId, taskId, answer);
+      const task = taskProgressRef.current?.tasks.find((t) => t.id === taskId);
+      if (!task) {
+        throw new Error('Task definition missing. Refresh the page to retry.');
+      }
+      const result = await api.labs.validate(courseId, labId, taskId, answer, task);
       if (result.correct) {
         setTaskStatuses((prev) => ({ ...prev, [taskId]: 'correct' }));
         setCelebrating(true);

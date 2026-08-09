@@ -1,5 +1,5 @@
 import { auth } from './firebase';
-import type { TaskListResponse, TaskProgressData, ValidateResponse } from './task-types';
+import type { LabTask, TaskListResponse, TaskProgressData, ValidateResponse } from './task-types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
@@ -160,7 +160,16 @@ export const api = {
         ws_token: string;
         ws_url: string;
       } | null>(`/api/v1/labs/courses/${courseId}/labs/${labId}/active`),
-    start: (courseId: string, labId: string) =>
+    start: (
+      courseId: string,
+      labId: string,
+      envConfig: {
+        image: string;
+        apt_packages?: string[];
+        pre_pull?: string[];
+        setup?: unknown[];
+      },
+    ) =>
       apiFetch<{
         session_id: string;
         lab_id: string;
@@ -170,6 +179,7 @@ export const api = {
         ws_url: string;
       }>(`/api/v1/labs/courses/${courseId}/labs/${labId}/start`, {
         method: 'POST',
+        body: JSON.stringify(envConfig),
       }),
     status: (courseId: string, labId: string, sessionId: string) =>
       apiFetch<{ session_id: string; status: string; container_name: string }>(
@@ -195,14 +205,31 @@ export const api = {
         `/api/v1/labs/courses/${courseId}/labs/${labId}/token/${sessionId}`,
         { method: 'POST' }
       ),
-    tasks: (courseId: string, labId: string) =>
+    tasks: (courseId: string, labId: string, tasks: unknown[]) =>
       apiFetch<TaskListResponse>(
-        `/api/v1/labs/courses/${courseId}/labs/${labId}/tasks`
+        `/api/v1/labs/courses/${courseId}/labs/${labId}/tasks`,
+        { method: 'POST', body: JSON.stringify({ tasks }) }
       ),
-    validate: (courseId: string, labId: string, taskId: string, answer?: string) =>
+    validate: (
+      courseId: string,
+      labId: string,
+      taskId: string,
+      answer: string | undefined,
+      task: LabTask,
+    ) =>
       apiFetch<ValidateResponse>(
         `/api/v1/labs/courses/${courseId}/labs/${labId}/validate`,
-        { method: 'POST', body: JSON.stringify({ task_id: taskId, answer }) }
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            task_id: taskId,
+            answer,
+            task_type: task.type,
+            validation: task.validation,
+            error_message: task.error_message,
+            hint: task.hint,
+          }),
+        }
       ),
   },
 };

@@ -1,9 +1,10 @@
 """
 Labs API — backend proxies lab lifecycle to orchestrator.
 
-The backend reads the lab YAML from content-v2, extracts the environment
-config, and forwards it to the orchestrator. The frontend never talks
-to the orchestrator directly.
+The client serves the lab config locally (downloaded content) and supplies
+the environment config + task validation specs in the request bodies. The
+backend never reads content files — it only forwards lab lifecycle to the
+orchestrator. The frontend never talks to the orchestrator directly.
 
 The browser connects to the backend's own WebSocket endpoint
 (/api/v1/labs/ws/lab) and authenticates with a short-lived JWT sent as the
@@ -29,7 +30,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import JWT_ALGORITHM, JWT_EXPIRY_MINUTES, JWT_SECRET, ORCHESTRATOR_URL, WS_ORCHESTRATOR_URL
-from app.services.content_provider import get_content_provider
 from app.utils.firebase_util import verify_firebase_token
 
 logger = logging.getLogger("backend.labs")
@@ -69,9 +69,28 @@ class TokenResponse(BaseModel):
     ws_url: str
 
 
+class StartLabRequest(BaseModel):
+    """Environment config supplied by the client from its local lab config."""
+
+    image: str
+    apt_packages: list[str] = []
+    pre_pull: list[str] = []
+    setup: list[dict] = []
+
+
+class LabTasksRequest(BaseModel):
+    """Task list supplied by the client from its local lab config."""
+
+    tasks: list[dict] = []
+
+
 class ValidateTaskRequest(BaseModel):
     task_id: str
     answer: str | None = None
+    task_type: str = "terminal_action"
+    validation: dict[str, object] = {}
+    error_message: str | None = None
+    hint: str | None = None
 
 
 def _generate_ws_token(session_id: str, user_id: str, lab_id: str) -> str:
@@ -177,21 +196,6 @@ async def _require_active_session(user_id: str, course_id: str, lab_id: str) -> 
     return found
 
 
-def _extract_tasks(config: dict, lab_id: str) -> list[dict]:
-    """Extract the task list from the canonical flat lab YAML."""
-    return config.get("tasks", [])
-
-
-def _find_lab_task(config: dict, lab_id: str, task_id: str) -> dict:
-    for task in _extract_tasks(config, lab_id):
-        if task.get("id") == task_id:
-            return task
-    raise HTTPException(
-        status_code=404,
-        detail=f"Task '{task_id}' not found in lab '{lab_id}'",
-    )
-
-
 async def _run_orchestrator_exec(session_id: str, command: str) -> tuple[int, str]:
     """Proxy an exec to the orchestrator and return (exit_code, combined output)."""
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -289,9 +293,10 @@ async def start_lab(
     course_id: str,
     lab_id: str,
     request: Request,
+    body: StartLabRequest,
     firebase_data=Depends(verify_firebase_token),
 ):
-    """Read lab YAML, extract environment config, forward to orchestrator.
+    """Provision a lab container from the client-supplied environment config.
 
     If a live container already exists for this user+lab, reuse it instead of
     spawning a duplicate (prevents zombie containers after a restart).
@@ -325,30 +330,14 @@ async def start_lab(
         except Exception:
             pass
 
-    provider = get_content_provider()
-    config = provider.get_lab_config(course_id, lab_id)
-    if config is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Lab '{lab_id}' config not found in course '{course_id}'",
-        )
-
-    environment = config.get("environment", {})
-    image = environment.get("base_image")
-    if not image:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Lab '{lab_id}' YAML is missing environment.base_image",
-        )
-
     orch_payload = {
         "lab_id": lab_id,
-        "image": image,
+        "image": body.image,
         "user_id": user_id,
         "course_id": course_id,
-        "apt_packages": environment.get("apt_packages", []),
-        "pre_pull": environment.get("pre_pull", []),
-        "setup": config.get("setup", []),
+        "apt_packages": body.apt_packages,
+        "pre_pull": body.pre_pull,
+        "setup": body.setup,
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -502,26 +491,23 @@ async def exec_command(course_id: str, lab_id: str, session_id: str, body: dict)
     return resp.json()
 
 
-@router.get("/courses/{course_id}/labs/{lab_id}/tasks")
+@router.post("/courses/{course_id}/labs/{lab_id}/tasks")
 async def get_lab_tasks(
     course_id: str,
     lab_id: str,
+    body: LabTasksRequest,
     firebase_data=Depends(verify_firebase_token),
 ):
     """Return the lab's task list for an active session.
 
-    For dynamic multiple-choice tasks, resolves the answer options by
-    running the task's validation command inside the container.
+    The task list comes from the client (its local lab config). For dynamic
+    multiple-choice tasks, the answer options are resolved by running the
+    task's validation command inside the container.
     """
     user_id = firebase_data.get("uid", "")
     entry = await _require_active_session(user_id, course_id, lab_id)
 
-    provider = get_content_provider()
-    config = provider.get_lab_config(course_id, lab_id)
-    if config is None:
-        raise HTTPException(status_code=404, detail=f"Lab '{lab_id}' config not found")
-
-    tasks = _extract_tasks(config, lab_id)
+    tasks = body.tasks
 
     for task in tasks:
         if (
@@ -550,6 +536,9 @@ async def validate_task(
 ):
     """Validate a single task against the live container state.
 
+    The validation spec (task_type, validation, error_message, hint) is
+    supplied by the client from its local lab config.
+
     - multiple_choice: answer is checked against validation.expected_output
       (static) or against the output of validation.command (dynamic).
     - command tasks: validation.command is run as the student and its output
@@ -559,21 +548,15 @@ async def validate_task(
     user_id = firebase_data.get("uid", "")
     entry = await _require_active_session(user_id, course_id, lab_id)
 
-    provider = get_content_provider()
-    config = provider.get_lab_config(course_id, lab_id)
-    if config is None:
-        raise HTTPException(status_code=404, detail=f"Lab '{lab_id}' config not found")
-
-    task = _find_lab_task(config, lab_id, body.task_id)
-    task_type = task.get("type", "terminal_action")
-    validation = task.get("validation", {})
+    task_type = body.task_type
+    validation = body.validation or {}
 
     def _result(correct: bool, output: str = "") -> JSONResponse:
         return JSONResponse(content={
             "correct": correct,
             "output": output,
-            "error": None if correct else task.get("error_message"),
-            "hint": task.get("hint"),
+            "error": None if correct else body.error_message,
+            "hint": body.hint,
         })
 
     if task_type == "multiple_choice":
