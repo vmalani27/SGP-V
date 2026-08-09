@@ -1,12 +1,6 @@
 id: lab-1
 title: Hello World Container
 difficulty: beginner
-estimated_time: 10
-xp: 50
-tags:
-  - docker
-  - containers
-  - fundamentals
 environment: docker-basic
 
 objectives:
@@ -17,7 +11,6 @@ objectives:
 
 tasks:
   - id: access-daemon
-    title: Can you access the Docker daemon?
     prompt: Can you access the Docker daemon right now? Run `docker ps` to find out.
     type: multiple_choice
     options: ["Yes", "No"]
@@ -28,7 +21,6 @@ tasks:
     hint: Run `docker ps` and read the error message.
 
   - id: fix-group
-    title: Fix Docker access
     prompt: Add your user to the docker group so Docker commands work.
     type: terminal_action
     validation:
@@ -39,7 +31,6 @@ tasks:
     hint: Run `sudo usermod -aG docker student`, then refresh your session with `newgrp docker`.
 
   - id: count-images
-    title: Count images
     prompt: How many images are present in the system?
     type: multiple_choice
     options: ["1", "2", "3", "4"]
@@ -50,7 +41,6 @@ tasks:
     hint: Run `docker images` to count them.
 
   - id: run-simple-container
-    title: Run a simple container
     prompt: Run a simple container that prints a greeting to the screen.
     type: terminal_action
     validation:
@@ -59,6 +49,3 @@ tasks:
       expected_output: GREETING_FROM_ALPINE
     error_message: The container did not print the greeting. Make sure you run a container that echoes a greeting.
     hint: Run `docker run --rm alpine:latest echo GREETING_FROM_ALPINE`.
-
-completion:
-  required_tasks: all

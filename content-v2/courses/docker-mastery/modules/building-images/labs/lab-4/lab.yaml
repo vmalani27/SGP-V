@@ -1,17 +1,9 @@
 id: lab-4
 title: Building with Dockerfiles
 difficulty: beginner
-estimated_time: 15
-xp: 75
-tags:
-  - docker
-  - dockerfile
 environment: docker-basic
 
 objectives:
   - Write a Dockerfile
   - Build an image from a Dockerfile
   - Run a container from your custom image
-
-completion:
-  required_tasks: all

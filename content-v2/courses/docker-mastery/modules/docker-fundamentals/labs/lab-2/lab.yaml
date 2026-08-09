@@ -1,13 +1,6 @@
 id: lab-2
 title: Inspecting and Configuring Containers
 difficulty: beginner
-estimated_time: 15
-xp: 70
-tags:
-  - docker
-  - containers
-  - configuration
-  - debugging
 environment: docker-basic
 
 objectives:
@@ -18,8 +11,6 @@ objectives:
 
 tasks:
   - id: docker-access
-    title: Confirm Docker access
-    description: Make sure you can talk to the Docker daemon before configuring anything.
     prompt: >-
       Verify you can talk to the Docker daemon with `docker info`. Your lab user
       is set up to use Docker already, so this should just work.
@@ -32,8 +23,6 @@ tasks:
     hint: "docker info"
 
   - id: configure-web
-    title: Configure a container with environment variables
-    description: Start a web server and give it a runtime setting without rebuilding anything.
     prompt: >-
       Start an nginx web server in the background named `web`, publish host port 8080
       to container port 80, and pass the environment variable `SITE_MODE=production`
@@ -52,8 +41,6 @@ tasks:
     hint: "docker run -d --name web -p 8080:80 -e SITE_MODE=production nginx:alpine"
 
   - id: inspect-container
-    title: Inspect a running container
-    description: Read the full configuration Docker keeps about the container.
     prompt: >-
       Run `docker inspect web` and look for the Env section. Confirm the SITE_MODE
       variable you set appears in the container's configuration.
@@ -66,8 +53,6 @@ tasks:
     hint: "docker inspect web | grep -A 5 Env"
 
   - id: read-logs
-    title: Read the container logs
-    description: Use docker logs to see what the container has been doing.
     prompt: >-
       Run `docker logs web` to view the server's startup logs. The entrypoint
       prints a line when the configuration is complete and nginx is ready to
@@ -81,8 +66,6 @@ tasks:
     hint: "docker logs web"
 
   - id: ephemeral
-    title: Containers are ephemeral
-    description: Prove that data written to a container vanishes when the container is removed.
     prompt: >-
       Write the file /tmp/note.txt inside the `web` container, then stop and remove
       the container. Start a fresh container named `web2` and confirm the file is gone.
@@ -98,6 +81,3 @@ tasks:
       docker exec web touch /tmp/note.txt && docker stop web && docker rm web &&
       docker run -d --name web2 -p 8081:80 nginx:alpine &&
       docker exec web2 test ! -f /tmp/note.txt
-
-completion:
-  required_tasks: all
