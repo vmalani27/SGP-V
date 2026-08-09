@@ -3,6 +3,9 @@ title: Building with Dockerfiles
 difficulty: beginner
 environment: docker-basic
 
+setup:
+  - command: "usermod -aG docker student"
+
 objectives:
   - Write a Dockerfile
   - Build an image from a Dockerfile

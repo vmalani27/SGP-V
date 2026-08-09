@@ -27,6 +27,7 @@ class StartLabRequest(BaseModel):
     course_id: str = ""
     apt_packages: list[str] = []
     pre_pull: list[str] = []
+    setup: list[dict[str, str]] = []
 
 
 def _session_from_container(c: dict) -> LabSession | None:
@@ -94,6 +95,18 @@ def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_dock
         if req.pre_pull:
             docker_svc.wait_for_docker(session.container_name)
             docker_svc.pre_pull_images(session.container_name, req.pre_pull)
+        elif req.setup:
+            docker_svc.wait_for_docker(session.container_name)
+        for setup_cmd in req.setup:
+            exit_code, output = docker_svc.exec_command(
+                session.container_name,
+                ["/bin/bash", "-c", setup_cmd["command"]],
+                user="root",
+            )
+            if exit_code != 0:
+                raise RuntimeError(
+                    f"Setup command failed (exit {exit_code}): {setup_cmd['command']}: {output}"
+                )
         docker_svc.activate_lab(session.container_name, lab_number)
     except RuntimeError as e:
         session.status = LabStatus.ERROR

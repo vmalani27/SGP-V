@@ -64,8 +64,8 @@ Student machine — downloaded docker-compose (Linux + docker CLI + sysbox):
                 verify artifact_sha256, extract into a local content dir
       frontend:    serves course TOC / chapters / lab instructions from local files
       orchestrator: spawns lab containers from the same local lab.yaml
-                    (it receives image/apt_packages/pre_pull in the start request —
-                    no orchestrator content access needed)
+                    (it receives image/apt_packages/pre_pull/setup in the start
+                    request — no orchestrator content access needed)
 ```
 
 Orchestrator never reads content files. It only runs containers and executes
@@ -198,8 +198,7 @@ tasks:
     type: multiple_choice
     options: [Yes, No]
     validation:
-      command: "docker ps >/dev/null 2>&1 && echo Yes || echo No"
-      match_type: exact
+      expected_answer: "No"
     error_message: Docker should refuse the connection for now.
     hint: Run `docker ps` and read the error message.
 
@@ -208,9 +207,8 @@ tasks:
     prompt: How many images are present in the system?
     type: terminal_action
     validation:
-      command: "docker images -q | wc -l | tr -d ' '"
-      match_type: exact
-      expected_output: "2"
+      expected_exit_code: 0
+      command: "docker images -q | wc -l | tr -d ' ' | grep -qx 2"
 
 completion:
   required_tasks: all
@@ -226,7 +224,7 @@ completion:
 | `tags` | no | string[] |
 | `objectives` | no | string[] — shown on the lab intro page |
 | `environment` | yes | string reference → `environments/{name}.yaml` |
-| `setup` | no | `[{command}]` reset commands |
+| `setup` | no | `[{command}]` run as root at container start, before the student sees the terminal |
 | `tasks` | no | if absent/empty the lab is a **skeleton** (allowed, warning only) |
 | `completion` | no | `{required_tasks: all}` or a list of task IDs |
 
@@ -234,14 +232,33 @@ completion:
 
 | Type | What the student does | Required `validation` fields |
 |------|-----------------------|------------------------------|
-| `multiple_choice` | picks from `options` | `expected_output` (static) **or** `command` (dynamic via `options_source: dynamic`) |
-| `terminal_action` | runs a command, clicks Check | `command` + `expected_output` |
+| `multiple_choice` | picks from `options` | `expected_answer` (static) **or** `command` (dynamic via `options_source: dynamic`) |
+| `terminal_action` | runs a command, clicks Check | `command` + (`expected_exit_code` **or** `expected_output`) |
 | `port_check` | checks a port/path | `command` (currently) or `port`/`path` |
 | `file_check` | creates/edits a file | `path` + `contains` (backend-supported; not yet authored or rendered) |
 
 Common task fields: `id` (required), `prompt` (required), `title`,
 `description`, `type`, `options`, `options_source`, `validation`,
 `error_message`, `hint`.
+
+#### Answer-based vs state-based validation
+
+There are two kinds of checks, and they must not be confused:
+
+- **Answer-based** — `multiple_choice`. The student submits a choice and the
+  backend compares it to `validation.expected_answer` (legacy name
+  `expected_output`). The check does **not** execute anything in the container,
+  so it stays valid regardless of later lab state.
+- **State-based** — `terminal_action` (and `port_check`/`file_check`). The
+  backend runs `validation.command` in the container and decides pass/fail from
+  the **exit code** (`expected_exit_code`, default `0`) or from its output
+  (`expected_output` matched per `match_type`).
+
+Prefer exit-code checks: a command that only exits `0` when the state holds is
+self-documenting and can't false-negative on sentinel strings. Never validate an
+answer-based task with a state `command` — the command's result can change once
+the student completes a later task (e.g. "can you reach Docker?" flips to `Yes`
+after they fix the docker group).
 
 #### `validation.match_type` (backend `_match_output`)
 
@@ -251,6 +268,9 @@ Common task fields: `id` (required), `prompt` (required), `title`,
 | `exact` | output matches exactly (after trimming) |
 | `regex` | regex search on output |
 | `line_count` | output has exactly N lines |
+
+`match_type`/`expected_output` are only consulted when `expected_exit_code` is
+absent. With `expected_exit_code`, the match type is ignored entirely.
 
 **No static answers leave the server.** Expected output lives in `lab.yaml`;
 comparison happens in the backend inside the running container context.
@@ -438,13 +458,17 @@ resolves titles (see §3); lab configs get `lab_id`/`module_id` injected and
 **Lab runtime (proxy to orchestrator)** — `backend/app/routers/labs.py`:
 
 - `POST .../start` reads `lab.yaml` config, pulls `base_image`/
-  `apt_packages`/`pre_pull` from the resolved env, and calls the orchestrator.
+  `apt_packages`/`pre_pull`/`setup` from the resolved env (and `setup` from the
+  lab YAML), and calls the orchestrator. The orchestrator runs each `setup`
+  `{command}` as root inside the container (after the inner daemon is ready,
+  before the student gets the terminal).
 - `GET .../tasks` (authed) returns tasks; for dynamic multiple-choice it runs
   the validation `command` in the container and builds the option list.
 - `POST .../validate` dispatches by `task.type`:
-  `multiple_choice` (compare answer to `expected_output` or dynamic output),
-  `file_check` (`cat path` contains `contains`), `port_check` (exec command +
-  match), default = run `command` and match output.
+  `multiple_choice` (compare answer to `expected_answer`, or dynamic output —
+  never executes state), `file_check` (`cat path` contains `contains`),
+  `port_check` (exec command + match), default = run `command` and decide from
+  `expected_exit_code` if present, else match output.
 - `WS /ws/lab` proxies terminal frames to the orchestrator (JWT first message).
 
 ---

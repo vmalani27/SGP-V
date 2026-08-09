@@ -123,10 +123,19 @@
               "type": "string",
               "description": "Shell command to run inside the container."
             },
+                "execution_user": {
+                  "type": "string",
+                  "enum": ["student", "root"],
+                  "description": "Optional: user to run the validation command as. Use 'root' for administrative checks or 'student' to validate student-session capabilities. If omitted the platform may default to 'student'."
+                },
             "expected_output": {
               "type": "string",
               "description": "Expected output to match against. Omit for dynamic multiple_choice."
             },
+                "expected_exit_code": {
+                  "type": "integer",
+                  "description": "Optional: expected exit code from the validation command (0 for success)."
+                },
             "match_type": {
               "type": "string",
               "enum": ["exact", "contains", "regex", "line_count"],

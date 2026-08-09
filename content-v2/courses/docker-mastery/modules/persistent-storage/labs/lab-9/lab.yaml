@@ -9,6 +9,9 @@ tags:
   - volumes
 environment: docker-basic
 
+setup:
+  - command: "usermod -aG docker student"
+
 objectives:
   - Create Docker volumes
   - Mount volumes into containers

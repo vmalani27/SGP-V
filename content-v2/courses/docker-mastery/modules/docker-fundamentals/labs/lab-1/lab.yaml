@@ -15,13 +15,12 @@ tasks:
     type: multiple_choice
     options: ["Yes", "No"]
     validation:
-      command: "docker ps >/dev/null 2>&1 && echo Yes || echo No"
-      match_type: exact
+      expected_answer: "No"
     error_message: Docker should refuse the connection for now. You'll fix that in the next task.
     hint: Run `docker ps` and read the error message.
 
   - id: fix-group
-    prompt: Add your user to the docker group so Docker commands work.
+    prompt: Add your user to the docker group so `docker` commands work without `sudo`.
     type: terminal_action
     validation:
       command: getent group docker | grep -qw student && echo ACCESS_GRANTED
@@ -41,11 +40,18 @@ tasks:
     hint: Run `docker images` to count them.
 
   - id: run-simple-container
-    prompt: Run a simple container that prints a greeting to the screen.
+    prompt: Run a container named `alpine-container` that prints the greeting `GREETING_FROM_ALPINE`.
     type: terminal_action
     validation:
-      command: "docker run --rm alpine:latest echo GREETING_FROM_ALPINE"
-      match_type: exact
-      expected_output: GREETING_FROM_ALPINE
-    error_message: The container did not print the greeting. Make sure you run a container that echoes a greeting.
-    hint: Run `docker run --rm alpine:latest echo GREETING_FROM_ALPINE`.
+      # Run validation as root to inspect container state and logs
+      execution_user: root
+      expected_exit_code: 0
+      command: >-
+        docker inspect alpine-container >/dev/null 2>&1 &&
+        docker inspect -f '{{.Config.Image}}' alpine-container | grep -qx 'alpine:latest' &&
+        docker logs alpine-container 2>&1 | grep -q GREETING_FROM_ALPINE
+    error_message: >-
+      No container named `alpine-container` printed the greeting. Run
+      `docker ps -a` to find your container, then `docker logs alpine-container`
+      to inspect its output.
+    hint: docker run --name alpine-container alpine:latest echo GREETING_FROM_ALPINE

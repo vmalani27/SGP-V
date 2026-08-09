@@ -192,8 +192,8 @@ def _find_lab_task(config: dict, lab_id: str, task_id: str) -> dict:
     )
 
 
-async def _run_orchestrator_exec(session_id: str, command: str) -> str:
-    """Proxy an exec to the orchestrator and return combined output."""
+async def _run_orchestrator_exec(session_id: str, command: str) -> tuple[int, str]:
+    """Proxy an exec to the orchestrator and return (exit_code, combined output)."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             resp = await client.post(
@@ -207,7 +207,8 @@ async def _run_orchestrator_exec(session_id: str, command: str) -> str:
         detail = resp.json().get("detail", resp.text)
         raise HTTPException(status_code=resp.status_code, detail=detail)
 
-    return resp.json().get("output", "")
+    data = resp.json()
+    return int(data.get("exit_code", -1)), data.get("output", "")
 
 
 def _match_output(output: str, validation: dict) -> bool:
@@ -347,6 +348,7 @@ async def start_lab(
         "course_id": course_id,
         "apt_packages": environment.get("apt_packages", []),
         "pre_pull": environment.get("pre_pull", []),
+        "setup": config.get("setup", []),
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -531,7 +533,7 @@ async def get_lab_tasks(
             if not cmd:
                 continue
             try:
-                output = await _run_orchestrator_exec(entry["session_id"], cmd)
+                _, output = await _run_orchestrator_exec(entry["session_id"], cmd)
                 task["options"] = _build_options(output)
             except HTTPException:
                 task["options"] = ["0", "1", "2", "3"]
@@ -575,7 +577,7 @@ async def validate_task(
         })
 
     if task_type == "multiple_choice":
-        expected = validation.get("expected_output")
+        expected = validation.get("expected_answer", validation.get("expected_output"))
         if expected is not None:
             return _result((body.answer or "").strip() == str(expected).strip())
         cmd = validation.get("command")
@@ -583,7 +585,7 @@ async def validate_task(
             return JSONResponse(status_code=501, content={
                 "detail": "Dynamic multiple_choice without a validation command is not supported",
             })
-        output = await _run_orchestrator_exec(entry["session_id"], cmd)
+        exit_code, output = await _run_orchestrator_exec(entry["session_id"], cmd)
         return _result((body.answer or "").strip() == _first_line(output), output)
 
     if task_type == "file_check":
@@ -593,7 +595,7 @@ async def validate_task(
             return JSONResponse(status_code=501, content={
                 "detail": "file_check requires validation.path and validation.contains",
             })
-        output = await _run_orchestrator_exec(entry["session_id"], f"cat {path} 2>/dev/null")
+        _, output = await _run_orchestrator_exec(entry["session_id"], f"cat {path} 2>/dev/null")
         return _result(contains in output, output)
 
     if task_type == "port_check":
@@ -602,7 +604,7 @@ async def validate_task(
             return JSONResponse(status_code=501, content={
                 "detail": "port_check validation is not supported yet",
             })
-        output = await _run_orchestrator_exec(entry["session_id"], cmd)
+        exit_code, output = await _run_orchestrator_exec(entry["session_id"], cmd)
         return _result(_match_output(output, validation), output)
 
     cmd = validation.get("command")
@@ -610,7 +612,9 @@ async def validate_task(
         return JSONResponse(status_code=501, content={
             "detail": f"Task type '{task_type}' requires validation.command",
         })
-    output = await _run_orchestrator_exec(entry["session_id"], cmd)
+    exit_code, output = await _run_orchestrator_exec(entry["session_id"], cmd)
+    if "expected_exit_code" in validation:
+        return _result(exit_code == int(validation["expected_exit_code"]), output)
     return _result(_match_output(output, validation), output)
 
 
