@@ -1,99 +1,36 @@
 """
-Content API — backend owns content serving.
+Content API — metadata + delivery handshake only.
 
-All course content flows through this router. The content provider
-abstracts the storage layer (filesystem now, S3 later). No other
-service serves course content to the frontend.
-
-Future: when CONTENT_SOURCE=s3, the provider reads from S3 instead
-of the local filesystem. The router and all API contracts stay the same.
+The backend no longer serves course files. Course catalog + TOC metadata is
+served from Firestore (see courses.py), and the content payload itself is
+downloaded by the client from S3. This router exposes the version handshake
+the client uses to bootstrap and integrity-check its local content store.
 """
 
 from fastapi import APIRouter, HTTPException
 
-from app.services.content_provider import get_content_provider
+from app.config import CONTENT_PUBLIC_BASE_URL
+from app.core.firestore_db import db
 
 router = APIRouter(prefix="/api/v1/content", tags=["content"])
 
 
-@router.get("/courses")
-async def list_courses():
-    provider = get_content_provider()
-    courses = provider.list_courses()
-    return {"courses": courses}
+@router.get("/version")
+async def content_version() -> dict:
+    """Return the published content version + S3 download pointer.
 
+    Reads contentVersion/artifact_sha256 from any Firestore course document
+    (the worker writes them on every sync). download_url is derived from the
+    configured public base URL, which the client fetches directly.
+    """
+    for doc in db.collection("courses").stream():
+        data = doc.to_dict()
+        version = data.get("contentVersion")
+        if version:
+            return {
+                "version": version,
+                "download_url": f"{CONTENT_PUBLIC_BASE_URL}/published/{version}/content.tar.gz",
+                "artifact_sha256": data.get("artifact_sha256", ""),
+            }
 
-@router.get("/courses/{course_id}")
-async def get_course(course_id: str):
-    provider = get_content_provider()
-    course = provider.get_course(course_id)
-    if course is None:
-        raise HTTPException(status_code=404, detail=f"Course '{course_id}' not found")
-    return course
-
-
-@router.get("/courses/{course_id}/chapters/{chapter_id}")
-async def get_chapter_content(course_id: str, chapter_id: str):
-    provider = get_content_provider()
-
-    course = provider.get_course(course_id)
-    if course is None:
-        raise HTTPException(status_code=404, detail=f"Course '{course_id}' not found")
-
-    for module in course.get("modules", []):
-        for chapter in module.get("chapters", []):
-            if chapter["id"] == chapter_id:
-                content = provider.get_chapter_content(course_id, chapter_id)
-                return {
-                    "chapter": {**chapter, "moduleId": module["id"]},
-                    "content": content,
-                }
-
-    raise HTTPException(status_code=404, detail=f"Chapter '{chapter_id}' not found in course '{course_id}'")
-
-
-@router.get("/courses/{course_id}/labs")
-async def list_labs(course_id: str):
-    provider = get_content_provider()
-    course = provider.get_course(course_id)
-    if course is None:
-        raise HTTPException(status_code=404, detail=f"Course '{course_id}' not found")
-
-    labs = []
-    for module in course.get("modules", []):
-        for lab in module.get("labs", []):
-            labs.append({
-                "id": lab["id"],
-                "title": lab.get("title", ""),
-                "module_id": module["id"],
-                "chapter_id": lab.get("chapterId", ""),
-            })
-    return {"course_id": course_id, "labs": labs}
-
-
-@router.get("/courses/{course_id}/labs/{lab_id}/instructions")
-async def get_lab_instructions(course_id: str, lab_id: str):
-    provider = get_content_provider()
-    result = provider.get_lab_instructions(course_id, lab_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail=f"Lab '{lab_id}' not found in course '{course_id}'")
-    return result
-
-
-@router.get("/courses/{course_id}/labs/{lab_id}/tasks")
-async def get_lab_tasks(course_id: str, lab_id: str):
-    provider = get_content_provider()
-    config = provider.get_lab_config(course_id, lab_id)
-    if config is None:
-        raise HTTPException(status_code=404, detail=f"Lab '{lab_id}' config not found in course '{course_id}'")
-
-    return {"lab_id": lab_id, "tasks": config.get("tasks", [])}
-
-
-@router.get("/courses/{course_id}/labs/{lab_id}/config")
-async def get_lab_config(course_id: str, lab_id: str):
-    provider = get_content_provider()
-    result = provider.get_lab_config(course_id, lab_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail=f"Lab '{lab_id}' config not found in course '{course_id}'")
-    return result
+    raise HTTPException(status_code=404, detail="No published content yet")

@@ -27,11 +27,10 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./content-v2:/app/content:ro
     environment:
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
       - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON:-}
-      - CONTENT_DIR=/app/content
+      - CONTENT_PUBLIC_BASE_URL=${CONTENT_PUBLIC_BASE_URL:-http://localhost.floci.io:4566/course-content}
       - ORCHESTRATOR_URL=http://orchestrator:8000
       - WS_ORCHESTRATOR_URL=ws://orchestrator:8000
       - JWT_SECRET=${JWT_SECRET:-dev-only-change-in-production}

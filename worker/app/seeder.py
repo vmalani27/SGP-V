@@ -30,6 +30,7 @@ Synced document shape (Firestore courses collection):
   "totalLabs": 10,
   "contentHash": "abc123...",
   "contentVersion": "abc123...",
+  "artifact_sha256": "abcd1234...",
   "updatedAt": <timestamp>,
   "createdAt": <timestamp>
 }
@@ -318,13 +319,13 @@ def _clear_dir(path: Path) -> None:
             child.unlink()
 
 
-def download_content(s3_dir: Path, db) -> str | None:
+def download_content(s3_dir: Path, db) -> tuple[str, str] | None:
     """Make the latest published content available on s3_dir.
 
-    Returns the published version when S3 is the active source (downloading
-    it first if the version changed), or None when S3 is unconfigured,
-    unreachable, or has no published content yet — the caller treats that as
-    a hard failure, never a fallback.
+    Returns (version, artifact_sha256) when S3 is the active source
+    (downloading it first if the version changed), or None when S3 is
+    unconfigured, unreachable, or has no published content yet — the caller
+    treats that as a hard failure, never a fallback.
 
     Raises on integrity failures — a corrupt download must not seed silently.
     """
@@ -341,7 +342,7 @@ def download_content(s3_dir: Path, db) -> str | None:
         raise ValueError("latest.json is missing 'version'")
 
     if version == _seeded_content_version(db) and (s3_dir / "index.json").exists():
-        return version  # already current
+        return version, latest.get("artifact_sha256", "")  # already current
 
     client = _s3_client()
     prefix = f"published/{version}/"
@@ -392,10 +393,15 @@ def download_content(s3_dir: Path, db) -> str | None:
         raise
 
     logger.info("Downloaded content version %s from S3", version)
-    return version
+    return version, artifact_sha256
 
 
-def sync_courses(db: firestore.Client, content_dir: Path, content_version: str | None = None) -> dict:
+def sync_courses(
+    db: firestore.Client,
+    content_dir: Path,
+    content_version: str | None = None,
+    artifact_sha256: str | None = None,
+) -> dict:
     """
     Read index.json + course content, upsert to Firestore.
 
@@ -445,6 +451,9 @@ def sync_courses(db: firestore.Client, content_dir: Path, content_version: str |
 
         if content_version is not None:
             doc_data["contentVersion"] = content_version
+
+        if artifact_sha256 is not None:
+            doc_data["artifact_sha256"] = artifact_sha256
 
         existing_doc = existing.get(cid)
         if existing_doc:
