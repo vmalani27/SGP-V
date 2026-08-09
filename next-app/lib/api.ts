@@ -42,6 +42,17 @@ export async function apiFetch<T = unknown>(
   return res.json() as Promise<T>;
 }
 
+// Local content is served by this Next.js app from the extracted content dir —
+// same origin, no auth (it is the learner's own downloaded course content).
+async function localFetch<T = unknown>(path: string): Promise<T> {
+  const res = await fetch(path, { cache: 'no-store' });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Content ${res.status}: ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 // --- Typed API helpers ---
 
 export interface CourseMeta {
@@ -119,24 +130,24 @@ export const api = {
   },
   content: {
     getChapterContent: (courseId: string, chapterId: string) =>
-      apiFetch<{ chapter: object; content: string | null }>(
-        `/api/v1/content/courses/${courseId}/chapters/${chapterId}`
+      localFetch<{ chapter: object; content: string | null }>(
+        `/api/local-content/chapters/${courseId}/${chapterId}`
       ),
     getLabInstructions: (courseId: string, labId: string) =>
-      apiFetch<{
+      localFetch<{
         lab_id: string;
         title: string;
         module_id: string;
         chapter_id: string;
         instructions: string | null;
-      }>(`/api/v1/content/courses/${courseId}/labs/${labId}/instructions`),
+      }>(`/api/local-content/labs/${courseId}/${labId}/instructions`),
     getLabTasks: (courseId: string, labId: string) =>
-      apiFetch<TaskListResponse>(
-        `/api/v1/content/courses/${courseId}/labs/${labId}/tasks`
+      localFetch<TaskListResponse>(
+        `/api/local-content/labs/${courseId}/${labId}/tasks`
       ),
     getLabConfig: (courseId: string, labId: string) =>
-      apiFetch<Record<string, unknown>>(
-        `/api/v1/content/courses/${courseId}/labs/${labId}/config`
+      localFetch<Record<string, unknown>>(
+        `/api/local-content/labs/${courseId}/${labId}/config`
       ),
   },
   labs: {

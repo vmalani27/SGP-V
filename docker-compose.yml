@@ -8,12 +8,16 @@ services:
     volumes:
       - ./next-app:/app
       - frontend_next:/app/.next
+      - frontend_content:/app/.content
+    extra_hosts:
+      - "localhost.floci.io:host-gateway"
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
       - NEXT_TELEMETRY_DISABLED=1
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
       - BACKEND_API_URL=http://backend:8000
+      - CONTENT_LOCAL_DIR=/app/.content
     depends_on:
       - backend
       - orchestrator
@@ -80,4 +84,5 @@ services:
 
 volumes:
   frontend_next:
+  frontend_content:
   worker_content:
