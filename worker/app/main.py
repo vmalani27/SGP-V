@@ -41,18 +41,20 @@ def _get_db():
     return get_firestore()
 
 
-def _active_content_dir(db) -> tuple[Path, str]:
+def _active_content_dir(db) -> tuple[Path, str, str]:
     """Resolve the S3 content source, downloading the latest published version.
 
-    The worker is S3-only — a missing or unreachable S3 source is a hard
-    failure, never a fallback to a filesystem mount.
+    Returns (content_dir, version, artifact_sha256). The worker is S3-only —
+    a missing or unreachable S3 source is a hard failure, never a fallback to
+    a filesystem mount.
     """
     if not S3_BUCKET:
         raise RuntimeError("S3_BUCKET is not configured — worker requires an S3 content source")
-    version = download_content(_content_dir_s3, db)
-    if version is None:
+    resolved = download_content(_content_dir_s3, db)
+    if resolved is None:
         raise RuntimeError("S3 content source unavailable (unreachable or nothing published yet)")
-    return _content_dir_s3, version
+    content_dir, version, artifact_sha256 = resolved
+    return content_dir, version, artifact_sha256
 
 
 # ── Background loop ───────────────────────────────────────────
@@ -80,7 +82,7 @@ async def sync_loop():
 def _run_sync():
     """Validate content, then seed to Firestore."""
     db = _get_db()
-    content_dir, published_version = _active_content_dir(db)
+    content_dir, published_version, artifact_sha256 = _active_content_dir(db)
     _state["content_source"] = "s3"
     _state["published_version"] = published_version
 
@@ -104,7 +106,12 @@ def _run_sync():
 
     logger.info("Content validation passed — seeding to Firestore")
 
-    sync_result = sync_courses(db, content_dir=content_dir, content_version=published_version)
+    sync_result = sync_courses(
+        db,
+        content_dir=content_dir,
+        content_version=published_version,
+        artifact_sha256=artifact_sha256,
+    )
 
     if sync_result["errors"]:
         logger.warning("Seed completed with warnings: %s", sync_result["errors"])
