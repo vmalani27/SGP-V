@@ -34,7 +34,16 @@ land these, and re-verify end-to-end.
 
 ---
 
-## Item B — S3-backed content provider (MinIO for dev)
+## Item B — S3-backed content provider (MinIO for dev) ❌ SUPERSEDED
+
+> **Superseded.** This plan assumed the backend would serve content from S3 to a
+> cloud-hosted frontend. The architecture moved to a **client-side app** instead
+> (see `CONTENT-PIPELINE.md` §9): the frontend + orchestrator run on the
+> student's machine and download the published artifact directly from a
+> public-read S3 bucket. The backend is a pure Firestore API and will **not**
+> build an `S3Provider`. Content publishing is implemented via
+> `scripts/generate_manifest.py` + `.github/workflows/publish-content.yml`
+> (dev S3 = local Floci). Kept below for history.
 
 **Type:** Feature (Backend content microservice)
 **Service:** `backend/`
