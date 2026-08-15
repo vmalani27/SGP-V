@@ -1,5 +1,5 @@
 id: lab-2
-title: Inspecting and Configuring Containers
+title: Container Configuration
 difficulty: beginner
 environment: docker-basic
 
@@ -7,37 +7,32 @@ setup:
   - command: "usermod -aG docker student"
 
 objectives:
-  - Configure a container at runtime with environment variables
-  - Read a running container's configuration with docker inspect
-  - View container logs with docker logs
-  - Observe that a container's writable layer is ephemeral
+  - Create a container with an environment variable
+  - Inspect a container's configuration with docker inspect
+  - Identify the image a container was started from
+  - Find the environment variables passed to a container
+  - View a container's logs
+  - Remove a container
+  - Observe that recreating a container produces a brand-new object
 
 tasks:
-  - id: docker-access
+  - id: create-container
     prompt: >-
-      Verify you can talk to the Docker daemon with `docker info`. Your lab user
-      is set up to use Docker already, so this should just work.
-    type: terminal_action
-    validation:
-      command: "docker info >/dev/null 2>&1 && echo DOCKER_OK"
-      match_type: exact
-      expected_output: DOCKER_OK
-    error_message: You do not have permission to talk to the Docker daemon yet.
-    hint: "docker info"
-
-  - id: configure-web
-    prompt: >-
-      Start an nginx web server in the background named `web`, publish host port 8080
-      to container port 80, and pass the environment variable `SITE_MODE=production`
-      with the `-e` flag.
+      Create an nginx web server container named `web` running in the background.
+      Publish host port 8080 to container port 80 with `-p 8080:80`, and pass the
+      environment variable `SITE_MODE=production` with the `-e` flag.
     type: terminal_action
     validation:
       command: >-
         docker inspect web --format '{{.State.Status}}' 2>/dev/null | grep -qx running &&
+        docker inspect web --format '{{.Config.Image}}' 2>/dev/null | grep -qx nginx:alpine &&
         docker inspect web --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
-        grep -q '^SITE_MODE=production$' && echo CONFIG_OK
+        grep -q '^SITE_MODE=production$' && echo CONTAINER_OK
       match_type: exact
-      expected_output: CONFIG_OK
+      expected_output: CONTAINER_OK
+      record:
+        key: web_id
+        command: "docker inspect web --format '{{.Id}}'"
     error_message: >-
       The web container is not running with SITE_MODE=production set. Check
       `docker ps` and `docker inspect web`.
@@ -45,42 +40,108 @@ tasks:
 
   - id: inspect-container
     prompt: >-
-      Run `docker inspect web` and look for the Env section. Confirm the SITE_MODE
-      variable you set appears in the container's configuration.
-    type: terminal_action
+      Run `docker inspect web` to view the container's detailed configuration. The
+      output is a JSON document with several top-level sections. Which section shows
+      whether the container is currently running, paused, or exited?
+    type: multiple_choice
+    options:
+      - State
+      - Config
+      - NetworkSettings
+      - Mounts
     validation:
-      command: "docker inspect web 2>/dev/null | grep -q 'SITE_MODE=production' && echo ENV_FOUND"
-      match_type: exact
-      expected_output: ENV_FOUND
-    error_message: SITE_MODE=production is not visible in `docker inspect web`. Look for the Env section of the output.
-    hint: "docker inspect web | grep -A 5 Env"
+      expected_answer: State
+    error_message: >-
+      Look at the top-level keys in `docker inspect web`. The `State` section holds
+      `Status` (running/paused/exited).
+    hint: "docker inspect web | grep -A 6 State"
 
-  - id: read-logs
+  - id: find-image
+    prompt: >-
+      Run `docker inspect web` and look at the `Config.Image` field. What image is
+      the `web` container running from?
+    type: multiple_choice
+    options:
+      - nginx:alpine
+      - alpine:latest
+      - ubuntu:latest
+      - busybox:latest
+    validation:
+      expected_answer: nginx:alpine
+    error_message: >-
+      Read the Config.Image field of `docker inspect web` — it records the image
+      the container was started from.
+    hint: "docker inspect web | grep -A 8 Config"
+
+  - id: find-env
+    prompt: >-
+      When you created `web`, you passed an environment variable with `-e`. Run
+      `docker inspect web` and look at the `Config.Env` section. What environment
+      variable is set on the container?
+    type: multiple_choice
+    options:
+      - SITE_MODE=production
+      - PORT=8080
+      - DEBUG=true
+      - HOST=localhost
+    validation:
+      expected_answer: SITE_MODE=production
+    error_message: >-
+      Look at the Env section of `docker inspect web` — it lists the environment
+      variables the container was started with.
+    hint: "docker inspect web | grep -A 6 Env"
+
+  - id: view-logs
     prompt: >-
       Run `docker logs web` to view the server's startup logs. The entrypoint
       prints a line when the configuration is complete and nginx is ready to
-      start up.
-    type: terminal_action
+      start up. What does that line say?
+    type: multiple_choice
+    options:
+      - "Configuration complete; ready for start up"
+      - "Listening on port 80"
+      - "Server started successfully"
+      - "nginx is up and running"
     validation:
-      command: "docker logs web 2>&1 | grep -qi 'Configuration complete; ready for start up' && echo LOG_OK"
-      match_type: exact
-      expected_output: LOG_OK
-    error_message: The logs do not show nginx's startup banner. Run `docker logs web`.
+      expected_answer: "Configuration complete; ready for start up"
+    error_message: >-
+      Run `docker logs web` and read the entrypoint's output — the banner is
+      printed right before nginx's process starts.
     hint: "docker logs web"
 
-  - id: ephemeral
+  - id: remove-container
     prompt: >-
-      Write the file /tmp/note.txt inside the `web` container, then stop and remove
-      the container. Start a fresh container named `web2` and confirm the file is gone.
+      Remove the `web` container: stop it with `docker stop web`, then delete it
+      with `docker rm web`. Confirm with `docker ps -a` that it no longer exists.
     type: terminal_action
     validation:
-      command: "docker exec web2 test ! -f /tmp/note.txt 2>/dev/null && echo DATA_GONE"
+      command: "docker inspect web >/dev/null 2>&1 || echo WEB_REMOVED"
       match_type: exact
-      expected_output: DATA_GONE
+      expected_output: WEB_REMOVED
     error_message: >-
-      The file still exists in web2, or web2 is not running. Data written to a
-      container's writable layer is lost when the container is removed.
+      The `web` container still exists. Run `docker stop web` followed by
+      `docker rm web`, then verify with `docker ps -a`.
+    hint: "docker stop web && docker rm web"
+
+  - id: recreate-container
+    prompt: >-
+      Recreate `web` with the same name, the same port mapping, and the same
+      `SITE_MODE=production` environment variable. Then compare the container ID to
+      the one recorded earlier with `docker inspect web --format '{{.Id}}'`. Is the
+      new container the same object as the original?
+    type: terminal_action
+    validation:
+      command: >-
+        [ "$(docker inspect web --format '{{.Id}}')" != "{{recorded:web_id}}" ] &&
+        docker inspect web --format '{{.State.Status}}' 2>/dev/null | grep -qx running &&
+        docker inspect web --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
+        grep -q '^SITE_MODE=production$' && echo ID_CHANGED
+      match_type: exact
+      expected_output: ID_CHANGED
+    error_message: >-
+      The new `web` container has the same ID as the original, or isn't running
+      with SITE_MODE=production. Recreating a container always produces a brand-new
+      ID — make sure the old container was removed first.
     hint: >-
-      docker exec web touch /tmp/note.txt && docker stop web && docker rm web &&
-      docker run -d --name web2 -p 8081:80 nginx:alpine &&
-      docker exec web2 test ! -f /tmp/note.txt
+      docker run -d --name web -p 8080:80 -e SITE_MODE=production nginx:alpine &&
+      docker inspect web --format '{{.Id}}'
