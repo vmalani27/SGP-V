@@ -1,4 +1,4 @@
-# Chapter 7: How Containers Talk
+# Chapter 12: How Containers Talk
 
 ## In this chapter, you will
 

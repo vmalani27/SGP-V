@@ -1,4 +1,4 @@
-# Chapter 10: Production Storage Patterns
+# Chapter 15: Production Storage Patterns
 
 ## In this chapter, you will
 

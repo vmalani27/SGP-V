@@ -1,0 +1,12 @@
+id: lab-11
+title: Image Debugging
+difficulty: intermediate
+environment: docker-basic
+
+setup:
+  - command: "usermod -aG docker student"
+
+objectives:
+  - Debug image build failures
+  - Inspect image layers
+  - Optimize layer caching

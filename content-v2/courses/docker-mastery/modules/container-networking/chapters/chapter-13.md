@@ -1,4 +1,4 @@
-# Chapter 8: Composing Multi-Container Apps
+# Chapter 13: Composing Multi-Container Apps
 
 ## In this chapter, you will
 

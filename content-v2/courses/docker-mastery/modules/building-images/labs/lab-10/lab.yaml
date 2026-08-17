@@ -1,0 +1,12 @@
+id: lab-10
+title: Multi-Stage Builds
+difficulty: intermediate
+environment: docker-basic
+
+setup:
+  - command: "usermod -aG docker student"
+
+objectives:
+  - Create a multi-stage Dockerfile
+  - Reduce final image size
+  - Copy artifacts between build stages

@@ -1,4 +1,4 @@
-# Lab 8: Multi-Stage Builds
+# Lab 13: Composing Multi-Container Apps
 
 ## What You're Doing and Why
 

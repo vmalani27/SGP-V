@@ -40,12 +40,19 @@ Removes a stopped container.
 
 ## Scenario
 
-Confirm Docker is reachable, look at what images are already on the system, then run a simple container that prints a greeting. Stop and remove the container when you are done. If Docker refuses your commands, the tasks will walk you through giving your user permission to talk to the daemon.
+Your environment comes with Docker installed, but it is not reachable by your user yet. The tasks walk you through confirming that Docker refuses your connection, granting your user access to the daemon, seeing what images are already on the system, and running your very first container — one that prints a greeting.
 
 ## Objective
 
-Run `docker ps` to confirm you can reach the daemon. List the local images with `docker images`. Run a simple container (for example `docker run alpine:latest echo "hello from alpine"`) and see its output. Use `docker stop` and `docker rm` to clean up.
+Run `docker ps` and confirm Docker refuses the connection. Add your user to the docker group so Docker commands work. List the local images with `docker images`. Then run a container named `alpine-container` from `alpine:latest` that prints the greeting `GREETING_FROM_ALPINE`, and confirm the greeting in its logs.
+
+## Tasks
+
+- [ ] **access-daemon** — Run `docker ps` and confirm the daemon refuses your connection.
+- [ ] **fix-group** — Add your user to the docker group, then verify with `getent group docker`.
+- [ ] **count-images** — Run `docker images` and count how many images are stored locally.
+- [ ] **run-simple-container** — Run a container named `alpine-container` that prints `GREETING_FROM_ALPINE`, then check `docker logs alpine-container` to confirm the greeting.
 
 ## Reflection
 
-You just used the commands that show up in almost every Docker workflow: `ps` to see what's running, `images` to see what's cached, `run` to start something, and `stop`/`rm` to clean it up. Nothing you ran modified your machine — the container ran in isolation and vanished when you removed it. That isolation is one of the most important properties of containers.
+You just used the commands that show up in almost every Docker workflow: `ps` to see what's running, `images` to see what's cached, and `run` to start something. Nothing you ran modified your machine — the container ran in isolation and vanished when you removed it. That isolation is one of the most important properties of containers.

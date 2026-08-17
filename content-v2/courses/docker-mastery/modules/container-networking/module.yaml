@@ -4,10 +4,10 @@ description: Understand how containers communicate and orchestrate multi-contain
 order: 3
 items:
   - type: chapter
-    id: chapter-7
+    id: chapter-12
   - type: lab
-    id: lab-7
+    id: lab-12
   - type: chapter
-    id: chapter-8
+    id: chapter-13
   - type: lab
-    id: lab-8
+    id: lab-13

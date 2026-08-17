@@ -4,10 +4,10 @@ description: Learn to manage data persistence with volumes and production storag
 order: 4
 items:
   - type: chapter
-    id: chapter-9
+    id: chapter-14
   - type: lab
-    id: lab-9
+    id: lab-14
   - type: chapter
-    id: chapter-10
+    id: chapter-15
   - type: lab
-    id: lab-10
+    id: lab-15

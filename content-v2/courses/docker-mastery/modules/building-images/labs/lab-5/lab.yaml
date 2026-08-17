@@ -1,12 +1,122 @@
 id: lab-5
-title: Multi-Stage Builds
-difficulty: intermediate
-environment: docker-basic
+title: Build a Minimal Image
+difficulty: beginner
+environment: docker-build
 
 setup:
   - command: "usermod -aG docker student"
 
 objectives:
-  - Create a multi-stage Dockerfile
-  - Reduce final image size
-  - Copy artifacts between build stages
+  - Create a project directory with a file to ship inside an image
+  - Write a minimal Dockerfile with FROM, WORKDIR, COPY, and CMD
+  - Build an image from the Dockerfile with docker build
+  - Run the image and verify it produces the expected output
+
+tasks:
+  - id: create-project
+    prompt: >-
+      You are going to build your first image. Create a project directory named
+      `my-image` in your home directory, and inside it create a file
+      `hello.txt` containing the text `hello from my image`.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/my-image/hello.txt &&
+        grep -qx 'hello from my image' ~/my-image/hello.txt && echo PROJECT_OK
+      match_type: exact
+      expected_output: PROJECT_OK
+    error_message: >-
+      ~/my-image/hello.txt should exist and contain exactly `hello from my
+      image`. Check with `ls ~/my-image` and `cat ~/my-image/hello.txt`.
+    hints:
+      - "Which command creates a directory? And which command creates a file with text in it?"
+      - "`mkdir -p ~/my-image` creates the directory; `echo 'hello from my image' > ~/my-image/hello.txt` writes the file."
+      - "Verify both with `ls -l ~/my-image` and `cat ~/my-image/hello.txt`."
+    solution:
+      command: "mkdir -p ~/my-image && echo 'hello from my image' > ~/my-image/hello.txt"
+
+  - id: write-dockerfile
+    prompt: >-
+      In the `my-image` directory, write a `Dockerfile` that starts from the
+      `alpine:latest` base image, sets the working directory to `/app`, copies
+      `hello.txt` into that directory, and prints the file's contents when the
+      container starts.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/my-image/Dockerfile &&
+        grep -qE '^FROM +alpine(:latest)?$' ~/my-image/Dockerfile &&
+        grep -q 'WORKDIR /app' ~/my-image/Dockerfile &&
+        grep -q 'COPY hello.txt' ~/my-image/Dockerfile &&
+        grep -q 'CMD' ~/my-image/Dockerfile && echo DOCKERFILE_OK
+      match_type: exact
+      expected_output: DOCKERFILE_OK
+    error_message: >-
+      ~/my-image/Dockerfile should contain FROM alpine:latest, WORKDIR /app,
+      COPY hello.txt, and a CMD that prints the file. Read it with
+      `cat ~/my-image/Dockerfile`.
+    hints:
+      - "A Dockerfile is a plain text file named exactly `Dockerfile` — no extension."
+      - "Use `FROM alpine:latest` for the base, `WORKDIR /app` for the working directory, and `COPY hello.txt .` to copy your file in."
+      - "Finish with `CMD [\"cat\", \"hello.txt\"]` so the container prints the file when it starts."
+    solution:
+      command: >-
+        printf 'FROM alpine:latest\n\nWORKDIR /app\n\nCOPY hello.txt .\n\nCMD ["cat", "hello.txt"]\n'
+        > ~/my-image/Dockerfile
+
+  - id: build-image
+    prompt: >-
+      Build an image from the Dockerfile in `~/my-image` and tag it
+      `my-first-image`. Confirm the image now exists on this system.
+    type: terminal_action
+    validation:
+      command: "docker image inspect my-first-image >/dev/null 2>&1 && echo IMAGE_BUILT"
+      match_type: exact
+      expected_output: IMAGE_BUILT
+    error_message: >-
+      No image tagged `my-first-image` exists. Build it from the project
+      directory and check with `docker images`.
+    hints:
+      - "Which command builds an image from a Dockerfile? It takes the build context as an argument."
+      - "`docker build -t my-first-image ~/my-image` builds and tags the image in one step."
+      - "Verify with `docker images` — `my-first-image` should be listed."
+    solution:
+      command: "docker build -t my-first-image ~/my-image"
+
+  - id: run-image
+    prompt: >-
+      Run the `my-first-image` image. The container should print the contents
+      of `hello.txt` and exit. Verify the output contains `hello from my image`.
+    type: terminal_action
+    validation:
+      command: "docker run --rm my-first-image 2>/dev/null | grep -qx 'hello from my image' && echo RUN_OK"
+      match_type: exact
+      expected_output: RUN_OK
+    error_message: >-
+      Running `my-first-image` did not print `hello from my image`. Try
+      `docker run --rm my-first-image` and read the output.
+    hints:
+      - "Which command starts a container from an image? It takes the image name."
+      - "`docker run --rm my-first-image` runs it and removes the container afterwards."
+      - "Your CMD should print the file — if nothing prints, check that `hello.txt` was copied into the working directory by the build."
+    solution:
+      command: "docker run --rm my-first-image"
+
+  - id: what-built
+    prompt: >-
+      After this lab you have a Dockerfile, an image, and running containers.
+      Which statement correctly describes the relationship between them?
+    type: multiple_choice
+    options:
+      - "docker build produces an image from a Dockerfile; docker run produces a container from an image"
+      - "docker build produces a container; docker run produces an image"
+      - "The Dockerfile, the image, and the container are all the same thing"
+    validation:
+      expected_answer: "docker build produces an image from a Dockerfile; docker run produces a container from an image"
+    error_message: >-
+      docker build turns a Dockerfile into an image, and docker run turns an
+      image into a running container. The three are distinct objects.
+    hints:
+      - "What command turns the Dockerfile into something you can run?"
+      - "What command turns that something into a running process?"
+      - "One produces an image; the other produces a container."

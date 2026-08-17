@@ -1,47 +1,49 @@
-# Lab 6: Debugging Running Containers
+# Lab 6: Dockerfile Fundamentals
 
 ## What You're Doing and Why
 
-Containers hide the internals of an application behind an isolated boundary. When something goes wrong — and it will — you need tools to look inside. This lab teaches you to read logs, open a shell inside a running container, copy files out, and run ad hoc commands for diagnosis.
+The last lab used three instructions (`FROM`, `COPY`, `CMD`). This lab adds the rest of the everyday set — `WORKDIR`, `RUN`, and `EXPOSE` — and, more importantly, makes you notice *when* each instruction runs. Some instructions run while the image is being built and their effects are frozen into the image; others describe what happens when a container starts. Getting that split right is the core of reading and writing Dockerfiles.
+
+## Background
+
+`FROM` picks the base image. `WORKDIR` sets the working directory for everything after it. `COPY` brings files from the build context into the image. `RUN` executes a command **during the build** and saves the result into a layer — this is how you install things and fix permissions before anyone ever runs the container. `EXPOSE` documents the application's intended port (it does not publish it). `CMD` sets the default command that runs **when a container starts**.
 
 ## Command Reference
 
-### `docker logs <container>`
+### `docker build -t <name> <context-dir>`
 
-Prints the stdout and stderr output of a container.
+Builds an image from the Dockerfile in the given directory.
 
-### `docker logs -f <container>`
+### `docker run --rm <image>`
 
-Follows the log output in real time.
+Runs a container from the image and removes it after it exits.
 
-### `docker exec -it <container> bash`
+### `docker image inspect <image> --format '{{json .Config.ExposedPorts}}'`
 
-Opens an interactive bash shell inside a running container. Use `sh` if bash is not available.
-
-### `docker exec <container> <command>`
-
-Runs a command inside a running container without an interactive shell.
-
-### `docker cp <container>:/path/to/file ./local`
-
-Copies a file from inside the container to the host filesystem.
-
-### `docker stats`
-
-Shows live CPU, memory, network, and disk usage for all running containers.
-
-### `docker top <container>`
-
-Lists the processes running inside a container.
+Shows the ports documented by `EXPOSE` in the image's configuration.
 
 ## Scenario
 
-A container has been started that is behaving unexpectedly. Use logs and exec to diagnose the problem, identify what is wrong, and fix it without rebuilding the image.
+You build a small "greeter" image that runs a shell script. The script must be executable inside the image, so you fix that with a `RUN` instruction during the build — and you document the application's port with `EXPOSE`.
 
 ## Objective
 
-Read the container logs to identify an error. Open a shell inside the container and inspect the filesystem or configuration. Find the cause of the problem.
+1. Create `~/greeter/greet.sh` — a `#!/bin/sh` script that prints `hello from the image`, marked executable.
+2. Write a Dockerfile using all six common instructions: `FROM`, `WORKDIR`, `COPY`, `RUN`, `EXPOSE`, `CMD`.
+3. Build the image as `greeter-app`.
+4. Run it and confirm it prints `hello from the image`.
+5. Inspect the image and confirm port `8080` is documented.
+6. State which instructions run at build time and which at run time.
+
+## Tasks
+
+- [ ] **create-script** — Create an executable `~/greeter/greet.sh` that prints `hello from the image`.
+- [ ] **write-dockerfile** — Write a Dockerfile with `FROM`, `WORKDIR`, `COPY`, `RUN`, `EXPOSE`, and `CMD`.
+- [ ] **build-image** — Build it as `greeter-app`.
+- [ ] **run-image** — Run it and confirm it prints `hello from the image`.
+- [ ] **verify-expose** — Confirm the image documents port `8080`.
+- [ ] **when-run** — Identify when `RUN` and `CMD` each execute.
 
 ## Reflection
 
-The ability to exec into a container and explore it like a regular Linux system is enormously useful during development. In production, containers are often built without a shell to reduce attack surface. Understanding what is and is not available in a minimal image helps you build better debugging tooling into your applications from the start.
+`RUN` changed the image — it made the script executable before the container ever started. `CMD` does not run during the build; it only describes what happens at start. `EXPOSE` recorded port 8080 as metadata. Noticing which instructions are build-time and which are run-time will let you read any Dockerfile: the build-time ones are what the image *is*, and the run-time ones are what it *does*.

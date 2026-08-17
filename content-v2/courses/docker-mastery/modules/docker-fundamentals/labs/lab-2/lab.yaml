@@ -1,147 +1,203 @@
 id: lab-2
-title: Container Configuration
+title: Inspecting Containers
 difficulty: beginner
 environment: docker-basic
 
 setup:
   - command: "usermod -aG docker student"
+  - command: >-
+      docker run -d --name mystery
+      -e MYSTERY_FLAVOR=vanilla
+      -e MYSTERY_LEVEL=$((RANDOM % 50 + 1))
+      alpine:latest sleep 3600
+  - command: "docker run --name expired alpine:latest echo setup complete"
 
 objectives:
-  - Create a container with an environment variable
-  - Inspect a container's configuration with docker inspect
-  - Identify the image a container was started from
-  - Find the environment variables passed to a container
-  - View a container's logs
+  - Identify a running container with docker ps
+  - Distinguish docker ps from docker ps -a
+  - Read a container's configuration with docker inspect
+  - Identify the image, environment variables, and command of a container
+  - View a container's logs with docker logs
+  - Stop and start a container without recreating it
   - Remove a container
-  - Observe that recreating a container produces a brand-new object
 
 tasks:
-  - id: create-container
+  - id: find-running
     prompt: >-
-      Create an nginx web server container named `web` running in the background.
-      Publish host port 8080 to container port 80 with `-p 8080:80`, and pass the
-      environment variable `SITE_MODE=production` with the `-e` flag.
-    type: terminal_action
-    validation:
-      command: >-
-        docker inspect web --format '{{.State.Status}}' 2>/dev/null | grep -qx running &&
-        docker inspect web --format '{{.Config.Image}}' 2>/dev/null | grep -qx nginx:alpine &&
-        docker inspect web --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
-        grep -q '^SITE_MODE=production$' && echo CONTAINER_OK
-      match_type: exact
-      expected_output: CONTAINER_OK
-      record:
-        key: web_id
-        command: "docker inspect web --format '{{.Id}}'"
-    error_message: >-
-      The web container is not running with SITE_MODE=production set. Check
-      `docker ps` and `docker inspect web`.
-    hint: "docker run -d --name web -p 8080:80 -e SITE_MODE=production nginx:alpine"
-
-  - id: inspect-container
-    prompt: >-
-      Run `docker inspect web` to view the container's detailed configuration. The
-      output is a JSON document with several top-level sections. Which section shows
-      whether the container is currently running, paused, or exited?
+      A container is already running in this environment — the lab started it
+      for you before your session began. Run `docker ps` and identify it.
+      What is its name?
     type: multiple_choice
     options:
-      - State
-      - Config
-      - NetworkSettings
-      - Mounts
+      - mystery
+      - expired
+      - web
+      - nginx
     validation:
-      expected_answer: State
+      expected_answer: mystery
     error_message: >-
-      Look at the top-level keys in `docker inspect web`. The `State` section holds
-      `Status` (running/paused/exited).
-    hint: "docker inspect web | grep -A 6 State"
+      Run `docker ps` and read the NAMES column. The lab's container has been
+      running since before your session started.
+    hints:
+      - "Which command lists the containers currently running on this system?"
+      - "Run `docker ps` — every running container appears with a NAME in the last column."
+      - "One container has been running since before your session began. The other was created, ran once, and already exited."
+
+  - id: count-all
+    prompt: >-
+      Run `docker ps -a` to list every container on this system, including the
+      ones that have exited. How many containers exist in total?
+    type: multiple_choice
+    options:
+      - "1"
+      - "2"
+      - "3"
+      - "4"
+    validation:
+      expected_answer: "2"
+    error_message: >-
+      `docker ps` only shows running containers. Use `docker ps -a` to include
+      containers that have exited, then count them.
+    hints:
+      - "`docker ps` only shows running containers. How do you list containers that have exited too?"
+      - "`docker ps -a` shows every container on this system, stopped or running. Count the lines."
+      - "Two containers were created for you: one is still running, and one finished its work and exited."
 
   - id: find-image
     prompt: >-
-      Run `docker inspect web` and look at the `Config.Image` field. What image is
-      the `web` container running from?
+      Every container was created from an image. Inspect the `mystery`
+      container and determine which image it was started from.
     type: multiple_choice
     options:
-      - nginx:alpine
       - alpine:latest
+      - nginx:alpine
       - ubuntu:latest
       - busybox:latest
     validation:
-      expected_answer: nginx:alpine
+      expected_answer: alpine:latest
     error_message: >-
-      Read the Config.Image field of `docker inspect web` — it records the image
-      the container was started from.
-    hint: "docker inspect web | grep -A 8 Config"
+      Read the Config.Image field of `docker inspect mystery` — it records the
+      image the container was started from.
+    hints:
+      - "Every container was created from an image. How do you read a container's full configuration?"
+      - "`docker inspect mystery` prints the container's configuration as JSON."
+      - "The image is recorded in the Config section, in the Image field."
 
   - id: find-env
     prompt: >-
-      When you created `web`, you passed an environment variable with `-e`. Run
-      `docker inspect web` and look at the `Config.Env` section. What environment
-      variable is set on the container?
+      The `mystery` container carries configuration in environment variables.
+      Inspect it and find the value of `MYSTERY_FLAVOR`.
     type: multiple_choice
     options:
-      - SITE_MODE=production
-      - PORT=8080
-      - DEBUG=true
-      - HOST=localhost
+      - vanilla
+      - chocolate
+      - strawberry
+      - mint
     validation:
-      expected_answer: SITE_MODE=production
+      expected_answer: vanilla
     error_message: >-
-      Look at the Env section of `docker inspect web` — it lists the environment
-      variables the container was started with.
-    hint: "docker inspect web | grep -A 6 Env"
+      Look at the Config.Env section of `docker inspect mystery` — it lists the
+      environment variables the container was started with, one KEY=value per
+      line.
+    hints:
+      - "A container receives configuration through environment variables. Inspect the mystery container."
+      - "Environment variables live in the Config.Env section of `docker inspect mystery`, one KEY=value per line."
+      - "Find the entry for MYSTERY_FLAVOR and read its value."
+
+  - id: find-cmd
+    prompt: >-
+      Every container runs a command when it starts. Inspect the `mystery`
+      container to find out which command it is running.
+    type: multiple_choice
+    options:
+      - sleep 3600
+      - nginx
+      - sh
+      - echo setup complete
+    validation:
+      expected_answer: sleep 3600
+    error_message: >-
+      Look at the Config.Cmd field of `docker inspect mystery` — it lists the
+      command the container runs at startup.
+    hints:
+      - "A container runs a command when it starts. Inspect mystery to see which one."
+      - "The command is recorded in the Config.Cmd section of `docker inspect mystery`."
+      - "mystery was started with `sleep 3600` — it is simply holding itself open so you can inspect it."
 
   - id: view-logs
     prompt: >-
-      Run `docker logs web` to view the server's startup logs. The entrypoint
-      prints a line when the configuration is complete and nginx is ready to
-      start up. What does that line say?
+      The `expired` container ran a short command and exited. Look at its logs
+      and find what it printed.
     type: multiple_choice
     options:
-      - "Configuration complete; ready for start up"
-      - "Listening on port 80"
-      - "Server started successfully"
-      - "nginx is up and running"
+      - "setup complete"
+      - "mystery online"
+      - "hello world"
+      - "starting container"
     validation:
-      expected_answer: "Configuration complete; ready for start up"
+      expected_answer: "setup complete"
     error_message: >-
-      Run `docker logs web` and read the entrypoint's output — the banner is
-      printed right before nginx's process starts.
-    hint: "docker logs web"
+      Run `docker logs expired` to read what the container wrote to its output
+      streams before it exited.
+    hints:
+      - "Which command shows what a container has written to its output?"
+      - "`docker logs expired` prints everything the container wrote."
+      - "The expired container ran one command at startup and exited — its logs show exactly what it printed."
+
+  - id: stop-container
+    prompt: >-
+      Stop the `mystery` container. It should no longer be running — but it
+      must still exist on this system.
+    type: terminal_action
+    validation:
+      command: "docker inspect mystery --format '{{.State.Status}}' 2>/dev/null | grep -qx exited && echo MYSTERY_STOPPED"
+      match_type: exact
+      expected_output: MYSTERY_STOPPED
+    error_message: >-
+      The mystery container is still running. Stopping and removing are two
+      different operations — you only need to stop it here. Verify with
+      `docker ps -a`.
+    hints:
+      - "Which command tells a running container to stop? It sends SIGTERM and gives the process time to shut down."
+      - "Stopping a container does not delete it — stopping and removing are separate operations."
+      - "Verify with `docker ps -a`: mystery should show a status of Exited, not Running."
+    solution:
+      command: "docker stop mystery"
+
+  - id: start-container
+    prompt: >-
+      Start the `mystery` container again so it is running once more. This is
+      the same container you stopped — do not create a new one.
+    type: terminal_action
+    validation:
+      command: "docker inspect mystery --format '{{.State.Status}}' 2>/dev/null | grep -qx running && echo MYSTERY_RUNNING"
+      match_type: exact
+      expected_output: MYSTERY_RUNNING
+    error_message: >-
+      The mystery container is not running. This is not `docker run` — the
+      container already exists, so you are resuming the existing object.
+    hints:
+      - "Which command resumes a stopped container?"
+      - "This is not `docker run` — the container already exists and is only paused. You are restarting the existing object."
+      - "Verify with `docker ps`: mystery should be back in the running list."
+    solution:
+      command: "docker start mystery"
 
   - id: remove-container
     prompt: >-
-      Remove the `web` container: stop it with `docker stop web`, then delete it
-      with `docker rm web`. Confirm with `docker ps -a` that it no longer exists.
+      Remove the `mystery` container from this system entirely. It should no
+      longer exist — not even in `docker ps -a`.
     type: terminal_action
     validation:
-      command: "docker inspect web >/dev/null 2>&1 || echo WEB_REMOVED"
+      command: "docker inspect mystery >/dev/null 2>&1 || echo MYSTERY_REMOVED"
       match_type: exact
-      expected_output: WEB_REMOVED
+      expected_output: MYSTERY_REMOVED
     error_message: >-
-      The `web` container still exists. Run `docker stop web` followed by
-      `docker rm web`, then verify with `docker ps -a`.
-    hint: "docker stop web && docker rm web"
-
-  - id: recreate-container
-    prompt: >-
-      Recreate `web` with the same name, the same port mapping, and the same
-      `SITE_MODE=production` environment variable. Then compare the container ID to
-      the one recorded earlier with `docker inspect web --format '{{.Id}}'`. Is the
-      new container the same object as the original?
-    type: terminal_action
-    validation:
-      command: >-
-        [ "$(docker inspect web --format '{{.Id}}')" != "{{recorded:web_id}}" ] &&
-        docker inspect web --format '{{.State.Status}}' 2>/dev/null | grep -qx running &&
-        docker inspect web --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
-        grep -q '^SITE_MODE=production$' && echo ID_CHANGED
-      match_type: exact
-      expected_output: ID_CHANGED
-    error_message: >-
-      The new `web` container has the same ID as the original, or isn't running
-      with SITE_MODE=production. Recreating a container always produces a brand-new
-      ID — make sure the old container was removed first.
-    hint: >-
-      docker run -d --name web -p 8080:80 -e SITE_MODE=production nginx:alpine &&
-      docker inspect web --format '{{.Id}}'
+      The mystery container still exists. A running container must be stopped
+      first, then deleted. Verify it's gone with `docker ps -a`.
+    hints:
+      - "Which command deletes a container? A running container must be stopped before it can be deleted."
+      - "Removing a container destroys it along with its writable layer — everything it wrote that was not in a volume."
+      - "Verify with `docker ps -a` — mystery should be gone completely."
+    solution:
+      command: "docker stop mystery && docker rm mystery"

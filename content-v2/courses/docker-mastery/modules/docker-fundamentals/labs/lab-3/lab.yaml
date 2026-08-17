@@ -1,5 +1,5 @@
 id: lab-3
-title: Environment Variables
+title: Configuring Containers
 difficulty: beginner
 environment: docker-basic
 
@@ -7,26 +7,87 @@ setup:
   - command: "usermod -aG docker student"
 
 objectives:
-  - Pass environment variables into a container
-  - Map host ports to container ports
+  - Create a container from an image with docker run
+  - Pass configuration to a container with environment variables
+  - Publish a container port to the host with a port mapping
+  - Override the command a container runs at startup
+  - Name containers so they can be managed by name
 
 tasks:
-  - id: pass-env
-    prompt: Run an alpine container that prints the value of MY_VAR="hello" when it starts.
+  - id: set-env
+    prompt: >-
+      Create a container named `greet` from the `alpine` image. Give it an
+      environment variable `GREETING` set to `hello`, and have it print the
+      value of `GREETING` when it starts. The container should finish its work
+      and exit, but remain on this system so its output can be examined.
     type: terminal_action
     validation:
-      command: docker run --rm -e MY_VAR=hello alpine printenv MY_VAR
+      command: >-
+        docker inspect greet --format '{{.Config.Image}}' 2>/dev/null |
+        grep -qE '^alpine(:latest)?$' &&
+        docker inspect greet --format '{{.State.Status}}' 2>/dev/null |
+        grep -qx exited &&
+        docker logs greet 2>/dev/null | grep -qx hello && echo ENV_OK
       match_type: exact
-      expected_output: hello
-    error_message: The container did not print the expected value.
-    hint: Use -e KEY=VALUE to set environment variables.
+      expected_output: ENV_OK
+    error_message: >-
+      The `greet` container should exist, have finished and exited, and its
+      logs should contain `hello`. Run `docker ps -a` and `docker logs greet`
+      to see what happened.
+    hints:
+      - "Which command creates a container from an image and starts it? You used it in Lab 2."
+      - "Configuration is passed at runtime with the `-e` flag: `-e GREETING=hello`."
+      - "Have it print the value — `printenv GREETING` as the command (or `sh -c 'echo $GREETING'`). Name it `greet` so you can examine it afterwards."
+    solution:
+      command: "docker run --name greet -e GREETING=hello alpine printenv GREETING"
 
-  - id: port-mapping
-    prompt: Map host port 9090 to an nginx container's port 80.
+  - id: map-port
+    prompt: >-
+      Launch a web server named `web` from the `nginx:alpine` image so it
+      keeps running in the background and is reachable from your environment
+      on host port `9090`.
     type: terminal_action
     validation:
-      command: docker port $(docker ps -q | head -1) 2>/dev/null | head -1
-      match_type: contains
-      expected_output: '9090'
-    error_message: Port 9090 is not mapped to any container.
-    hint: docker run -p 9090:80 nginx:alpine
+      command: >-
+        docker inspect web --format '{{.State.Status}}' 2>/dev/null |
+        grep -qx running &&
+        docker inspect web --format '{{.Config.Image}}' 2>/dev/null |
+        grep -qE '^nginx(:alpine)?$' &&
+        docker port web 2>/dev/null | grep -q ':9090' && echo PORT_OK
+      match_type: exact
+      expected_output: PORT_OK
+    error_message: >-
+      The `web` container should be running from `nginx:alpine` with host port
+      9090 mapped to container port 80. Check with `docker ps` and
+      `docker port web`.
+    hints:
+      - "nginx listens on port 80 inside the container by default. To reach it from outside you must publish a host port."
+      - "`-p HOST:CONTAINER` maps a host port to a container port: `-p 9090:80`."
+      - "A server should keep running — use detached mode (`-d`) so it runs in the background, and name it `web`. Verify the mapping with `docker port web`."
+    solution:
+      command: "docker run -d --name web -p 9090:80 nginx:alpine"
+
+  - id: override-cmd
+    prompt: >-
+      Create a container named `cmd-demo` from the `alpine` image that runs
+      the `echo` command with the message `lab-3 complete` and then exits.
+      Leave it in place so its output can be examined.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect cmd-demo --format '{{.State.Status}}' 2>/dev/null |
+        grep -qx exited &&
+        docker logs cmd-demo 2>/dev/null | grep -qx 'lab-3 complete' &&
+        echo CMD_OK
+      match_type: exact
+      expected_output: CMD_OK
+    error_message: >-
+      The `cmd-demo` container should have finished and exited, and its logs
+      should contain `lab-3 complete`. Run `docker ps -a` and
+      `docker logs cmd-demo` to see what happened.
+    hints:
+      - "The command you write after the image name replaces the image's default command."
+      - "`docker run <image> echo <message>` runs the echo command with your message instead of the image's default command."
+      - "Name it `cmd-demo` and let it exit on its own — its output is saved in its logs. Check with `docker logs cmd-demo`."
+    solution:
+      command: "docker run --name cmd-demo alpine echo lab-3 complete"

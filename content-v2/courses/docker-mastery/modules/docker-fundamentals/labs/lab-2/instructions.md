@@ -1,39 +1,51 @@
-# Lab 2: Inspecting and Configuring Containers
+# Lab 2: Inspecting Containers
 
 ## What You're Doing and Why
 
-A single image is meant to be reused in many situations — a personal blog, a company homepage, an API gateway. What changes is configuration. In this lab you will configure a web server at runtime with environment variables, then use the two commands every developer reaches for when something goes wrong: `docker inspect` to read a container's full configuration and `docker logs` to see what it has been doing. You will also see, hands-on, why containers are temporary by nature.
+Before you configure anything, you need to be able to see what already exists and how it is put together. This lab drops a mystery container into your environment and asks you to investigate it: what is running, what image it came from, what configuration it carries, what command it runs, and what it has been doing. Along the way you will use the two commands every developer reaches for when something goes wrong — `docker inspect` to read a container's full configuration and `docker logs` to see what it has written — and you will exercise the container lifecycle: stop, start, and remove.
 
 ## Background
 
-Containers receive their settings through environment variables — key-value pairs the application reads when it starts. The image provides the defaults, but you can turn the knobs when you run the container with the `-e` flag, without rebuilding anything. Docker records every setting you pass in the container's configuration, and `docker inspect` lets you read that configuration back as JSON. `docker logs` shows you what the container has written to its output streams. And because containers are designed to be disposable, anything a container writes to its own filesystem lives in that container's writable layer — and dies with it.
+A container is a running instance of an image, and it carries its own configuration: which image it was created from, what environment variables were passed to it, what command it runs, and how it is currently faring. Docker records all of this, and `docker inspect` lets you read it back as JSON. `docker logs` shows everything the container has written to its output streams. And because containers are designed to be disposable, you can stop, start, and remove them — stopping is a pause, removing is a deletion.
 
 ## Command Reference
 
-### `docker run -d -p HOST:CONTAINER -e KEY=VALUE <image>`
+### `docker ps` / `docker ps -a`
 
-Starts a container in the background (`-d`), maps a host port to a container port (`-p`), and sets an environment variable (`-e`).
+Lists running containers, or all containers including ones that have exited. Each entry shows the container's ID, image, and name.
 
 ### `docker inspect <name-or-id>`
 
-Prints the full JSON configuration of a container: environment variables, network settings, mounts, resource limits, and state. Pipe it through `grep` to find specific values.
+Prints the full JSON configuration of a container: the image, environment variables, command, network settings, mounts, and state. Pipe it through `grep` to find specific values, or use `--format '{{.Config.Image}}'` to select one field.
 
 ### `docker logs <name-or-id>`
 
 Prints everything a container wrote to its output streams. Add `-f` to follow in real time, like `tail -f`.
 
-### `docker stop` / `docker rm`
+### `docker stop` / `docker start` / `docker rm`
 
-Gracefully stops a container and removes it. Removing a container destroys its writable layer — everything it wrote that was not in a volume.
+Stops a running container, resumes a stopped one (the same container — no new ID), and deletes a container. Removing a container destroys its writable layer.
 
 ## Scenario
 
-Start an nginx web server in the background, configured with an environment variable and a published port. Inspect it to confirm your configuration took effect, read its startup logs, then destroy it and start a fresh one to prove that anything written inside a container disappears with it.
+Two containers have been created in your environment before you started: `mystery`, a running container, and `expired`, a container that ran once and exited. Use the inspection commands to find out everything about them, then bring the `mystery` container through its lifecycle yourself.
 
 ## Objective
 
-Run `docker run -d --name web -p 8080:80 -e SITE_MODE=production nginx:alpine`. Use `docker inspect web` to verify `SITE_MODE=production` is in the container's Env. Use `docker logs web` to see the startup banner. Write a file inside `web`, stop and remove it, start a fresh container named `web2`, and confirm the file is gone.
+Identify the running container with `docker ps` and count all containers with `docker ps -a`. Use `docker inspect mystery` to find its image, its `MYSTERY_FLAVOR` environment variable, and the command it is running. Use `docker logs expired` to read what it printed. Then stop the `mystery` container, start it again, and finally remove it.
+
+## Tasks
+
+- [ ] **find-running** — Run `docker ps` and identify the running container the lab started.
+- [ ] **count-all** — Run `docker ps -a` and count every container on the system.
+- [ ] **find-image** — Inspect `mystery` and read which image it was created from.
+- [ ] **find-env** — Inspect `mystery` and read the value of `MYSTERY_FLAVOR`.
+- [ ] **find-cmd** — Inspect `mystery` and read the command it is running.
+- [ ] **view-logs** — Run `docker logs expired` and read what it printed.
+- [ ] **stop-container** — Stop `mystery`; `docker ps -a` should show it as Exited.
+- [ ] **start-container** — Start `mystery`; `docker ps` should show it running again.
+- [ ] **remove-container** — Remove `mystery`; `docker ps -a` should no longer list it.
 
 ## Reflection
 
-Environment variables let you reconfigure an image without rebuilding it. `docker inspect` shows exactly what configuration a running container received, and `docker logs` tells you what it has been doing — together they are your primary debugging tools. Finally, you watched a container's data vanish along with it. That is intentional: containers are disposable by design, which is why anything that must survive lives in volumes (a later chapter in this course).
+`docker ps` and `docker ps -a` tell you what exists and what state it is in; `docker inspect` tells you exactly how a container is configured; `docker logs` tells you what it has been doing. Together they are your primary tools for understanding and debugging containers. Stopping, starting, and removing are three separate operations — stopping pauses a container, starting resumes the same one, and only removing destroys it along with its writable layer.

@@ -1,0 +1,177 @@
+id: lab-8
+title: Image Layers and Build Cache
+difficulty: intermediate
+environment: docker-build
+
+setup:
+  - command: "usermod -aG docker student"
+
+objectives:
+  - Build an image whose instructions create distinct layers
+  - Observe the dependency-installation pattern in practice
+  - Modify source code, rebuild, and see the dependency step served from cache
+  - Modify a dependency file, rebuild, and see the dependency step run again
+
+tasks:
+  - id: create-project
+    prompt: >-
+      Create a project directory named `cache-demo` in your home directory. In
+      it, create a dependency file `deps.txt` containing the line `dep=v1`, and
+      a script `app.sh` that prints `app v1`.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/cache-demo/deps.txt &&
+        grep -qx 'dep=v1' ~/cache-demo/deps.txt &&
+        test -f ~/cache-demo/app.sh &&
+        grep -qx 'app v1' ~/cache-demo/app.sh && echo PROJECT_OK
+      match_type: exact
+      expected_output: PROJECT_OK
+    error_message: >-
+      ~/cache-demo should contain deps.txt (with `dep=v1`) and app.sh (with
+      `app v1`). Check with `ls ~/cache-demo`.
+    hints:
+      - "Create the directory with `mkdir -p ~/cache-demo`."
+      - "Write each file with `echo '...' > ~/cache-demo/filename`."
+      - "deps.txt holds `dep=v1`; app.sh holds `app v1`."
+    solution:
+      command: >-
+        mkdir -p ~/cache-demo &&
+        echo 'dep=v1' > ~/cache-demo/deps.txt &&
+        echo 'app v1' > ~/cache-demo/app.sh
+
+  - id: write-dockerfile
+    prompt: >-
+      In `~/cache-demo`, write a `Dockerfile` that starts from `alpine:latest`,
+      sets the working directory to `/app`, copies `deps.txt` into the image,
+      records the contents of `deps.txt` into a file named `installed.txt`
+      during the build (this stands in for installing dependencies), then copies
+      `app.sh` and prints it when a container starts.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/cache-demo/Dockerfile &&
+        grep -qE '^FROM +alpine(:latest)?$' ~/cache-demo/Dockerfile &&
+        grep -q 'COPY deps.txt' ~/cache-demo/Dockerfile &&
+        grep -q 'RUN' ~/cache-demo/Dockerfile &&
+        grep -q 'COPY app.sh' ~/cache-demo/Dockerfile &&
+        grep -q 'CMD' ~/cache-demo/Dockerfile && echo DOCKERFILE_OK
+      match_type: exact
+      expected_output: DOCKERFILE_OK
+    error_message: >-
+      ~/cache-demo/Dockerfile should contain FROM, COPY deps.txt, a RUN that
+      copies deps.txt to installed.txt, COPY app.sh, and CMD. Read it with
+      `cat ~/cache-demo/Dockerfile`.
+    hints:
+      - "The RUN step stands in for dependency installation: `RUN cp deps.txt installed.txt`."
+      - "Order matters here: copy deps.txt, RUN to install it, then copy app.sh last."
+      - "Finish with `CMD [\"cat\", \"app.sh\"]`."
+    solution:
+      command: >-
+        printf 'FROM alpine:latest\n\nWORKDIR /app\n\nCOPY deps.txt .\n\nRUN cp deps.txt installed.txt\n\nCOPY app.sh .\n\nCMD ["cat", "app.sh"]\n'
+        > ~/cache-demo/Dockerfile
+
+  - id: build-first
+    prompt: >-
+      Build an image from `~/cache-demo` and tag it `cache-demo`. This is the
+      FIRST build, so every step runs. Run the image: it should print
+      `app v1`. Also confirm the image contains `installed.txt` with the
+      contents of `deps.txt` (`dep=v1`) — proof that the dependency step ran.
+    type: terminal_action
+    validation:
+      command: >-
+        docker image inspect cache-demo >/dev/null 2>&1 &&
+        docker run --rm cache-demo 2>/dev/null | grep -qx 'app v1' &&
+        docker run --rm --entrypoint cat cache-demo /app/installed.txt
+        2>/dev/null | grep -qx 'dep=v1' && echo FIRST_BUILD_OK
+      match_type: exact
+      expected_output: FIRST_BUILD_OK
+    error_message: >-
+      The cache-demo image should print `app v1` and contain
+      /app/installed.txt holding `dep=v1`. Build it and run it with
+      `docker run --rm cache-demo`.
+    hints:
+      - "Build with `docker build -t cache-demo ~/cache-demo`."
+      - "Run with `docker run --rm cache-demo` — the CMD prints app.sh."
+      - "Check installed.txt with `docker run --rm --entrypoint cat cache-demo /app/installed.txt`."
+    solution:
+      command: "docker build -t cache-demo ~/cache-demo"
+
+  - id: modify-source
+    prompt: >-
+      Change `app.sh` so it prints `app v2` instead of `app v1`. Rebuild the
+      `cache-demo` image and WATCH the build output: the `RUN cp deps.txt
+      installed.txt` step should be reported as CACHED, because `deps.txt` did
+      not change. Then run the image — it should print `app v2`, and
+      `installed.txt` should STILL contain `dep=v1`, proving the dependency
+      step was reused rather than re-run.
+    type: terminal_action
+    validation:
+      command: >-
+        docker run --rm cache-demo 2>/dev/null | grep -qx 'app v2' &&
+        docker run --rm --entrypoint cat cache-demo /app/installed.txt
+        2>/dev/null | grep -qx 'dep=v1' && echo SOURCE_EDIT_OK
+      match_type: exact
+      expected_output: SOURCE_EDIT_OK
+    error_message: >-
+      The image should print `app v2` while installed.txt still holds `dep=v1`.
+      Rebuild after editing app.sh and run it again.
+    hints:
+      - "Edit app.sh to print `app v2`, then rebuild with `docker build -t cache-demo ~/cache-demo`."
+      - "Watch the build output — the dependency step should be labeled CACHED."
+      - "Because deps.txt did not change, the dependency step was reused, so installed.txt still holds `dep=v1`."
+    solution:
+      command: >-
+        echo 'app v2' > ~/cache-demo/app.sh &&
+        docker build -t cache-demo ~/cache-demo
+
+  - id: modify-deps
+    prompt: >-
+      Now change the dependency file: set `deps.txt` to `dep=v2`. Rebuild the
+      `cache-demo` image and WATCH the build output: this time the `RUN`
+      step should NOT be cached — it should RUN again, because its input
+      changed. Then confirm the image now contains `installed.txt` with `dep=v2`.
+    type: terminal_action
+    validation:
+      command: >-
+        docker run --rm --entrypoint cat cache-demo /app/installed.txt
+        2>/dev/null | grep -qx 'dep=v2' && echo DEPS_EDIT_OK
+      match_type: exact
+      expected_output: DEPS_EDIT_OK
+    error_message: >-
+      installed.txt should now hold `dep=v2`. Rebuild after changing deps.txt
+      and check with `docker run --rm --entrypoint cat cache-demo
+      /app/installed.txt`.
+    hints:
+      - "Change deps.txt to `dep=v2`, then rebuild with `docker build -t cache-demo ~/cache-demo`."
+      - "Because deps.txt changed, the COPY deps.txt step changed, which invalidates the RUN step — it runs again."
+      - "The rebuilt image's installed.txt should now hold `dep=v2`."
+    solution:
+      command: >-
+        echo 'dep=v2' > ~/cache-demo/deps.txt &&
+        docker build -t cache-demo ~/cache-demo
+
+  - id: why-order
+    prompt: >-
+      You saw that changing `deps.txt` forces the dependency step to re-run,
+      while changing `app.sh` does not. In a real project (say a Node app with
+      `npm install`), which instruction order makes everyday rebuilds fastest?
+    type: multiple_choice
+    options:
+      - "Copy the dependency manifest, install dependencies, then copy the application source"
+      - "Copy the application source first, then install dependencies"
+      - "Install dependencies after copying everything, in a single RUN"
+    validation:
+      expected_answer: "Copy the dependency manifest, install dependencies, then copy the application source"
+    error_message: >-
+      Dependencies change rarely and source changes constantly, so the
+      dependency step belongs at the top — then source edits reuse it from
+      cache.
+    hints:
+      - "Which file changes more often: the dependency manifest or your source code?"
+      - "Put rarely-changing instructions at the top so their expensive steps stay cached."
+      - "Manifest first, install second, source last — the dependency-installation pattern you saw in this lab."
+    error_hint: >-
+      Dependencies change rarely and source changes constantly, so the
+      dependency step belongs at the top — then source edits reuse it from
+      cache.

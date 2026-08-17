@@ -1,0 +1,171 @@
+id: lab-9
+title: Building an Application Image
+difficulty: intermediate
+environment: docker-build
+
+setup:
+  - command: "usermod -aG docker student"
+
+objectives:
+  - Write a small Python application with a dependency manifest
+  - Write a Dockerfile for it using the dependency-installation pattern
+  - Build the image and run a container from it
+  - Verify the application serves requests from inside the container
+
+tasks:
+  - id: create-app
+    prompt: >-
+      Create a project directory named `hello-app` in your home directory.
+      Inside it, create an empty dependency manifest `requirements.txt` and an
+      application file `app.py` containing a minimal HTTP server that responds
+      to every GET request with HTTP 200 and the body `hello from the app`.
+      The file must contain the lines `from http.server import HTTPServer,
+      BaseHTTPRequestHandler`, `self.wfile.write(b'hello from the app')`, and
+      `print('ready')`.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/hello-app/requirements.txt &&
+        test -f ~/hello-app/app.py &&
+        grep -q 'from http.server import' ~/hello-app/app.py &&
+        grep -q "self.wfile.write(b'hello from the app')" ~/hello-app/app.py &&
+        grep -q "print('ready')" ~/hello-app/app.py && echo APP_OK
+      match_type: exact
+      expected_output: APP_OK
+    error_message: >-
+      ~/hello-app should contain requirements.txt and an app.py with a handler
+      that writes `hello from the app` and a `print('ready')` startup line.
+      Check with `cat ~/hello-app/app.py`.
+    hints:
+      - "Create the directory with `mkdir -p ~/hello-app`."
+      - "requirements.txt can start empty — touch it with `touch ~/hello-app/requirements.txt`."
+      - "A minimal server imports HTTPServer and BaseHTTPRequestHandler, overrides do_GET to write b'hello from the app' with status 200, and prints 'ready' before serving."
+    solution:
+      command: >-
+        mkdir -p ~/hello-app &&
+        touch ~/hello-app/requirements.txt &&
+        printf "from http.server import HTTPServer, BaseHTTPRequestHandler\n\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        self.send_response(200)\n        self.end_headers()\n        self.wfile.write(b'hello from the app')\n\nprint('ready')\nHTTPServer(('0.0.0.0', 8000), Handler).serve_forever()\n"
+        > ~/hello-app/app.py
+
+  - id: write-dockerfile
+    prompt: >-
+      In `~/hello-app`, write a `Dockerfile` that starts from
+      `python:3.12-alpine`, sets the working directory to `/app`, copies
+      `requirements.txt` into the image and installs it, copies `app.py` into
+      the image, documents port `8000`, and runs the application when a
+      container starts.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/hello-app/Dockerfile &&
+        grep -q 'FROM python:3.12-alpine' ~/hello-app/Dockerfile &&
+        grep -q 'WORKDIR /app' ~/hello-app/Dockerfile &&
+        grep -q 'COPY requirements.txt' ~/hello-app/Dockerfile &&
+        grep -q 'pip install' ~/hello-app/Dockerfile &&
+        grep -q 'COPY app.py' ~/hello-app/Dockerfile &&
+        grep -q 'EXPOSE' ~/hello-app/Dockerfile &&
+        grep -q 'CMD' ~/hello-app/Dockerfile && echo DOCKERFILE_OK
+      match_type: exact
+      expected_output: DOCKERFILE_OK
+    error_message: >-
+      ~/hello-app/Dockerfile should contain FROM python:3.12-alpine, WORKDIR,
+      COPY requirements.txt, a pip install, COPY app.py, EXPOSE, and CMD. Read
+      it with `cat ~/hello-app/Dockerfile`.
+    hints:
+      - "Copy requirements.txt before installing: `COPY requirements.txt .` then `RUN pip install -r requirements.txt`."
+      - "Then copy the app: `COPY app.py .`."
+      - "Document port 8000 with `EXPOSE 8000` and run the app with `CMD [\"python\", \"app.py\"]`."
+    solution:
+      command: >-
+        printf 'FROM python:3.12-alpine\n\nWORKDIR /app\n\nCOPY requirements.txt .\n\nRUN pip install --no-cache-dir -r requirements.txt\n\nCOPY app.py .\n\nEXPOSE 8000\n\nCMD ["python", "app.py"]\n'
+        > ~/hello-app/Dockerfile
+
+  - id: build-app
+    prompt: >-
+      Build an image from `~/hello-app` and tag it `hello-app`. Confirm the
+      image exists.
+    type: terminal_action
+    validation:
+      command: "docker image inspect hello-app >/dev/null 2>&1 && echo IMAGE_BUILT"
+      match_type: exact
+      expected_output: IMAGE_BUILT
+    error_message: >-
+      No image tagged `hello-app` exists. Build it with
+      `docker build -t hello-app ~/hello-app` and check `docker images`.
+    hints:
+      - "Which command builds an image from a Dockerfile?"
+      - "`docker build -t hello-app ~/hello-app` builds and tags it in one step."
+      - "Verify with `docker images` — hello-app should be listed."
+    solution:
+      command: "docker build -t hello-app ~/hello-app"
+
+  - id: run-app
+    prompt: >-
+      Run a container from `hello-app` in the background (detached mode), name
+      it `hello-app-c`, and publish port `8000` to the lab environment. Confirm
+      the container is running and the application printed `ready` to its logs.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect hello-app-c --format '{{.State.Status}}' 2>/dev/null |
+        grep -qx running &&
+        docker logs hello-app-c 2>/dev/null | grep -qx 'ready' &&
+        docker inspect hello-app-c --format '{{json .Config.ExposedPorts}}'
+        2>/dev/null | grep -q '8000/tcp' && echo APP_RUNNING
+      match_type: exact
+      expected_output: APP_RUNNING
+    error_message: >-
+      The hello-app-c container should be running, have published port 8000,
+      and have printed `ready` in its logs. Check with `docker ps` and
+      `docker logs hello-app-c`.
+    hints:
+      - "Run it detached and published: `docker run -d --name hello-app-c -p 8000:8000 hello-app`."
+      - "The container keeps running because your app's HTTP server stays alive."
+      - "Confirm with `docker ps` and read the startup line with `docker logs hello-app-c`."
+    solution:
+      command: "docker run -d --name hello-app-c -p 8000:8000 hello-app"
+
+  - id: verify-http
+    prompt: >-
+      The application is listening on port 8000. Fetch
+      `http://localhost:8000` from the lab environment and confirm the
+      application responds with an HTTP 200 status and the text `hello from
+      the app`.
+    type: terminal_action
+    validation:
+      command: >-
+        curl -s -o /tmp/hello.out -w '%{http_code}' http://localhost:8000/
+        2>/dev/null | grep -qx '200' &&
+        grep -qx 'hello from the app' /tmp/hello.out && echo HTTP_OK
+      match_type: exact
+      expected_output: HTTP_OK
+    error_message: >-
+      The app at http://localhost:8000 should return HTTP 200 with the body
+      `hello from the app`. Fetch it with `curl -i http://localhost:8000/` and
+      read the response.
+    hints:
+      - "Which command fetches a URL? The lab environment has `curl`."
+      - "`curl -i http://localhost:8000/` shows the status line and body."
+      - "The app must respond 200 and print `hello from the app` — check the app.py handler and that the container's port mapping is `-p 8000:8000`."
+    solution:
+      command: "curl -i http://localhost:8000/"
+
+  - id: app-pattern
+    prompt: >-
+      Your Dockerfile copies `requirements.txt` and runs `pip install` BEFORE
+      copying `app.py`. In a real project, what is the main benefit of this
+      ordering?
+    type: multiple_choice
+    options:
+      - "Dependencies are installed once and reused from the build cache while you iterate on app.py"
+      - "pip install runs faster when app.py is not in the image"
+      - "The requirements file must exist before the application can run"
+    validation:
+      expected_answer: "Dependencies are installed once and reused from the build cache while you iterate on app.py"
+    error_message: >-
+      The dependency manifest changes rarely and your source changes constantly,
+      so installing dependencies first lets source edits reuse them from cache.
+    hints:
+      - "What did you observe in the layer-cache lesson when only the source changed?"
+      - "The dependency-installation pattern puts rarely-changing steps first."
+      - "Copy requirements.txt, install, then copy the source — everyday edits stay fast."

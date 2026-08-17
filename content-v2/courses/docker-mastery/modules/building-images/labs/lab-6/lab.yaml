@@ -1,12 +1,151 @@
 id: lab-6
-title: Image Debugging
-difficulty: intermediate
-environment: docker-basic
+title: Dockerfile Fundamentals
+difficulty: beginner
+environment: docker-build
 
 setup:
   - command: "usermod -aG docker student"
 
 objectives:
-  - Debug image build failures
-  - Inspect image layers
-  - Optimize layer caching
+  - Write a Dockerfile using FROM, WORKDIR, COPY, RUN, CMD, and EXPOSE
+  - Build an image and run a container from it
+  - Verify that a RUN instruction took effect during the build
+  - Verify the documented EXPOSE port on the image
+
+tasks:
+  - id: create-script
+    prompt: >-
+      Create a project directory named `greeter` in your home directory. Inside
+      it, create an executable shell script `greet.sh` that prints the text
+      `hello from the image` when it runs. The script must begin with the line
+      `#!/bin/sh` and be marked executable.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/greeter/greet.sh &&
+        head -1 ~/greeter/greet.sh | grep -qx '#!/bin/sh' &&
+        grep -q 'hello from the image' ~/greeter/greet.sh &&
+        test -x ~/greeter/greet.sh && echo SCRIPT_OK
+      match_type: exact
+      expected_output: SCRIPT_OK
+    error_message: >-
+      ~/greeter/greet.sh should start with #!/bin/sh, print `hello from the
+      image`, and be executable. Check with `cat ~/greeter/greet.sh` and
+      `ls -l ~/greeter/greet.sh`.
+    hints:
+      - "Which command creates a file with content in it? You used it in the last lab."
+      - "A script starts with `#!/bin/sh` on its own line, and `echo` prints text."
+      - "Make it executable with `chmod +x ~/greeter/greet.sh`."
+    solution:
+      command: >-
+        mkdir -p ~/greeter &&
+        printf '#!/bin/sh\necho hello from the image\n' > ~/greeter/greet.sh &&
+        chmod +x ~/greeter/greet.sh
+
+  - id: write-dockerfile
+    prompt: >-
+      In `~/greeter`, write a `Dockerfile` that starts from `alpine:latest`,
+      sets the working directory to `/app`, copies `greet.sh` into the image,
+      makes it executable, documents port `8080`, and runs the script when a
+      container starts.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/greeter/Dockerfile &&
+        grep -qE '^FROM +alpine(:latest)?$' ~/greeter/Dockerfile &&
+        grep -q 'WORKDIR /app' ~/greeter/Dockerfile &&
+        grep -q 'COPY greet.sh' ~/greeter/Dockerfile &&
+        grep -q 'RUN' ~/greeter/Dockerfile &&
+        grep -q 'EXPOSE' ~/greeter/Dockerfile &&
+        grep -q 'CMD' ~/greeter/Dockerfile && echo DOCKERFILE_OK
+      match_type: exact
+      expected_output: DOCKERFILE_OK
+    error_message: >-
+      ~/greeter/Dockerfile should contain FROM, WORKDIR, COPY, RUN, EXPOSE, and
+      CMD. Read it with `cat ~/greeter/Dockerfile`.
+    hints:
+      - "You used FROM, WORKDIR, COPY, and CMD in the last lab. Now add RUN and EXPOSE too."
+      - "`RUN chmod +x greet.sh` runs during the build; `EXPOSE 8080` documents the port; `CMD [\"/app/greet.sh\"]` (or `CMD [\"sh\", \"greet.sh\"]`) runs the script at start."
+      - "All six instructions — FROM, WORKDIR, COPY, RUN, EXPOSE, CMD — should appear once each."
+    solution:
+      command: >-
+        printf 'FROM alpine:latest\n\nWORKDIR /app\n\nCOPY greet.sh .\n\nRUN chmod +x greet.sh\n\nEXPOSE 8080\n\nCMD ["./greet.sh"]\n'
+        > ~/greeter/Dockerfile
+
+  - id: build-image
+    prompt: >-
+      Build an image from `~/greeter` and tag it `greeter-app`. Confirm the
+      image exists.
+    type: terminal_action
+    validation:
+      command: "docker image inspect greeter-app >/dev/null 2>&1 && echo IMAGE_BUILT"
+      match_type: exact
+      expected_output: IMAGE_BUILT
+    error_message: >-
+      No image tagged `greeter-app` exists. Build it with
+      `docker build -t greeter-app ~/greeter` and check `docker images`.
+    hints:
+      - "Which command builds an image from a Dockerfile?"
+      - "`docker build -t greeter-app ~/greeter` builds and tags it in one step."
+      - "Verify with `docker images` — greeter-app should be listed."
+    solution:
+      command: "docker build -t greeter-app ~/greeter"
+
+  - id: run-image
+    prompt: >-
+      Run a container from `greeter-app`. It should print
+      `hello from the image` and exit. Verify the output.
+    type: terminal_action
+    validation:
+      command: "docker run --rm greeter-app 2>/dev/null | grep -qx 'hello from the image' && echo RUN_OK"
+      match_type: exact
+      expected_output: RUN_OK
+    error_message: >-
+      Running `greeter-app` did not print `hello from the image`. Try
+      `docker run --rm greeter-app` and read the output.
+    hints:
+      - "Which command starts a container from an image?"
+      - "`docker run --rm greeter-app` runs it and removes the container afterwards."
+      - "Your CMD runs the script — if nothing prints, the RUN step may not have made it executable, or CMD may reference the wrong path."
+    solution:
+      command: "docker run --rm greeter-app"
+
+  - id: verify-expose
+    prompt: >-
+      Inspect the `greeter-app` image and confirm that port `8080` is documented
+      in its configuration.
+    type: terminal_action
+    validation:
+      command: >-
+        docker image inspect greeter-app --format '{{json .Config.ExposedPorts}}'
+        2>/dev/null | grep -q '8080/tcp' && echo EXPOSE_OK
+      match_type: exact
+      expected_output: EXPOSE_OK
+    error_message: >-
+      The image does not document port 8080. Check with
+      `docker image inspect greeter-app --format '{{json .Config.ExposedPorts}}'`.
+    hints:
+      - "Which command shows an image's configuration as JSON?"
+      - "`docker image inspect greeter-app --format '{{json .Config.ExposedPorts}}'` shows the documented ports."
+      - "EXPOSE writes the port into the image's config — that is how Docker knows the application's intended port."
+    solution:
+      command: "docker image inspect greeter-app --format '{{json .Config.ExposedPorts}}'"
+
+  - id: when-run
+    prompt: >-
+      In your Dockerfile you used both `RUN chmod +x greet.sh` and
+      `CMD ["./greet.sh"]`. When does each of these actually execute?
+    type: multiple_choice
+    options:
+      - "RUN executes while the image is being built; CMD executes when a container starts"
+      - "Both execute while the image is being built"
+      - "CMD executes while the image is being built; RUN executes when a container starts"
+    validation:
+      expected_answer: "RUN executes while the image is being built; CMD executes when a container starts"
+    error_message: >-
+      RUN runs during `docker build` and its effects are saved into the image;
+      CMD runs every time a container starts from the image.
+    hints:
+      - "What does `docker build` do with each instruction?"
+      - "One of these runs the `chmod` at build time. The other runs the script at start time."
+      - "Build-time instructions like RUN change the image; run-time instructions like CMD describe what happens when a container starts."

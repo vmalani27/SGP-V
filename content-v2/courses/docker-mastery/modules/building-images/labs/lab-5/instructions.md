@@ -1,51 +1,51 @@
-# Lab 5: Writing Your First Dockerfile
+# Lab 5: Build a Minimal Image
 
 ## What You're Doing and Why
 
-Pulling existing images only gets you so far. To containerize your own application, you need to write a Dockerfile — a text file that describes how to build your image layer by layer. This is the most important skill in this module. Every application you ever deploy with Docker begins with a Dockerfile.
+So far you have run containers from images other people built. Now you will build an image of your own. The point of this lab is not the image itself — it is to make the pipeline visible: a **Dockerfile** describes the image, `docker build` turns that description into an **image**, and `docker run` turns the image into a **container**. By building something tiny, you see the whole pipeline without getting distracted by application details.
 
 ## Background
 
-A Dockerfile is a sequence of instructions. Each instruction creates a new layer in the image. Docker caches each layer so that if nothing above a layer has changed, Docker reuses the cache and skips the step. This cache behavior is the reason Dockerfile instruction order matters: put the things that change rarely near the top and the things that change frequently near the bottom. Dependency installation changes rarely; application code changes constantly. Install dependencies first, then copy application code.
+A Dockerfile is a text file of instructions. `FROM` picks the base image, `WORKDIR` sets the working directory, `COPY` brings files from the build context into the image, and `CMD` decides what runs when a container starts. The build command `docker build -t name <context>` reads the Dockerfile from that directory and produces an image tagged with `name`.
 
 ## Command Reference
 
-### `FROM <image>`
+### `docker build -t <name> <context-dir>`
 
-Sets the base image. Every Dockerfile begins with `FROM`.
+Builds an image from the Dockerfile in the given directory and tags it. The directory argument is the build context.
 
-### `WORKDIR /path`
+### `docker run --rm <image>`
 
-Sets the working directory for all subsequent instructions.
+Runs a container from the image and removes it after it exits.
 
-### `COPY <source> <destination>`
+### `docker image inspect <image>`
 
-Copies files from the build context into the image.
+Shows configuration of an image; also a quick way to confirm the image exists.
 
-### `RUN <command>`
+### `docker images`
 
-Executes a command during the build and commits the result as a new layer.
-
-### `CMD ["executable", "arg"]`
-
-Sets the default command to run when the container starts. Can be overridden at runtime.
-
-### `EXPOSE <port>`
-
-Documents which port the application listens on. Does not actually publish the port.
-
-### `docker build -t <name>:<tag> .`
-
-Builds an image from the Dockerfile in the current directory and tags it with the given name.
+Lists the images present on this system.
 
 ## Scenario
 
-A Python Flask application has been provided. It has a `requirements.txt` and a single `app.py`. Write a Dockerfile that installs the dependencies and runs the application. Build the image and run a container from it.
+You create a tiny project with one file, describe how it becomes an image in a Dockerfile, build the image, and run it to see your file printed from inside the container.
 
 ## Objective
 
-Write a Dockerfile for the provided Flask application. Build the image. Run a container with the appropriate port mapping. Access the application from your browser.
+1. Create `~/my-image/hello.txt` containing `hello from my image`.
+2. Write `~/my-image/Dockerfile` using `FROM alpine:latest`, `WORKDIR /app`, `COPY hello.txt .`, and `CMD ["cat", "hello.txt"]`.
+3. Build the image as `my-first-image`.
+4. Run it and confirm it prints `hello from my image`.
+5. State which command produces the image and which produces the container.
+
+## Tasks
+
+- [ ] **create-project** — Create `~/my-image/hello.txt` containing `hello from my image`.
+- [ ] **write-dockerfile** — Write a `Dockerfile` with `FROM`, `WORKDIR`, `COPY`, and `CMD`.
+- [ ] **build-image** — Build it as `my-first-image`.
+- [ ] **run-image** — Run it and confirm it prints `hello from my image`.
+- [ ] **what-built** — Identify what `docker build` and `docker run` each produce.
 
 ## Reflection
 
-Look at the order of your `COPY` and `RUN` instructions. If you copy `requirements.txt` and install dependencies before copying your application code, then Docker will reuse the cached dependency layer every time you rebuild, as long as `requirements.txt` has not changed. Modify `app.py` and rebuild. Observe that the dependency installation is skipped. Now move the `COPY requirements.txt` line below `COPY . .` and rebuild after changing `app.py`. Every rebuild now reinstalls all dependencies. Instruction order has a significant impact on build performance.
+You just completed the entire image pipeline in four small steps. The Dockerfile is a plan; the image is the built result; the container is that result running. Everything you build for the rest of this module — and everything you will ever deploy with Docker — is this same pipeline, just with more instructions between `FROM` and `CMD`.

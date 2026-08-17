@@ -4,10 +4,6 @@ description: Master Dockerfile creation, multi-stage builds, and image optimizat
 order: 2
 items:
   - type: chapter
-    id: chapter-4
-  - type: lab
-    id: lab-4
-  - type: chapter
     id: chapter-5
   - type: lab
     id: lab-5
@@ -15,3 +11,23 @@ items:
     id: chapter-6
   - type: lab
     id: lab-6
+  - type: chapter
+    id: chapter-7
+  - type: lab
+    id: lab-7
+  - type: chapter
+    id: chapter-8
+  - type: lab
+    id: lab-8
+  - type: chapter
+    id: chapter-9
+  - type: lab
+    id: lab-9
+  - type: chapter
+    id: chapter-10
+  - type: lab
+    id: lab-10
+  - type: chapter
+    id: chapter-11
+  - type: lab
+    id: lab-11

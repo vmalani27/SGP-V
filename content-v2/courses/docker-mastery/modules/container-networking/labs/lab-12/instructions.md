@@ -1,4 +1,4 @@
-# Lab 7: Container Networking
+# Lab 12: Container Networking
 
 ## What You're Doing and Why
 

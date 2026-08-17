@@ -17,7 +17,10 @@ tasks:
     validation:
       expected_answer: "No"
     error_message: Docker should refuse the connection for now. You'll fix that in the next task.
-    hint: Run `docker ps` and read the error message.
+    hints:
+      - "Which command lists the containers currently running on this system?"
+      - "Run `docker ps` and read the error message carefully — it tells you what is wrong."
+      - "Docker is refusing the connection because your user lacks permission to talk to the daemon socket. That is expected — the next task fixes it."
 
   - id: fix-group
     prompt: Add your user to the docker group so `docker` commands work without `sudo`.
@@ -27,7 +30,12 @@ tasks:
       match_type: exact
       expected_output: ACCESS_GRANTED
     error_message: Your user is not in the docker group yet. Check with `getent group docker`.
-    hint: Run `sudo usermod -aG docker student`, then refresh your session with `newgrp docker`.
+    hints:
+      - "Docker commands fail because your user is not in the docker group yet. How do you add a user to a group?"
+      - "Which command adds a member to a group? It needs root privileges, so prefix it with `sudo`."
+      - "Verify the change with `getent group docker` — your user should now be listed."
+    solution:
+      command: "sudo usermod -aG docker student"
 
   - id: count-images
     prompt: How many images are present in the system?
@@ -36,14 +44,16 @@ tasks:
     validation:
       match_type: exact
       expected_output: "2"
-    error_message: Unexpected image count.
-    hint: Run `docker images` to count them.
+    error_message: Unexpected image count. Run `docker images` and count them again.
+    hints:
+      - "Which command lists the images stored locally on this system?"
+      - "Run `docker images` and count the rows in the output."
+      - "Two images are pre-pulled into this environment for you."
 
   - id: run-simple-container
     prompt: Run a container named `alpine-container` that prints the greeting `GREETING_FROM_ALPINE`.
     type: terminal_action
     validation:
-      # Run validation as root to inspect container state and logs
       execution_user: root
       expected_exit_code: 0
       command: >-
@@ -54,4 +64,9 @@ tasks:
       No container named `alpine-container` printed the greeting. Run
       `docker ps -a` to find your container, then `docker logs alpine-container`
       to inspect its output.
-    hint: docker run --name alpine-container alpine:latest echo GREETING_FROM_ALPINE
+    hints:
+      - "Which command creates a container from an image and starts it? It needs a name and a command to run."
+      - "Use `--name alpine-container` and pass the greeting as the command: `echo GREETING_FROM_ALPINE` after the image name."
+      - "Verify with `docker logs alpine-container` — the greeting should appear in its output."
+    solution:
+      command: "docker run --name alpine-container alpine:latest echo GREETING_FROM_ALPINE"

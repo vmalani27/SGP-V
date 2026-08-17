@@ -1,4 +1,4 @@
-# Lab 10: A Complete Containerization Workflow
+# Lab 15: Production Storage Patterns
 
 ## What You're Doing and Why
 

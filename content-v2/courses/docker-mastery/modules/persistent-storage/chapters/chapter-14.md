@@ -1,4 +1,4 @@
-# Chapter 9: Why Data Dies When Containers Stop
+# Chapter 14: Why Data Dies When Containers Stop
 
 ## In this chapter, you will
 
@@ -8,7 +8,7 @@
 
 ## The Core Problem
 
-Remember Chapter 3? You started a PostgreSQL container, created tables, inserted data, stopped the container, removed it, started a new one — and all your data was gone.
+Remember Chapter 4? You ran an Alpine container, created a file inside it, removed the container, and started a fresh one from the same image — the file was gone.
 
 This is not a bug. It is by design. Containers are ephemeral. The writable layer on top of the image is temporary. When the container is removed, that layer goes with it.
 

@@ -1,43 +1,45 @@
-# Lab 3: Environment Variables and Container Configuration
+# Lab 3: Configuring Containers
 
 ## What You're Doing and Why
 
-A container image is built once but should run in many environments: development, staging, production. Hard-coding configuration values like database hostnames or API keys into an image would mean rebuilding it for every environment. Environment variables solve this by injecting configuration at runtime, keeping the image generic and the configuration separate. This lab puts that into practice: you pass a variable into a container and map a host port to a container port so you can reach the container from your machine.
+In Lab 2 you inspected containers that already existed. Now it is your turn to create them. A container image is built once but should run in many situations, and the differences come from configuration you provide at runtime: environment variables, published ports, and the command the container runs. This lab has you create three containers from the same two Alpine images, each one configured differently, and prove that each configuration took effect.
 
 ## Background
 
-Environment variables are key-value pairs that are visible to every process running inside the container. They are set using the `-e` flag at runtime or defined in the Dockerfile using the `ENV` instruction. Values set at runtime override values set in the image. Publishing a port with `-p` makes a container's port reachable from the host: `-p 9090:80` forwards host port 9090 to container port 80. This is how you access a web server running inside a container from your browser.
+Environment variables are key-value pairs that are visible to every process inside the container. They are set with the `-e` flag at runtime, and they override any defaults baked into the image. Port mapping with `-p HOST:CONTAINER` makes a container's port reachable from the host: `-p 9090:80` forwards host port 9090 to container port 80. And the command you write after the image name — for example `echo hello` — replaces the image's default command. Each container needs a name (`--name`) so you can find it again afterwards.
 
 ## Command Reference
 
-### `docker run -e KEY=value <image>`
+### `docker run --name <name> -e KEY=value <image> <command>`
 
-Sets an environment variable inside the container.
+Creates and starts a container: names it, passes environment variables, and overrides the image's default command with `<command>`.
 
-### `docker run --env-file .env <image>`
+### `docker run -d --name <name> -p HOST:CONTAINER <image>`
 
-Reads environment variables from a file and passes them all to the container.
+Starts a container in the background (`-d`) and publishes a container port on the host.
 
-### `docker run -p HOST:CONTAINER <image>`
+### `docker ps -a` / `docker inspect <name>` / `docker logs <name>`
 
-Maps a container port to a port on the host.
+List containers, read a container's configuration, and view its output — your verification tools.
 
 ### `docker port <container>`
 
 Lists the port mappings of a running container.
 
-### `docker exec <container> env`
-
-Lists all environment variables visible inside a running container.
-
 ## Scenario
 
-Run an alpine container that prints the value of an environment variable, then start an nginx container and publish host port 9090 to the container's port 80. Verify the port mapping.
+Create three containers, each exercising one way to configure a container at runtime: an environment variable, a published port, and a command override. Verify each one using the inspection commands from Lab 2.
 
 ## Objective
 
-Run `docker run --rm -e MY_VAR=hello alpine printenv MY_VAR` and confirm the output is `hello`. Then run `docker run -p 9090:80 nginx:alpine` and use `docker port` to confirm host port 9090 maps to the container's port 80.
+Run `docker run --name greet -e GREETING=hello alpine printenv GREETING` and confirm the output is `hello`. Then run `docker run -d --name web -p 9090:80 nginx:alpine` and use `docker port web` to confirm host port 9090 maps to container port 80. Finally run `docker run --name cmd-demo alpine echo lab-3 complete` and confirm its logs contain `lab-3 complete`.
+
+## Tasks
+
+- [ ] **set-env** — Create a container named `greet` that prints the value of `GREETING=hello` and then exits; confirm with `docker logs greet`.
+- [ ] **map-port** — Start a background nginx container named `web` that is reachable on host port 9090; confirm with `docker port web`.
+- [ ] **override-cmd** — Create a container named `cmd-demo` that runs `echo lab-3 complete` and then exits; confirm with `docker logs cmd-demo`.
 
 ## Reflection
 
-Environment variables let you reconfigure an image without rebuilding it, and port mapping is what makes containers reachable from outside. Never pass secret values directly on the command line in a production environment — command-line arguments are visible in process listings and shell history. For secrets, Docker provides a secrets mechanism and most orchestration platforms have their own secret management. For local development, `--env-file` with a `.env` file that is excluded from version control is the accepted practice.
+The image stays the same — the configuration changes at runtime. Environment variables inject settings without rebuilding, port mapping is what makes a container reachable from outside, and a command override lets the same image do different things. In each case `docker inspect`, `docker logs`, and `docker port` let you verify that what you intended is actually what the container received.

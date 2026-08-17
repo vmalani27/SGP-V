@@ -1,4 +1,4 @@
-# Lab 9: Publishing Images to a Registry
+# Lab 14: Persistent Storage
 
 ## What You're Doing and Why
 
@@ -28,7 +28,7 @@ Downloads the image from the registry.
 
 ## Scenario
 
-You have built the Flask application image from Lab 5. Tag it with a version number and push it to your Docker Hub account. Simulate a deployment by removing the local image and pulling it back from the registry.
+You have built the Flask application image from Lab 6. Tag it with a version number and push it to your Docker Hub account. Simulate a deployment by removing the local image and pulling it back from the registry.
 
 ## Objective
 

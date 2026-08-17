@@ -2,95 +2,85 @@
 
 ## In this chapter, you will
 
-- Pass configuration to containers using environment variables
-- Override default settings without rebuilding images
-- Understand how containers store temporary data
+- Pass configuration to containers with environment variables
+- Override the command a container runs at startup
+- Publish container ports to the host with port mappings
 
 ## Why Configuration Matters
 
-The same nginx image can serve a personal blog, a company homepage, or an API gateway. The difference is configuration. Containers get their configuration through environment variables — key-value pairs that the application reads when it starts.
+The same nginx image can serve a personal blog, a company homepage, or an API gateway. The difference is configuration. Containers receive their configuration as environment variables — key-value pairs the application reads when it starts.
 
-Think of environment variables as settings knobs. The image provides the defaults, but you can turn the knobs when you run the container.
+Think of environment variables as settings knobs: the image provides the defaults, and you turn the knobs when you run the container, without rebuilding anything.
 
-## Passing Environment Variables
+## Environment Variables
 
-Use the `-e` flag to set environment variables:
-
-```
-docker run -d -e POSTGRES_PASSWORD=secret123 -p 5432:5432 postgres
-```
-
-This starts a PostgreSQL database with the password `secret123`. Without the `-e` flag, PostgreSQL would not start — it requires a password to be set.
-
-You can pass multiple variables:
+Use the `-e` flag to set an environment variable:
 
 ```
-docker run -d \
-  -e POSTGRES_PASSWORD=secret123 \
-  -e POSTGRES_DB=myapp \
-  -e POSTGRES_USER=admin \
-  -p 5432:5432 postgres
+docker run -e GREETING=hello alpine printenv GREETING
 ```
 
-Each `-e` flag sets one variable. The application inside the container reads these variables and configures itself accordingly.
-
-## What Happens Inside the Container
-
-When you set an environment variable, Docker makes it available to every process inside the container. The application can read it with standard system calls:
+`printenv GREETING` reads the variable and prints its value:
 
 ```
-# Inside the container:
-echo $POSTGRES_PASSWORD
-# Output: secret123
+# Output:
+hello
 ```
 
-The application is designed to check for these variables at startup. If the variable is not set, it uses a built-in default (or fails if the variable is required).
-
-## Inspecting a Running Container
-
-To see the full configuration of a running container:
+You can pass several variables — each `-e` sets one:
 
 ```
-docker inspect <container-id>
+docker run \
+  -e GREETING=hello \
+  -e AUDIENCE=world \
+  alpine sh -c 'echo "$GREETING, $AUDIENCE!"'
 ```
 
-This shows everything: network settings, environment variables, mount points, resource limits. It outputs JSON, so pipe it through `grep` to find specific values:
+If a variable is not set, the application falls back to a default baked into the image — or fails to start, if the variable is required. Name the container with `--name` (from Chapter 2) so you can inspect it and read its logs afterwards.
+
+## Overriding the Command
+
+The command you write after the image name replaces the image's default command:
 
 ```
-docker inspect <container-id> | grep -A 5 "Env"
+docker run alpine echo lab-3 complete
 ```
 
-## Viewing Container Logs
+The image's default command is what runs when you write no command: nginx's default starts the web server, alpine's default is an interactive shell. `echo lab-3 complete` runs instead, prints, and the container exits.
 
-To see what a container is doing:
-
-```
-docker logs <container-id>
-```
-
-To follow logs in real time (like `tail -f`):
+The command is part of the container's configuration, so you can read it back afterwards:
 
 ```
-docker logs -f <container-id>
+docker inspect <name> --format '{{.Config.Cmd}}'
 ```
 
-Press `Ctrl+C` to stop following. The container keeps running.
+## Publishing Ports
 
-> **Tip:** If a container exits immediately after starting, the first thing to check is `docker logs`. The application will usually print an error message explaining why it failed — often a missing required environment variable.
+A container runs in its own network namespace. By default nothing inside it is reachable from outside — the network is sealed off. To expose a port, publish it when you run the container:
 
-## Containers Are Ephemeral
+```
+docker run -d --name web -p 9090:80 nginx:alpine
+```
 
-When a container stops, everything it wrote to its writable layer is gone. Files created, databases written, logs generated — all gone when you `docker rm` the container.
+`-p HOST:CONTAINER` maps a host port to a container port: host port `9090` forwards to port `80` inside the container, where nginx listens by default. `-d` keeps the web server running in the background.
 
-This is by design. Containers are meant to be disposable. You should not rely on data stored inside a container for anything permanent. (Chapter 9 covers how to persist data with volumes.)
+To confirm the mapping:
 
-> **Warning:** Do not store important data inside a container without using volumes. If you run `docker rm`, that data is gone forever. Containers are temporary by nature.
+```
+docker port web
+# 80/tcp -> 0.0.0.0:9090
+```
 
-> **Try This:** Run a PostgreSQL container with `docker run -d -e POSTGRES_PASSWORD=test -p 5432:5432 postgres`. Connect to it, create a table, insert some data. Then stop and remove the container. Start a new one with the same command. Your data is gone — the new container started fresh. This demonstrates why volumes matter (which you will learn about later).
+The `PORTS` column of `docker ps` shows the same information. Open `http://localhost:9090` and you will see the nginx welcome page. Use multiple `-p` flags to publish more than one port.
+
+> **Tip:** If a container exits immediately after starting, check its logs with `docker logs` (from Chapter 2) — the application usually prints why it failed, often a missing environment variable or a bad command.
+
+> **Try This:** Run `docker run -d --name site -p 9090:80 -e SITE_MODE=production nginx:alpine`. Inspect it with `docker inspect site` and find `SITE_MODE=production` in the `Env` section and `9090` in the port mappings. Read its startup logs with `docker logs site`. Then stop and remove it with `docker stop site && docker rm site`.
 
 ## Key Takeaways
 
-- Pass configuration to containers with `-e KEY=VALUE` flags
-- Environment variables are how containers receive settings without rebuilding images
-- `docker logs` shows what a container is doing — your first debugging tool
-- Containers are ephemeral: data inside the writable layer is lost when the container is removed
+- Pass configuration at runtime with `-e KEY=VALUE`, without rebuilding the image
+- The command after the image name overrides the image's default command
+- `-p HOST:CONTAINER` publishes a container port to the host
+- `docker port <name>` lists a container's port mappings
+- If a container fails to start, its logs explain why

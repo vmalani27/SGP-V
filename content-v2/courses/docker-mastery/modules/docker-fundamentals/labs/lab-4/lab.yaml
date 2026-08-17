@@ -1,0 +1,340 @@
+id: lab-4
+title: Container Data and Persistence
+difficulty: beginner
+environment: docker-basic
+
+setup:
+  - command: "usermod -aG docker student"
+
+objectives:
+  - Observe that stopping and starting a container preserves its data
+  - Observe that a new container from the same image starts with a fresh writable layer
+  - Prove that container writes never modify the image
+  - Persist data across container removal with a Docker volume
+  - See that a volume has a lifecycle independent of containers
+  - Mount a lab-environment directory into a container with a bind mount
+  - Inspect the Mounts section to see where a container's data comes from
+
+tasks:
+  - id: create-data
+    prompt: >-
+      You need a scratch container to experiment with. Start a container named
+      `data-demo` from the `alpine` image that keeps running in the background
+      so you can work inside it.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect data-demo --format '{{.State.Status}}' 2>/dev/null |
+        grep -qx running &&
+        docker inspect data-demo --format '{{.Config.Image}}' 2>/dev/null |
+        grep -qE '^alpine(:latest)?$' && echo DATA_RUNNING
+      match_type: exact
+      expected_output: DATA_RUNNING
+      record:
+        key: image_id
+        command: "docker inspect alpine:latest --format '{{.Id}}'"
+    error_message: >-
+      The data-demo container should be running from the alpine image. Check
+      with `docker ps` and `docker inspect data-demo`.
+    hints:
+      - "Which command creates a container from an image and starts it?"
+      - "It must keep running in the background — detached mode (`-d`) returns your terminal, and a long `sleep` (like `sleep 300`) holds the container open."
+      - "Name it `data-demo` and verify it is running with `docker ps`."
+    solution:
+      command: "docker run -d --name data-demo alpine:latest sleep 300"
+
+  - id: create-file
+    prompt: >-
+      Inside `data-demo`, create the directory `/data` and a file
+      `/data/hello.txt` containing the text `persist`. Verify the file exists
+      and contains that text.
+    type: terminal_action
+    validation:
+      command: >-
+        docker exec data-demo test -f /data/hello.txt &&
+        docker exec data-demo grep -qx persist /data/hello.txt && echo FILE_OK
+      match_type: exact
+      expected_output: FILE_OK
+    error_message: >-
+      The file /data/hello.txt should exist inside data-demo and contain
+      `persist`. Check with `docker exec data-demo ls -l /data`.
+    hints:
+      - "Which command runs a command inside a running container?"
+      - "Use `docker exec data-demo sh -c '...'` to create the directory and write the file."
+      - "Verify by reading the file back: `docker exec data-demo cat /data/hello.txt`."
+    solution:
+      command: "docker exec data-demo sh -c 'mkdir -p /data && echo persist > /data/hello.txt'"
+
+  - id: stop-demo
+    prompt: >-
+      Stop the `data-demo` container. It should no longer be running, but it
+      must still exist on this system.
+    type: terminal_action
+    validation:
+      command: "docker inspect data-demo --format '{{.State.Status}}' 2>/dev/null | grep -qx exited && echo STOPPED"
+      match_type: exact
+      expected_output: STOPPED
+    error_message: >-
+      data-demo is still running. Stop it, then verify with `docker ps -a`.
+    hints:
+      - "Which command stops a running container gracefully?"
+      - "Stopping is not removal — the container and everything in it stay on the system."
+      - "Verify with `docker ps -a`: data-demo should show a status of Exited."
+    solution:
+      command: "docker stop data-demo"
+
+  - id: start-demo
+    prompt: >-
+      Start `data-demo` again. Then check whether `/data/hello.txt` still
+      exists inside it.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect data-demo --format '{{.State.Status}}' 2>/dev/null |
+        grep -qx running &&
+        docker exec data-demo test -f /data/hello.txt &&
+        docker exec data-demo grep -qx persist /data/hello.txt &&
+        echo DATA_SURVIVED
+      match_type: exact
+      expected_output: DATA_SURVIVED
+    error_message: >-
+      data-demo should be running again and /data/hello.txt should still exist.
+      Stopping a container does not destroy its data.
+    hints:
+      - "Which command resumes a stopped container? It is the same container, not a new one."
+      - "`docker start` brings back the same container with its writable layer intact."
+      - "Check the file with `docker exec data-demo ls /data` — it should still be there."
+    solution:
+      command: "docker start data-demo"
+
+  - id: recreate-demo
+    prompt: >-
+      Remove the `data-demo` container, then run a brand-new container with the
+      same name from the `alpine` image that keeps running. Check whether
+      `/data/hello.txt` still exists inside the new one.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect data-demo --format '{{.State.Status}}' 2>/dev/null |
+        grep -qx running &&
+        docker inspect data-demo --format '{{.Config.Image}}' 2>/dev/null |
+        grep -qE '^alpine(:latest)?$' &&
+        docker exec data-demo sh -c 'test ! -e /data/hello.txt' &&
+        echo FRESH_LAYER
+      match_type: exact
+      expected_output: FRESH_LAYER
+    error_message: >-
+      The new data-demo should be running from alpine and /data/hello.txt
+      should be gone — a new container from the same image starts with a fresh
+      writable layer.
+    hints:
+      - "Which command deletes a container? A running container must be stopped first, or use `-f` to stop and remove in one step."
+      - "Then create a fresh container named `data-demo` the same way you did at the start."
+      - "A new container from the same image starts fresh — /data will not be there. Check with `docker exec data-demo ls /data`."
+    solution:
+      command: "docker rm -f data-demo && docker run -d --name data-demo alpine:latest sleep 300"
+
+  - id: image-unmodified
+    prompt: >-
+      Writing inside a container should not have changed the `alpine:latest`
+      image. Compare the image's ID recorded earlier with its current ID and
+      confirm the image is exactly as it was.
+    type: terminal_action
+    validation:
+      command: >-
+        [ "$(docker inspect alpine:latest --format '{{.Id}}' 2>/dev/null)" =
+        "{{recorded:image_id}}" ] && echo IMAGE_INTACT
+      match_type: exact
+      expected_output: IMAGE_INTACT
+    error_message: >-
+      The alpine:latest image ID differs from the one recorded at the start.
+      It should be unchanged — container writes never modify the image.
+    hints:
+      - "Which command shows the full configuration of an image or container?"
+      - "Every image has a stable ID — `docker inspect alpine:latest --format '{{.Id}}'`."
+      - "Writes happen in the container's writable layer; the image on disk is never touched. `docker images` still shows the same image as before."
+    solution:
+      command: "docker inspect alpine:latest --format '{{.Id}}'"
+
+  - id: volume-create
+    prompt: >-
+      To make data survive container removal you need storage that lives
+      outside any container. Create a Docker volume named `my-data`.
+    type: terminal_action
+    validation:
+      command: "docker volume inspect my-data >/dev/null 2>&1 && echo VOLUME_OK"
+      match_type: exact
+      expected_output: VOLUME_OK
+    error_message: >-
+      The my-data volume should exist. Create it with
+      `docker volume create my-data` and confirm with `docker volume ls`.
+    hints:
+      - "A volume is Docker-managed storage that exists independently of any container."
+      - "Which subcommand manages volumes? Check `docker volume --help`."
+      - "Create it with `docker volume create my-data` and confirm with `docker volume ls`."
+    solution:
+      command: "docker volume create my-data"
+
+  - id: volume-write
+    prompt: >-
+      Start a container named `writer` from the `alpine` image that keeps
+      running in the background and has `my-data` mounted at `/data`. Then
+      write `/data/hello.txt` containing `persist` inside it.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect writer --format '{{range .Mounts}}{{.Type}} {{.Destination}} {{end}}' 2>/dev/null |
+        grep -q 'volume /data' &&
+        docker volume inspect my-data >/dev/null 2>&1 &&
+        docker exec writer test -f /data/hello.txt &&
+        docker exec writer grep -qx persist /data/hello.txt && echo VOLUME_WRITE_OK
+      match_type: exact
+      expected_output: VOLUME_WRITE_OK
+    error_message: >-
+      The writer container should run from alpine with my-data mounted at /data,
+      and /data/hello.txt should contain `persist`. Check `docker inspect writer`
+      (Mounts section) and `docker exec writer ls /data`.
+    hints:
+      - "Mount a volume into a container at run time with `-v VOLUME:MOUNT_POINT`."
+      - "Run it detached (`-d`, with a long `sleep`) and name it `writer` so you can inspect it later."
+      - "Write the file with `docker exec writer sh -c 'echo persist > /data/hello.txt'`."
+    solution:
+      command: >-
+        docker run -d --name writer -v my-data:/data alpine:latest sleep 300 &&
+        docker exec writer sh -c 'echo persist > /data/hello.txt'
+
+  - id: volume-recreate
+    prompt: >-
+      Remove the `writer` container. Then start a NEW container named `reader`
+      from `alpine`, keeping it running, and mount the same volume `my-data` at
+      `/data`. Check whether `/data/hello.txt` still exists.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect reader --format '{{range .Mounts}}{{.Type}} {{.Destination}} {{end}}' 2>/dev/null |
+        grep -q 'volume /data' &&
+        docker exec reader test -f /data/hello.txt &&
+        docker exec reader grep -qx persist /data/hello.txt && echo VOLUME_RECREATE_OK
+      match_type: exact
+      expected_output: VOLUME_RECREATE_OK
+    error_message: >-
+      reader should run from alpine with my-data mounted at /data, and
+      /data/hello.txt should still be there — the data lives in the volume, not
+      the container.
+    hints:
+      - "Which command removes the writer container?"
+      - "Start `reader` exactly like writer — same image, same volume mount (`-v my-data:/data`), detached."
+      - "The data lives in the volume, so it should be there. Check with `docker exec reader cat /data/hello.txt`."
+    solution:
+      command: "docker rm -f writer && docker run -d --name reader -v my-data:/data alpine:latest sleep 300"
+
+  - id: volume-persists
+    prompt: >-
+      Remove the `reader` container, then confirm the `my-data` volume still
+      exists.
+    type: terminal_action
+    validation:
+      command: "docker inspect reader >/dev/null 2>&1 || (docker volume inspect my-data >/dev/null 2>&1 && echo VOLUME_PERSISTS)"
+      match_type: exact
+      expected_output: VOLUME_PERSISTS
+    error_message: >-
+      reader should be removed while my-data still exists. `docker rm` never
+      deletes the volumes a container used.
+    hints:
+      - "Which command removes the reader container?"
+      - "Removing a container never removes the volumes it used — they have their own lifecycle."
+      - "Confirm with `docker volume ls` or `docker volume inspect my-data`."
+    solution:
+      command: "docker rm -f reader"
+
+  - id: volume-rm
+    prompt: >-
+      Remove the `my-data` volume and confirm it is gone. This is the step
+      that actually deletes the data.
+    type: terminal_action
+    validation:
+      command: "docker volume inspect my-data >/dev/null 2>&1 || echo VOLUME_GONE"
+      match_type: exact
+      expected_output: VOLUME_GONE
+    error_message: >-
+      The my-data volume still exists. Remove it with `docker volume rm my-data`
+      and confirm with `docker volume ls`.
+    hints:
+      - "Which command removes a volume? It must not be in use by any container."
+      - "`docker volume rm my-data` deletes the volume and everything stored in it."
+      - "Confirm with `docker volume ls` — my-data should no longer be listed."
+    solution:
+      command: "docker volume rm my-data"
+
+  - id: bind-mount
+    prompt: >-
+      Make a directory from the lab environment available inside a container.
+      Create the directory `/home/student/shared`, then run a container named
+      `binder` from `alpine` that mounts it at `/data` and writes a file
+      `/data/from-container.txt` containing `hostdata`. Verify the file appears
+      in `/home/student/shared` on the lab environment.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect binder --format '{{range .Mounts}}{{.Type}} {{.Source}} {{.Destination}} {{end}}' 2>/dev/null |
+        grep -q 'bind /home/student/shared /data' &&
+        test -f /home/student/shared/from-container.txt &&
+        grep -qx hostdata /home/student/shared/from-container.txt && echo BIND_OK
+      match_type: exact
+      expected_output: BIND_OK
+    error_message: >-
+      binder should have /home/student/shared mounted at /data (Type bind), and
+      /home/student/shared/from-container.txt should exist with the text
+      `hostdata`.
+    hints:
+      - "Which command creates a directory in your environment? Use your home directory so you have permission."
+      - "Mounting your own path into a container is a bind mount: `-v /absolute/path:/data` — not a named volume."
+      - "Write the file from inside the container, then check `ls -l /home/student/shared` on the lab environment — the file should be there."
+    solution:
+      command: >-
+        mkdir -p /home/student/shared &&
+        docker run --name binder -v /home/student/shared:/data alpine
+        sh -c 'echo hostdata > /data/from-container.txt'
+
+  - id: bind-persists
+    prompt: >-
+      Remove the `binder` container, then verify that
+      `/home/student/shared/from-container.txt` still exists on the lab
+      environment.
+    type: terminal_action
+    validation:
+      command: "docker inspect binder >/dev/null 2>&1 || (test -f /home/student/shared/from-container.txt && echo BIND_PERSISTS)"
+      match_type: exact
+      expected_output: BIND_PERSISTS
+    error_message: >-
+      binder should be removed while /home/student/shared/from-container.txt
+      still exists on the lab environment.
+    hints:
+      - "Which command removes the binder container?"
+      - "The file is on the lab environment's directory, not in the container's writable layer."
+      - "Check with `ls -l /home/student/shared` — the file should still be there."
+    solution:
+      command: "docker rm -f binder"
+
+  - id: inspect-mounts
+    prompt: >-
+      Start any container that uses mounted storage — if you have none left,
+      recreate the `my-data` volume and run a quick alpine container with it
+      mounted at `/data`. Inspect its `Mounts` section with `docker inspect`.
+      Which field tells you whether the storage is a Docker-managed volume or a
+      directory you provided on the lab environment?
+    type: multiple_choice
+    options:
+      - Type
+      - Source
+      - Destination
+      - RW
+    validation:
+      expected_answer: Type
+    error_message: >-
+      In the Mounts section of `docker inspect`, the Type field distinguishes a
+      Docker volume (`volume`) from a bind mount (`bind`).
+    hints:
+      - "Which command shows a container's configuration as JSON? Find the Mounts section."
+      - "Compare a container that uses a volume with one that uses a bind mount — the entries differ in one field."
+      - "Type is `volume` for Docker-managed storage and `bind` for a directory you provided."

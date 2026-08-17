@@ -1,105 +1,131 @@
-# Chapter 2: Your First Container
+# Chapter 2: Containers
 
 ## In this chapter, you will
 
-- Run a container and trace what happens through the Docker stack
-- Learn the image vs. container distinction through practice
-- Manage the container lifecycle: start, list, stop, remove
+- Run a container and manage it by name or ID
+- List containers with `docker ps` and `docker ps -a`
+- Read a container's configuration with `docker inspect`
+- Read a container's output with `docker logs`
+- Move a container through its lifecycle: stop, start, restart, remove
 
-## Running Your First Container
+## Running a Container
 
-Type this command:
-
-```
-docker run hello-world
-```
-
-Here is what happens in order:
-
-1. Docker checks if a `hello-world` image exists on your machine
-2. It does not, so Docker pulls it from Docker Hub (the default public image registry)
-3. Docker creates a container from that image
-4. The container runs, prints a message, and exits
-
-### What Happened Under the Hood
-
-Recall the architecture from Chapter 1: your `docker` CLI sent an HTTP request to **dockerd** through the Unix socket. The daemon checked its image cache, found nothing, and told **containerd** to pull the `hello-world` image from Docker Hub. containerd downloaded the image layers and stored them on disk. Then the daemon sent a create-container request to containerd, which assembled an OCI bundle (a root filesystem from the image) and handed it to **runc**. runc created a fresh set of Linux namespaces (PID, Network, Mount, UTS, IPC), set up cgroups, and executed the container's entrypoint inside that isolated environment.
-
-The entire process — downloading the image, creating the namespaces, configuring cgroups, running the container — took seconds. That speed is the direct result of sharing the host kernel rather than booting a full operating system.
-
-## A More Useful Example
-
-Let's run a real web server:
+Chapter 1 covered the architecture; here we focus on the commands. `docker run <image>` does two things at once: it **creates** a container from the image and **starts** it. You already used it in Lab 1:
 
 ```
-docker run -d -p 8080:80 nginx
+docker run --name alpine-container alpine:latest echo GREETING_FROM_ALPINE
 ```
 
-Breaking this down:
+That container printed a greeting and exited. A container that finishes its command stops on its own — but it still exists until you remove it.
 
-| Flag | Meaning |
-|------|---------|
-| `-d` | Detached mode — run in the background, return control to your terminal |
-| `-p 8080:80` | Map port 8080 on your machine to port 80 inside the container |
+To have something to work with, start a container that keeps running. Alpine's `sleep` command holds it open:
 
-Now open `http://localhost:8080` in your browser. You will see the nginx welcome page. You just started a web server without installing nginx on your machine.
+```
+docker run -d --name sleeper alpine:latest sleep 300
+```
 
-## Managing Containers
+`-d` runs it in the background (detached mode) so your terminal stays free, and `--name sleeper` gives it a name you can refer to. `docker run` is the command you will use for every deployment in this course.
 
-### See What Is Running
+## Listing Containers: docker ps
+
+### What Is Running
 
 ```
 docker ps
 ```
 
-This shows all currently running containers — their IDs, names, ports, and status.
+Lists the containers currently running — their IDs, the image they came from, the command they are running, their status, and (once you learn port mapping) their published ports.
 
-### See Everything (Including Stopped)
+### Everything, Including Stopped
 
 ```
 docker ps -a
 ```
 
-This includes containers that have exited. Every container you have ever run will appear here until you remove it.
+Adds containers that have exited. Every container you have created appears here until you remove it — including the one from Lab 1. Containers that exited are not gone; they are just not running.
 
-### Stop a Running Container
+## Names and IDs
 
-```
-docker stop <container-id-or-name>
-```
+Every container has a unique ID (a long hash) and a name. If you do not pass `--name`, Docker invents one from an adjective and a noun — something like `brave_goldberg`. You can use the name or the first few characters of the ID wherever a command expects a container.
 
-Docker sends a SIGTERM signal, giving the application a chance to shut down gracefully. If it does not stop within 10 seconds, Docker sends SIGKILL.
+Names must be unique among existing containers. If you `docker run --name sleeper` again while a container named `sleeper` still exists, Docker refuses — remove the old one first, or pick a different name.
 
-### Remove a Container
+## Reading a Container's Configuration: docker inspect
 
-```
-docker rm <container-id-or-name>
-```
-
-You can only remove stopped containers. To stop and remove in one shot:
+Docker records everything about a container — the image it was created from, the environment variables it was given, the command it runs, and its current state. Read it back as JSON:
 
 ```
-docker rm -f <container-id-or-name>
+docker inspect <name-or-id>
 ```
+
+The output is large, so target the part you want. The `--format` flag selects a single field with a Go template:
+
+```
+docker inspect sleeper --format '{{.Config.Image}}'
+# alpine:latest
+
+docker inspect sleeper --format '{{.Config.Cmd}}'
+# [sleep 300]
+
+docker inspect sleeper --format '{{.State.Status}}'
+# running
+```
+
+Or pipe the full JSON through `grep` to find a section, such as the environment variables in `Config.Env`.
+
+## Reading a Container's Output: docker logs
+
+Containers are usually configured to print what they are doing. See what a container has written to its output:
+
+```
+docker logs <name-or-id>
+```
+
+This works on exited containers too — it is often the only way to find out what a container did before it stopped. To follow logs in real time (like `tail -f`), add `-f`; press `Ctrl+C` to stop following. The container keeps running.
 
 ## The Lifecycle
 
+A container exists from `docker run` until `docker rm`:
+
 ```
-docker run    -->  Running  -->  docker stop  -->  Stopped  -->  docker rm  -->  Gone
-  (creates)                  (pauses)                         (deletes)
+docker run    -->  Running  -->  docker stop  -->  Stopped  -->  docker start  -->  Running
+  (creates)                  (SIGTERM)                    (resumes, same object)
+                |                                                    |
+                +--- docker rm (of a stopped container) ------------> Gone
 ```
 
-A container exists from the moment you run it until you remove it. Stopped containers still take up disk space. Clean them up regularly.
+- **`docker stop <name-or-id>`** — sends SIGTERM and gives the process ten seconds to shut down gracefully, then SIGKILL.
+- **`docker start <name-or-id>`** — resumes a stopped container. It is the *same* container with the same ID — not a new one.
+- **`docker restart <name-or-id>`** — stops and starts in one step.
+- **`docker rm <name-or-id>`** — deletes a stopped container; `docker rm -f` stops and removes in one shot.
 
-> **Warning:** Do not leave stopped containers piling up. Run `docker ps -a` periodically and remove containers you no longer need with `docker rm`. Stopped containers consume disk space for their writable layer.
+See the lifecycle in action — click each command below to load it into the terminal, then press Enter to run it. Watch the container move through its states:
 
-> **Try This:** Run `docker run -d -p 8080:80 nginx`, then `docker ps` to see it. Visit `http://localhost:8080`. Then stop the container with `docker stop`, verify it stopped with `docker ps -a`, and remove it with `docker rm`. Run `docker ps -a` again to confirm it is gone.
+:::terminal-demo
+id: container-lifecycle
+image: sgp-lab-docker:latest
+pre_pull:
+  - alpine:latest
+examples:
+  - docker run -d --name demo alpine:latest sleep 300
+  - docker ps
+  - docker inspect demo --format '{{.Config.Cmd}}'
+  - docker stop demo
+  - docker ps -a
+  - docker start demo
+  - docker inspect demo --format '{{.State.Status}}'
+  - docker rm -f demo
+  - docker ps -a
+:::
+
+> **Warning:** Do not let stopped containers pile up. Run `docker ps -a` periodically and remove containers you no longer need with `docker rm` — stopped containers still consume disk space.
+
+> **Try This:** Run `docker run -d --name demo alpine:latest sleep 300`, then `docker ps` to see it running. Read its configuration with `docker inspect demo --format '{{.Config.Cmd}}'`. Stop it with `docker stop demo` and check `docker ps -a` — it is now Exited. Start it again with `docker start demo`, confirm with `docker inspect demo --format '{{.State.Status}}'`, then remove it with `docker rm demo` and verify it is gone with `docker ps -a`.
 
 ## Key Takeaways
 
-- `docker run` is a CLI command that triggers daemon → containerd → runc behind the scenes
-- `-d` runs in the background; `-p` maps ports between host and container
-- `docker ps` shows running containers; `docker ps -a` shows all
-- Stop containers with `docker stop`, remove them with `docker rm`
-- Clean up stopped containers to free disk space
-- Every container runs in its own set of Linux namespaces, enforced by runc
+- `docker run` creates and starts a container; `--name` gives it a name to manage it by
+- `docker ps` lists running containers; `docker ps -a` lists all containers, including exited ones
+- `docker inspect` reads a container's full configuration as JSON
+- `docker logs` shows what a container has written — including exited containers
+- `docker stop` pauses a container, `docker start` resumes the same one, `docker rm` deletes it
