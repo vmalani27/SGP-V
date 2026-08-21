@@ -38,6 +38,28 @@ docker run \
 
 If a variable is not set, the application falls back to a default baked into the image — or fails to start, if the variable is required. Name the container with `--name` (from Chapter 2) so you can inspect it and read its logs afterwards.
 
+Try it — the steps below load each command into the terminal for you. Click **Run this next**, review the command, then press Enter:
+
+:::terminal-demo
+id: configuring-containers
+image: sgp-lab-docker:latest
+pre_pull:
+  - alpine:latest
+steps:
+  - id: pass-env
+    label: Pass an environment variable
+    run: docker run --rm -e GREETING=hello alpine printenv GREETING
+    expect: |
+      `hello` is printed — the variable was injected when the container
+      started, then the container exited and was removed (`--rm`).
+  - id: pass-many-env
+    label: Pass several environment variables
+    run: docker run --rm -e GREETING=hello -e AUDIENCE=world alpine sh -c 'echo "$GREETING, $AUDIENCE!"'
+    expect: |
+      `hello, world!` — each `-e` flag sets one variable the application reads
+      at startup.
+:::
+
 ## Overriding the Command
 
 The command you write after the image name replaces the image's default command:
@@ -53,6 +75,39 @@ The command is part of the container's configuration, so you can read it back af
 ```
 docker inspect <name> --format '{{.Config.Cmd}}'
 ```
+
+See for yourself — the override runs instead of the image's default, and the command you set is part of the container's configuration:
+
+:::terminal-demo
+id: configuring-containers
+image: sgp-lab-docker:latest
+pre_pull:
+  - alpine:latest
+steps:
+  - id: override-cmd
+    label: Override the image's default command
+    run: docker run --rm alpine echo lab-3 complete
+    expect: |
+      `lab-3 complete` is printed. The command after the image name replaces
+      the image's default command, then the container exits on its own.
+  - id: create-cmd-demo
+    label: Create a container to inspect
+    run: docker run -d --name cmd-demo alpine sleep 300
+    expect: |
+      A container ID is printed — `cmd-demo` is running `sleep 300` in the
+      background so it stays up long enough to inspect.
+  - id: inspect-cmd
+    label: Read the command back
+    run: docker inspect cmd-demo --format '{{.Config.Cmd}}'
+    expect: |
+      `[sleep 300]` — the command you passed at `run` time is stored in the
+      container's configuration.
+  - id: remove-cmd-demo
+    label: Remove it
+    run: docker rm -f cmd-demo
+    expect: |
+      `cmd-demo` is echoed — the container is gone.
+:::
 
 ## Publishing Ports
 
@@ -72,6 +127,54 @@ docker port web
 ```
 
 The `PORTS` column of `docker ps` shows the same information. Open `http://localhost:9090` and you will see the nginx welcome page. Use multiple `-p` flags to publish more than one port.
+
+Try it — run nginx with a published port, then confirm the mapping and read back the configuration you passed:
+
+:::terminal-demo
+id: configuring-containers
+image: sgp-lab-docker:latest
+pre_pull:
+  - alpine:latest
+  - nginx:alpine
+state:
+  label: web container
+  command: docker inspect -f '{{.State.Status}}' web 2>/dev/null || echo "not created"
+steps:
+  - id: run-web
+    label: Publish a port and run nginx
+    run: docker run -d --name web -p 9090:80 -e SITE_MODE=production nginx:alpine
+    expect: |
+      A container ID is printed and the state chip flips to `running`. Host
+      port `9090` now forwards to port `80` inside the container.
+  - id: check-port
+    label: Confirm the port mapping
+    run: docker port web
+    expect: |
+      `80/tcp -> 0.0.0.0:9090` — the host port forwards to the container port.
+      `docker ps` shows the same mapping in its `PORTS` column.
+  - id: inspect-env
+    label: Read the environment variable back
+    run: docker inspect web | grep SITE_MODE
+    expect: |
+      A line reading `"SITE_MODE=production"` inside the `Env` array — the
+      configuration you passed at `run` time is part of the container's config.
+  - id: see-logs
+    label: Read the web server logs
+    run: docker logs web
+    expect: |
+      nginx startup lines, ending with something like `start worker processes`
+      — the server is up and serving.
+  - id: stop-web
+    label: Stop and remove it
+    run: docker stop web && docker rm web
+    expect: |
+      `web` is echoed twice and the state chip reads `not created` — the
+      container is gone.
+examples:
+  - docker ps
+  - docker run --rm -e SITE_MODE=production alpine printenv SITE_MODE
+  - docker inspect web --format '{{json .HostConfig.PortBindings}}'
+:::
 
 > **Tip:** If a container exits immediately after starting, check its logs with `docker logs` (from Chapter 2) — the application usually prints why it failed, often a missing environment variable or a bad command.
 

@@ -44,21 +44,23 @@ tasks:
     type: terminal_action
     validation:
       command: >-
-        test -f ~/my-image/Dockerfile &&
-        grep -qE '^FROM +alpine(:latest)?$' ~/my-image/Dockerfile &&
-        grep -q 'WORKDIR /app' ~/my-image/Dockerfile &&
-        grep -q 'COPY hello.txt' ~/my-image/Dockerfile &&
-        grep -q 'CMD' ~/my-image/Dockerfile && echo DOCKERFILE_OK
+        cd ~/my-image &&
+        docker build -q -t lab5-check . >/dev/null &&
+        docker run --rm lab5-check 2>/dev/null | grep -qx 'hello from my image' &&
+        docker rmi -f lab5-check >/dev/null 2>&1 &&
+        echo DOCKERFILE_OK
       match_type: exact
       expected_output: DOCKERFILE_OK
     error_message: >-
-      ~/my-image/Dockerfile should contain FROM alpine:latest, WORKDIR /app,
-      COPY hello.txt, and a CMD that prints the file. Read it with
-      `cat ~/my-image/Dockerfile`.
+      Building `~/my-image/Dockerfile` and running the resulting image did not
+      print `hello from my image`. The check builds a temporary image from your
+      Dockerfile and runs it, so the Dockerfile must build successfully and the
+      container must print the file's contents. Read your Dockerfile with
+      `cat ~/my-image/Dockerfile` and check the build output above.
     hints:
       - "A Dockerfile is a plain text file named exactly `Dockerfile` — no extension."
       - "Use `FROM alpine:latest` for the base, `WORKDIR /app` for the working directory, and `COPY hello.txt .` to copy your file in."
-      - "Finish with `CMD [\"cat\", \"hello.txt\"]` so the container prints the file when it starts."
+      - "Finish with a `CMD` (e.g. `CMD [\"cat\", \"hello.txt\"]`) or an `ENTRYPOINT` that prints the file. The check builds and runs your image, so the container must actually print `hello from my image`."
     solution:
       command: >-
         printf 'FROM alpine:latest\n\nWORKDIR /app\n\nCOPY hello.txt .\n\nCMD ["cat", "hello.txt"]\n'

@@ -33,7 +33,7 @@ You create a tiny project with one file, describe how it becomes an image in a D
 ## Objective
 
 1. Create `~/my-image/hello.txt` containing `hello from my image`.
-2. Write `~/my-image/Dockerfile` using `FROM alpine:latest`, `WORKDIR /app`, `COPY hello.txt .`, and `CMD ["cat", "hello.txt"]`.
+2. Write `~/my-image/Dockerfile` using `FROM alpine:latest`, `WORKDIR /app`, `COPY hello.txt .`, and a `CMD` (or `ENTRYPOINT`) that prints the file — e.g. `CMD ["cat", "hello.txt"]`. This task is checked by building your Dockerfile and running the resulting image.
 3. Build the image as `my-first-image`.
 4. Run it and confirm it prints `hello from my image`.
 5. State which command produces the image and which produces the container.
@@ -41,7 +41,7 @@ You create a tiny project with one file, describe how it becomes an image in a D
 ## Tasks
 
 - [ ] **create-project** — Create `~/my-image/hello.txt` containing `hello from my image`.
-- [ ] **write-dockerfile** — Write a `Dockerfile` with `FROM`, `WORKDIR`, `COPY`, and `CMD`.
+- [ ] **write-dockerfile** — Write a `Dockerfile` with `FROM`, `WORKDIR`, `COPY`, and a `CMD`/`ENTRYPOINT` that prints the file. The check builds and runs your image.
 - [ ] **build-image** — Build it as `my-first-image`.
 - [ ] **run-image** — Run it and confirm it prints `hello from my image`.
 - [ ] **what-built** — Identify what `docker build` and `docker run` each produce.
