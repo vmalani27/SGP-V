@@ -16,17 +16,17 @@ for the fixes and changes landed so far on `dev`. This is the companion to
 | 1 | Linux host with **Docker Engine + Sysbox** (`sysbox-runc`) | Lab containers need a safe runtime; see `orchestrator/README.md` |
 | 2 | **Docker Compose v2** | `docker compose` (not `docker-compose`) |
 | 3 | A **Firebase project** with Auth + Firestore enabled | Need the service account JSON + web API key |
-| 4 | An **S3-compatible store** at `http://localhost.floci.io:4566` with a `course-content` bucket | Floci for dev; or point the worker at any S3 endpoint via env vars |
+| 4 | An **S3-compatible store** at `http://localhost.floci.io:4566` with a `my-content-bucket` bucket | Floci for dev; or point the worker at any S3 endpoint via env vars |
 | 5 | `aws` CLI + `python3` + `pyyaml` | For publishing content and inspecting the store |
 | 6 | **Published content artifact** in the bucket | See Baseline below |
 
 ### Baseline setup
 
 ```bash
-# 1. Project root .env (see README "Configure environment")
+# 1. Project root .env (see docs/setup.md)
 FIREBASE_PROJECT_ID=...
 FIREBASE_CREDENTIALS_JSON={"type":"service_account",...}
-CONTENT_PUBLIC_BASE_URL=http://localhost.floci.io:4566/course-content
+CONTENT_PUBLIC_BASE_URL=http://localhost.floci.io:4566/my-content-bucket
 AWS_ENDPOINT_URL=http://localhost.floci.io:4566
 AWS_ACCESS_KEY_ID=test
 AWS_SECRET_ACCESS_KEY=test
@@ -35,18 +35,15 @@ AWS_SECRET_ACCESS_KEY=test
 python scripts/validate_content.py content-v2/          # expect: exit 0
 python scripts/generate_manifest.py content-v2/ out/
 export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
-aws --endpoint-url http://localhost.floci.io:4566 s3 mb s3://course-content
-aws --endpoint-url http://localhost.floci.io:4566 s3 sync out/ s3://course-content/
+aws --endpoint-url http://localhost.floci.io:4566 s3 mb s3://my-content-bucket   # if it doesn't already exist
+aws --endpoint-url http://localhost.floci.io:4566 s3 sync out/ s3://my-content-bucket/
 
-# 3. Start the stack
+# 3. Start the stack (host compose + orchestrator VM)
 docker compose up --build -d
+vagrant up                      # provisions + starts the orchestrator VM (Docker + Sysbox)
 
-# 4. Build lab images (for tests 5/6)
-cd orchestrator/lab-images
-docker build -t sgp-lab-ubuntu:latest -f Dockerfile.ubuntu .
-docker build -t sgp-lab-docker:latest -f Dockerfile.docker .
-docker build -t sgp-lab-git:latest -f Dockerfile.git .
-cd ../..
+# 4. Lab images are built inside the VM by provisioning/build-lab-images.sh
+#    (the VM's own Docker runs the lab containers; ~1 rebuild after first vagrant up)
 ```
 
 **Health baseline** — everything green before testing:
@@ -154,7 +151,8 @@ the new version.*
 python scripts/validate_content.py content-v2/
 python scripts/generate_manifest.py content-v2/ out/
 export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
-aws --endpoint-url http://localhost.floci.io:4566 s3 sync out/ s3://course-content/
+aws --endpoint-url http://localhost.floci.io:4566 s3 cp out/published/ s3://my-content-bucket/published/ --recursive
+aws --endpoint-url http://localhost.floci.io:4566 s3 cp out/latest.json s3://my-content-bucket/latest.json
 
 # Force a cycle and observe the new version
 curl -X POST http://localhost:8002/sync

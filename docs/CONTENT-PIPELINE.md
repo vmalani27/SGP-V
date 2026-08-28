@@ -1,20 +1,20 @@
 # Content Pipeline (`content-v2/`)
 
 End-to-end reference for the course content system: how `content-v2/` is
-structured, validated, published to S3, seeded into Firestore, and consumed
-by the worker (cloud) today and by the client app in the target model.
+structured, validated, published to S3, seeded into Firestore, and consumed by
+the worker (metadata) and the frontend (client-side content bootstrap).
 
 ## Current vs target
 
-| Component | Now | Target |
-|-----------|-----|--------|
+| Component | Now | Next |
+|-----------|-----|------|
 | Validator | `scripts/validate_content.py` (CI gate) + worker re-validation | unchanged |
 | Publisher | CI → S3 (`latest.json` + `published/{version}/…`) | unchanged |
 | S3 bucket | Floci (dev, host loopback) | public-read S3-compatible bucket |
-| Worker | S3-only: download → validate → seed Firestore | unchanged (stays cloud) |
-| Backend | serves content files via `FilesystemProvider` (mounted `content-v2`) | pure Firestore API (history/progress/catalog) + `GET /content/version` pointer |
-| Frontend | Next.js, fetches content via backend API | client-side, serves from locally extracted content |
-| Orchestrator | runs inside a Vagrant VM (Ubuntu + Docker + Sysbox; guest :8000 → host :8001), proxies lab lifecycle | client-side, runs labs on the student's docker |
+| Worker | S3-only: download → validate → seed Firestore | webhook-triggered sync (Item D) |
+| Backend | pure Firestore API (auth/catalog/progress) + `GET /api/v1/content/version` — reads **no** content files | unchanged |
+| Frontend | boots content from S3 (handshake → download → sha256 verify → extract) and serves chapters/labs locally | packaged client |
+| Orchestrator | runs inside the Vagrant VM (dev: Ubuntu + Docker + Sysbox; guest :8000 → host :8001), proxies lab lifecycle | packaged client runs it on the student's docker |
 
 ---
 
@@ -41,18 +41,25 @@ S3 bucket ──→  Worker  (S3-only; no filesystem mount)
     │               (writes contentHash + contentVersion)
     │   triggers:  POST /sync (webhook — push) or the 300s poll (pull safety net)
     │
-    ├──→  Backend  (content_provider.py + routers/content.py)   [transitional]
-    │         GET /api/v1/content/...     — TOC, chapters, lab instructions, tasks
-    │         GET /api/v1/labs/...        — lab lifecycle proxy → orchestrator
-    │         (reads the still-mounted ./content-v2 via FilesystemProvider)
+S3 bucket ──→  Frontend  (Next.js, same-origin bootstrap)
+    │            GET /api/v1/content/version → compare local marker → download
+    │            tarball → verify sha256 → extract to /app/.content → serve locally
+    │            (/api/local-content/* — no backend content reads)
     │
-    └──→  Frontend  (Next.js)
-              /courses/[courseId]         — curriculum from course TOC
-              /chapters/[chapterId]       — markdown theory
-              /labs/[labId]               — intro → provision → tasks + terminal
+    ├──→  Backend  (metadata API — reads no content files)
+    │         GET /api/v1/content/version — handshake (contentVersion from Firestore)
+    │         GET /api/v1/courses*        — catalog + TOC from Firestore `courses`
+    │         GET /api/v1/labs/...        — lab lifecycle proxy → orchestrator
+    │
+    └──→  Orchestrator  (runs in the Vagrant VM; sees only commands)
+              POST /labs {image,…} · exec · ws — never reads course files
 ```
 
-### Target (client-side app)
+### Target distribution (packaged client)
+
+The client-side content model above is what dev already implements (§7–8);
+what remains is shipping the frontend + orchestrator as a student-machine
+package instead of the dev Vagrant VM.
 
 ```
 content-v2/ ──► CI ──► S3 bucket   (canonical content bytes, public read)
@@ -521,42 +528,37 @@ Item D):
 
 ---
 
-## 7. Serving — backend content API (transitional)
+## 7. Serving — client-side content delivery (current)
 
-> Transitional: today the backend serves content from the still-mounted
-> `./content-v2` via `FilesystemProvider` (`CONTENT_SOURCE=filesystem`). In
-> the target model the backend **stops serving file bytes** (see §9); no
-> backend `S3Provider` will be built.
+The backend serves **no file bytes**. Course metadata lives in Firestore
+(seeded by the worker); the content bytes live in S3 and, once downloaded, in
+the frontend's local content dir (`/app/.content`).
 
-Resolving a course builds `items`/`chapters`/`labs` from `module.yaml` and
-resolves titles (see §3); lab configs get `lab_id`/`module_id` injected and
-`environment` replaced by the parsed `environments/{ref}.yaml`.
-
-| Endpoint | Returns |
-|----------|---------|
-| `GET /api/v1/content/courses` | catalog (from `index.json`) |
-| `GET /api/v1/content/courses/{id}` | course TOC with modules, items, chapters, labs |
-| `GET /api/v1/content/courses/{id}/chapters/{chapterId}` | `{chapter, content}` |
-| `GET /api/v1/content/courses/{id}/labs` | flat lab list |
-| `GET /api/v1/content/courses/{id}/labs/{labId}/instructions` | `{lab_id, title, module_id, chapter_id, instructions}` |
-| `GET /api/v1/content/courses/{id}/labs/{labId}/tasks` | `{lab_id, tasks}` (unauthenticated) |
-| `GET /api/v1/content/courses/{id}/labs/{labId}/config` | full lab config, env resolved |
+| Endpoint | Owner | Returns |
+|----------|-------|---------|
+| `GET /api/v1/content/version` | backend | `{version, download_url, artifact_sha256, from_version, changes, updatedAt}` — handshake, from Firestore + `CONTENT_PUBLIC_BASE_URL` |
+| `GET /api/v1/courses` · `GET /api/v1/courses/{id}` | backend | catalog + TOC from Firestore `courses` |
+| `/api/local-content/chapters/{courseId}/{chapterId}` | frontend | chapter markdown from the local store |
+| `/api/local-content/labs/{courseId}/{labId}/instructions` | frontend | lab instructions from the local store |
+| `/api/local-content/labs/{courseId}/{labId}/config` | frontend | lab YAML config, environment resolved |
+| `/api/local-content/labs/{courseId}/{labId}/tasks` | frontend | lab tasks from the local store |
 
 **Lab runtime (proxy to orchestrator)** — `backend/app/routers/labs.py`:
 
-- `POST .../start` reads `lab.yaml` config, pulls `base_image`/
-  `apt_packages`/`pre_pull`/`setup` from the resolved env (and `setup` from the
-  lab YAML), and calls the orchestrator. The orchestrator runs each `setup`
-  `{command}` as root inside the container (after the inner daemon is ready,
-  before the student gets the terminal).
-- `GET .../tasks` (authed) returns tasks; for dynamic multiple-choice it runs
-  the validation `command` in the container and builds the option list.
-- `POST .../validate` dispatches by `task.type`:
-  `multiple_choice` (compare answer to `expected_answer`, or dynamic output —
-  never executes state), `file_check` (`cat path` contains `contains`),
-  `port_check` (exec command + match), default = run `command` and decide from
-  `expected_exit_code` if present, else match output.
-- `WS /ws/lab` proxies terminal frames to the orchestrator (JWT first message).
+- `POST .../start` provisions from the **client-supplied** env config
+  `{image, apt_packages, pre_pull, setup}` — the backend never reads `lab.yaml`.
+  The backend watches for an existing live container (labels) and re-applies
+  `setup` on reuse so a stale container never stays broken.
+- `POST .../tasks` (authed) returns the client-supplied task list; for dynamic
+  multiple-choice it runs the validation `command` in the container to build the
+  option list.
+- `POST .../validate` dispatches by `task_type`: `multiple_choice` (compare
+  answer to `expected_answer` or dynamic output — never executes state),
+  `file_check` (`path` contains `contains`), `port_check` (exec + match),
+  default = run `command` and decide from `expected_exit_code` if present, else
+  `match_type` on the output.
+- `WS /api/v1/labs/ws/lab` proxies terminal frames to the orchestrator (JWT as
+  first message).
 
 ---
 
@@ -569,9 +571,9 @@ resolves titles (see §3); lab configs get `lab_id`/`module_id` injected and
 | `/courses/[courseId]/chapters/[chapterId]` | `GET /content/chapters/{id}` | markdown via react-markdown |
 | `/courses/[courseId]/labs/[labId]` | instructions + `GET .../tasks` | intro → provision → running |
 
-Today these all fetch through the backend API (`next-app/lib/content-server.ts`
-→ `BACKEND_URL`). In the target model (§9) the same data is served from the
-locally extracted content directory.
+Catalog/TOC come from the backend's Firestore API (`next-app/lib/content-server.ts`
+→ `BACKEND_URL`); chapter/lab content comes from the locally extracted content
+directory (`/api/local-content/*`, backed by `next-app/lib/content-local.ts`).
 
 **Lab page phases**: `loading → intro → provisioning → running → error`.
 
@@ -589,7 +591,12 @@ records completion and destroys the container.
 
 ---
 
-## 9. Target: client-side app
+## 9. Target: packaged client distribution
+
+> Dev already runs the client-side model (§7): the frontend bootstraps content
+> from S3 and the orchestrator is hosted in a Vagrant VM on dev. §9 is the
+> long-term **distribution** target — shipping the same stack to the student's
+> own machine.
 
 The student downloads a **docker-compose** running `frontend` + `orchestrator`
 on their own machine (Linux; requires the Docker CLI and sysbox). Cloud

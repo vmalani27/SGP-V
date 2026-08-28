@@ -108,7 +108,7 @@ open for relitigation per-feature:
 | **Client-side bootstrap direction frozen.** Existing mechanism may run, but is not extended. Task definitions and validation specs move server-side before any paid use. | Today expected answers ship inside the public tarball and are served by unauthenticated routes (`next-app/app/api/local-content/labs/[courseId]/[labId]/tasks/route.ts`). Tolerable for a friendly pilot; disqualifying otherwise. |
 | **Client-supplied `image` / `setup` / validation specs in request bodies are accepted only for the pilot.** Server-held lab definitions become mandatory at customer #2. | An instructor-trusted platform cannot let the student's browser hold the answer key or choose the container image. |
 | **No RBAC system, quotas, multi-tenancy, or billing now.** Unauthenticated orchestrator risk is consciously accepted for the pilot (single host, known cohort) and revisited at customer #2. | Pilot scale is n=1 instructor. Building tenancy before demand repeats the original mistake. |
-| Course structural immutability rules (MIGRATION.md) stay and gain priority. | A cohort mid-course is exactly what those rules protect. |
+| Course structural immutability rules (CONTENT-PIPELINE.md §11) stay and gain priority. | A cohort mid-course is exactly what those rules protect. |
 
 ## 9. Gap register — minimum work before the pilot
 
