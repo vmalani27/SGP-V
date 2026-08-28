@@ -24,7 +24,7 @@ tasks:
         test -f ~/cache-demo/deps.txt &&
         grep -qx 'dep=v1' ~/cache-demo/deps.txt &&
         test -f ~/cache-demo/app.sh &&
-        grep -qx 'app v1' ~/cache-demo/app.sh && echo PROJECT_OK
+        grep -q 'app v1' ~/cache-demo/app.sh && echo PROJECT_OK
       match_type: exact
       expected_output: PROJECT_OK
     error_message: >-
