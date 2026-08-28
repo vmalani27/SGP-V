@@ -159,6 +159,8 @@ export const api = {
         status: string;
         ws_token: string;
         ws_url: string;
+        expires_at?: string | null;
+        remaining_seconds?: number | null;
       } | null>(`/api/v1/labs/courses/${courseId}/labs/${labId}/active`),
     start: (
       courseId: string,
@@ -177,6 +179,8 @@ export const api = {
         status: string;
         ws_token: string;
         ws_url: string;
+        expires_at?: string | null;
+        remaining_seconds?: number | null;
       }>(`/api/v1/labs/courses/${courseId}/labs/${labId}/start`, {
         method: 'POST',
         body: JSON.stringify(envConfig),
@@ -231,5 +235,38 @@ export const api = {
           }),
         }
       ),
+  },
+  demos: {
+    ensure: (demoId: string, spec: { image?: string; pre_pull?: string[] }) =>
+      apiFetch<{
+        name: string;
+        status: string;
+        reused: boolean;
+        ws_token: string;
+        ws_url: string;
+      }>(
+        `/api/v1/demos/${demoId}/ensure`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            demo_id: demoId,
+            image: spec.image || 'sgp-lab-docker:latest',
+            pre_pull: spec.pre_pull || [],
+          }),
+        }
+      ),
+    exec: (demoId: string, command: string) =>
+      apiFetch<{ exit_code: number; output: string }>(
+        `/api/v1/demos/${demoId}/exec`,
+        { method: 'POST', body: JSON.stringify({ command }) }
+      ),
+    reset: (demoId: string) =>
+      apiFetch<{ status: string }>(`/api/v1/demos/${demoId}/reset`, {
+        method: 'POST',
+      }),
+    destroy: (demoId: string) =>
+      apiFetch<{ status: string }>(`/api/v1/demos/${demoId}`, {
+        method: 'DELETE',
+      }),
   },
 };

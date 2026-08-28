@@ -13,6 +13,7 @@ Canonical content layout (v2):
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -62,6 +63,29 @@ def _read_yaml(path: Path) -> dict | None:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
     except (yaml.YAMLError, OSError):
         return None
+
+
+def _scan_demo_ids(markdown: str) -> list[str]:
+    """Collect `:::terminal-demo` ids from a chapter's markdown.
+
+    Each distinct demo id maps to exactly one persistent demo container per
+    learner (label-addressed and reused across slides), so inline demos should
+    share an id rather than minting one per slide.
+    """
+    ids: list[str] = []
+    in_demo = False
+    for line in markdown.splitlines():
+        if not in_demo and re.match(r"^\s*:::\s*terminal-demo\s*$", line):
+            in_demo = True
+            continue
+        if in_demo:
+            if re.match(r"^\s*:::\s*$", line):
+                in_demo = False
+                continue
+            m = re.match(r"^\s*id:\s*(\S+)\s*$", line)
+            if m:
+                ids.append(m.group(1))
+    return ids
 
 
 def validate_index(content_dir: Path) -> ValidationResult:
@@ -170,6 +194,45 @@ def _check_lab_yaml(labs_dir: Path, lab_id: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _check_course_meta(result: ValidationResult, label: str, data: dict) -> None:
+    """Validate optional course.yaml enrichment fields (sidebar data).
+
+    All four fields are optional, but when present they must be well-typed:
+    string arrays for prerequisites/environment/keyTakeaways, and
+    [{label, href}] pairs with a concrete link for quickLinks. A grossly
+    malformed enrichment (e.g. non-list content) is an error, not a warning,
+    so the UI never receives garbage to render.
+    """
+    string_list_fields = ("prerequisites", "environment", "keyTakeaways")
+    for field in string_list_fields:
+        value = data.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+            result.add(label, field, f"Expected an array of non-empty strings")
+
+    value = data.get("quickLinks")
+    if value is None:
+        return
+    if not isinstance(value, list):
+        result.add(label, "quickLinks", "Expected an array of objects")
+        return
+    for i, link in enumerate(value):
+        qprefix = f"quickLinks[{i}]"
+        if not isinstance(link, dict):
+            result.add(label, qprefix, "Expected object with 'label' and 'href'")
+            continue
+        if not isinstance(link.get("label"), str) or not link["label"].strip():
+            result.add(label, f"{qprefix}.label", "Must be a non-empty string")
+        href = link.get("href")
+        if not isinstance(href, str) or not href.strip():
+            result.add(label, f"{qprefix}.href", "Must be a non-empty string")
+        elif href.startswith("/"):
+            result.add_warning(label, f"{qprefix}.href", "Relative href will not resolve from the course page")
+        elif not href.startswith(("http://", "https://")):
+            result.add(label, f"{qprefix}.href", "Must be an absolute http(s) URL")
+
+
 def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
     """Validate course TOC (course.yaml) structure."""
     result = ValidationResult()
@@ -187,6 +250,8 @@ def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
     for field_name in ("id", "title", "description", "level", "modules"):
         if field_name not in data:
             result.add(label, "$", f"Missing required field '{field_name}'")
+
+    _check_course_meta(result, label, data)
 
     # Modules are declared as string refs that must resolve to module.yaml
     raw_course = _read_yaml(course_dir / "course.yaml")
@@ -275,6 +340,21 @@ def validate_course_toc(content_dir: Path, course_id: str) -> ValidationResult:
                 md_path = course_dir / "modules" / mod_id / "chapters" / f"{chid}.md"
                 if not md_path.exists():
                     result.add(label, f"{cprefix}", f"Markdown file not found: modules/{mod_id}/chapters/{chid}.md")
+                else:
+                    # Inline demos share one persistent container per demo id.
+                    # Warn when a chapter mints many distinct environments, since
+                    # each one spawns its own container per learner.
+                    demo_ids = _scan_demo_ids(md_path.read_text(encoding="utf-8"))
+                    distinct = sorted(set(demo_ids))
+                    if len(distinct) > 2:
+                        result.add_warning(
+                            label,
+                            f"{cprefix}.demos",
+                            f"Chapter defines {len(distinct)} distinct demo environments "
+                            f"(ids: {', '.join(distinct)}). Inline demos should reuse one "
+                            "demo id so a single container is shared across slides; a distinct "
+                            "id spawns its own persistent container per learner.",
+                        )
 
         # Validate labs
         labs = mod.get("labs", [])
@@ -379,6 +459,16 @@ def validate_lab_yaml(content_dir: Path, course_id: str, module_id: str, lab_id:
         elif task_type not in ("multiple_choice",):
             if "command" not in validation:
                 result.add(label, f"{tprefix}.validation.command", "Missing required field 'command'")
+        hints = task.get("hints")
+        if hints is not None and (
+            not isinstance(hints, list) or not all(isinstance(h, str) for h in hints)
+        ):
+            result.add(label, f"{tprefix}.hints", "Expected an array of strings")
+        solution = task.get("solution")
+        if solution is not None and (
+            not isinstance(solution, dict) or not isinstance(solution.get("command"), str)
+        ):
+            result.add(label, f"{tprefix}.solution", "Expected a mapping with a 'command' string")
     return result
 
 

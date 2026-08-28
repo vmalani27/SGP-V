@@ -10,7 +10,9 @@ Walks a content directory, hashes every file, and produces:
 The version is content-derived (sha256 over sorted "path sha256" lines), so
 identical content always produces the identical version — re-publishing an
 unchanged tree is a no-op. The tarball is deterministic (fixed mtime/uid/gid)
-so identical content also produces an identical artifact_sha256.
+and artifact_sha256 hashes the raw (uncompressed) tar bytes, so identical
+content also produces an identical artifact_sha256 regardless of the
+Python/zlib version that built it.
 
 Usage:
     python scripts/generate_manifest.py <content-dir> <out-dir>
@@ -62,7 +64,10 @@ def build(content_dir: Path, out_dir: Path) -> str:
             data = (content_dir / entry["path"]).read_bytes()
             tar.addfile(info, io.BytesIO(data))
     tar_bytes = tar_buf.getvalue()
-    artifact_sha256 = _sha256_bytes(gzip.compress(tar_bytes, mtime=0))
+    # Hash the raw tar bytes, not the gzip stream: gzip output varies across
+    # Python/zlib versions, while the tar (fixed mtime/uid/gid/mode) is
+    # byte-deterministic — so artifact_sha256 is stable across machines.
+    artifact_sha256 = _sha256_bytes(tar_bytes)
 
     # ── write outputs ─────────────────────────────────────────
     publish_dir = out_dir / "published" / version

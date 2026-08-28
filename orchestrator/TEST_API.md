@@ -8,7 +8,13 @@ The frontend calls the **backend** (`localhost:8000`), which proxies to the **or
 Frontend → Backend (8000) → Orchestrator (8001) → Docker
 ```
 
-The backend reads the lab YAML from content-v2, extracts the environment config, and forwards it to the orchestrator. This lets the backend track user ID, session duration, and lab attempts. The terminal WebSocket is also proxied: the browser connects to the backend (`/api/v1/labs/ws/lab`) and the backend bridges frames to the orchestrator's internal `/ws/terminal`. The orchestrator address is never exposed to the browser.
+The **client** supplies the lab's environment config (`{image, apt_packages,
+pre_pull, setup}`) in the start request body from its local lab config — the
+backend never reads `lab.yaml`. This lets the backend track user ID, session
+duration, and lab attempts. The terminal WebSocket is also proxied: the browser
+connects to the backend (`/api/v1/labs/ws/lab`) and the backend bridges frames
+to the orchestrator's internal `/ws/terminal`. The orchestrator address is
+never exposed to the browser.
 
 ---
 
@@ -28,10 +34,21 @@ curl http://localhost:8001/health
 
 ## 2. Backend Proxy — Start Lab
 
-The backend reads the lab YAML, extracts `environment.base_image`, and forwards to orchestrator.
+The client sends the environment config in the body (from its local lab config —
+`docker-basic` resolves to the image + pre-pull list below). Start requires a
+Firebase bearer token. Without a live container for the user+lab, the backend
+provisions fresh; with one, it re-attaches and re-applies `setup`.
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/start
+curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/start \
+  -H "Authorization: Bearer <idToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": "sgp-lab-docker:latest",
+    "apt_packages": [],
+    "pre_pull": ["nginx:alpine", "alpine:latest"],
+    "setup": []
+  }'
 ```
 
 **Expected:**
@@ -46,7 +63,10 @@ curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1
 
 ### Git course
 ```bash
-curl -X POST http://localhost:8000/api/v1/labs/courses/git-fundamentals/labs/lab-1/start
+curl -X POST http://localhost:8000/api/v1/labs/courses/git-fundamentals/labs/lab-1/start \
+  -H "Authorization: Bearer <idToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"image": "sgp-lab-ubuntu:latest", "apt_packages": [], "pre_pull": [], "setup": []}'
 ```
 
 ### Lab not found

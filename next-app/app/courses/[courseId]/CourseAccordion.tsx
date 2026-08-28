@@ -2,19 +2,61 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import type { ContentModule, CourseItem } from '@/lib/content-types';
+import type { ContentModule, CourseChanges, CourseItem, ItemChange } from '@/lib/content-types';
 import { getModuleItems, itemHref } from '@/lib/content-server';
+
+function ClipIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16" />
+    </svg>
+  );
+}
+
+function FileIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v6m0 0l-2.5-2.5M12 13l2.5-2.5M4 17V5a2 2 0 0 1 2-2h8l6 6v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.25}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+    </svg>
+  );
+}
+
+function ChangeChip({ change }: { change: ItemChange }) {
+  const isNew = change.change === 'new';
+  return (
+    <span
+      title={isNew ? 'Newly added in the latest content release' : 'Updated in the latest content release'}
+      className={`shrink-0 rounded-sm border px-1 py-px font-mono text-[10px] uppercase tracking-wide ${
+        isNew
+          ? 'border-emerald-500/30 text-emerald-400/90'
+          : 'border-sky-500/30 text-sky-400/90'
+      }`}
+    >
+      {isNew ? 'NEW' : 'UPDATED'}
+    </span>
+  );
+}
 
 function ItemRow({
   item,
   courseId,
-  index,
   isCompleted,
+  isActive,
+  change,
 }: {
   item: CourseItem;
   courseId: string;
-  index: number;
   isCompleted: boolean;
+  isActive: boolean;
+  change?: ItemChange;
 }) {
   const href = itemHref(courseId, item);
   const isLab = item.type === 'lab';
@@ -22,44 +64,28 @@ function ItemRow({
   return (
     <Link
       href={href}
-      className="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition hover:bg-line/10"
+      className={`flex items-center gap-3 border-l-2 py-2 pl-4 pr-1 transition ${
+        isActive
+          ? 'border-accent bg-line/10 hover:bg-line/15'
+          : 'border-transparent hover:bg-line/10'
+      }`}
     >
-      {/* Step indicator */}
-      <div
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
-          isCompleted
-            ? 'bg-emerald-500/15 text-emerald-400'
-            : isLab
-            ? 'bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20'
-            : 'bg-line/20 text-muted group-hover:bg-accent/10 group-hover:text-accent'
-        }`}
-      >
-        {isCompleted ? (
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-          </svg>
-        ) : isLab ? (
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
-          </svg>
-        ) : (
-          index + 1
-        )}
-      </div>
+      {/* Type icon: code glyph for labs, document for chapters */}
+      <span className={`shrink-0 ${isCompleted ? 'text-emerald-400/80' : 'text-muted/70 group-hover:text-accent'}`}>
+        {isLab ? <ClipIcon className="h-4 w-4" /> : <FileIcon className="h-4 w-4" />}
+      </span>
 
-      {/* Title + progress */}
-      <div className="flex flex-1 items-center justify-between min-w-0">
-        <span className={`text-sm truncate transition ${
-          isCompleted ? 'text-muted' : 'text-text group-hover:text-accent'
-        }`}>
-          {item.title}
-        </span>
-        {isLab && (
-          <span className="ml-2 text-[11px] font-medium text-amber-400/70 shrink-0">
-            LAB
-          </span>
-        )}
-      </div>
+      <span className={`min-w-0 flex-1 truncate text-sm ${isCompleted ? 'text-muted' : 'text-text'}`}>
+        {item.title}
+      </span>
+
+      <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-muted/60">
+        {isLab ? '[ Lab ]' : '[ Theory ]'}
+      </span>
+
+      {change && <ChangeChip change={change} />}
+
+      {isCompleted && <CheckIcon className="h-4 w-4 shrink-0 text-emerald-400/80" />}
     </Link>
   );
 }
@@ -70,97 +96,88 @@ export default function CourseAccordion({
   moduleIndex,
   completedChapterIds = [],
   completedLabIds = [],
+  activeItemId = null,
+  changes = {},
 }: {
   module: ContentModule;
   courseId: string;
   moduleIndex: number;
   completedChapterIds?: string[];
   completedLabIds?: string[];
+  activeItemId?: string | null;
+  changes?: CourseChanges;
 }) {
   const [isOpen, setIsOpen] = useState(moduleIndex === 0);
 
   const items = getModuleItems(module);
+  const moduleChanges = items
+    .map((item) => changes[item.id])
+    .filter((c): c is ItemChange => Boolean(c));
+  const changedCount = moduleChanges.length;
+  const newCount = moduleChanges.filter((c) => c.change === 'new').length;
   const completedCount = items.filter((item) =>
     item.type === 'lab'
       ? completedLabIds.includes(item.id)
       : completedChapterIds.includes(item.id)
   ).length;
   const totalItems = items.length;
-  const progress = totalItems > 0 ? (completedCount / totalItems) * 100 : 0;
 
   return (
-    <div className="rounded-xl border border-line bg-panel overflow-hidden">
+    <div className="overflow-hidden rounded-lg border border-line bg-panel">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center gap-5 px-5 py-3.5 text-left transition hover:bg-line/5"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-line/5"
       >
-        {/* Module number with progress ring */}
-        <div className="relative h-9 w-9 shrink-0">
-          <svg className="h-9 w-9 -rotate-90" viewBox="0 0 36 36">
-            <circle
-              cx="18" cy="18" r="15"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="text-line/30"
-            />
-            <circle
-              cx="18" cy="18" r="15"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeDasharray={`${progress * 0.942} 100`}
-              strokeLinecap="round"
-              className={progress === 100 ? 'text-emerald-500' : 'text-accent'}
-            />
-          </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-text">
-            {moduleIndex + 1}
-          </span>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-line/10 font-mono text-xs font-semibold text-muted">
+          {moduleIndex + 1}
         </div>
 
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-text truncate">{module.title}</h3>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-sm font-semibold text-text">{module.title}</h3>
+            {changedCount > 0 && (
+              <span
+                title={`${newCount} new, ${changedCount - newCount} updated in the latest content release`}
+                className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-accent/90"
+              >
+                +{changedCount} new/updated
+              </span>
+            )}
+          </div>
           {isOpen && (
-            <p className="mt-0.5 text-xs text-muted line-clamp-1">{module.description}</p>
+            <p className="mt-0.5 truncate text-xs text-muted">{module.description}</p>
           )}
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          {completedCount > 0 && (
-            <span className={`text-xs font-medium tabular-nums ${
-              completedCount === totalItems ? 'text-emerald-400' : 'text-muted'
-            }`}>
-              {completedCount}/{totalItems}
-            </span>
-          )}
-          <svg
-            className={`h-4 w-4 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-          </svg>
-        </div>
+        <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted">
+          {completedCount}/{totalItems}
+        </span>
+
+        <svg
+          className={`h-4 w-4 shrink-0 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+        </svg>
       </button>
 
       {isOpen && (
-        <div className="border-t border-line/50 px-5 pb-2">
-          <div className="space-y-0.5 pt-1">
-            {items.map((item, idx) => (
-              <ItemRow
-                key={`${item.type}-${item.id}`}
-                item={item}
-                courseId={courseId}
-                index={idx}
-                isCompleted={item.type === 'lab'
-                  ? completedLabIds.includes(item.id)
-                  : completedChapterIds.includes(item.id)}
-              />
-            ))}
-          </div>
+        <div className="border-t border-line/50 pb-1 pt-1">
+          {items.map((item, idx) => (
+            <ItemRow
+              key={`${item.type}-${item.id}`}
+              item={item}
+              courseId={courseId}
+              isCompleted={item.type === 'lab'
+                ? completedLabIds.includes(item.id)
+                : completedChapterIds.includes(item.id)}
+              isActive={item.id === activeItemId}
+              change={changes[item.id]}
+            />
+          ))}
         </div>
       )}
     </div>

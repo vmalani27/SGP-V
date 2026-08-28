@@ -25,6 +25,8 @@ export interface LabTask {
   validation: TaskValidation;
   error_message?: string;
   hint?: string;
+  hints?: string[];
+  solution?: { command?: string };
 }
 
 export interface LabMeta {
@@ -36,6 +38,7 @@ export interface LabMeta {
   tags: string[];
   objectives: string[];
   environment: string;
+  summary?: string;
   setup?: { command: string }[];
   completion: { required_tasks: 'all' | string[] };
 }

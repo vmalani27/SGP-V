@@ -14,7 +14,7 @@ by the worker (cloud) today and by the client app in the target model.
 | Worker | S3-only: download → validate → seed Firestore | unchanged (stays cloud) |
 | Backend | serves content files via `FilesystemProvider` (mounted `content-v2`) | pure Firestore API (history/progress/catalog) + `GET /content/version` pointer |
 | Frontend | Next.js, fetches content via backend API | client-side, serves from locally extracted content |
-| Orchestrator | cloud service, proxies lab lifecycle | client-side, runs labs on the student's docker |
+| Orchestrator | runs inside a Vagrant VM (Ubuntu + Docker + Sysbox; guest :8000 → host :8001), proxies lab lifecycle | client-side, runs labs on the student's docker |
 
 ---
 
@@ -26,8 +26,11 @@ by the worker (cloud) today and by the client app in the target model.
 content-v2/  (canonical format, source of truth for authoring)
     │
     ├──→  CI  (.github/workflows/publish-content.yml, self-hosted runner)
-    │         validate_content.py  →  generate_manifest.py  →  aws s3 sync
+    │         validate_content.py  →  generate_manifest.py  →  upload published/ + latest.json
     │         ──►  S3 bucket: latest.json + published/{version}/{content.tar.gz, manifest.json}
+    │
+    │   [webhook, proposed]  CI then POSTs /sync — the worker seeds immediately
+    │   instead of waiting for its next poll (see §6 "Triggered sync (webhook)")
     │
 S3 bucket ──→  Worker  (S3-only; no filesystem mount)
     │            1. download_content()   — fetch latest.json, compare contentVersion,
@@ -35,7 +38,8 @@ S3 bucket ──→  Worker  (S3-only; no filesystem mount)
     │               extract into CONTENT_DIR_S3 (/data/content)
     │            2. validate_all()       — schema checks on the downloaded artifact
     │            3. sync_courses()       — idempotent upsert to Firestore `courses`
-    │               (writes contentHash + contentVersion; every 300s, or POST /sync)
+    │               (writes contentHash + contentVersion)
+    │   triggers:  POST /sync (webhook — push) or the 300s poll (pull safety net)
     │
     ├──→  Backend  (content_provider.py + routers/content.py)   [transitional]
     │         GET /api/v1/content/...     — TOC, chapters, lab instructions, tasks
@@ -177,6 +181,49 @@ manually.
 Plain markdown. The first `# ` heading is used as the chapter **title**
 (shown in the curriculum and sidebar) when the module item has no explicit
 title.
+
+#### `:::terminal-demo` — inline guided demos
+
+A chapter slide can embed a live, disposable terminal via a fenced directive.
+The body is YAML:
+
+```yaml
+:::terminal-demo
+id: container-lifecycle          # REQUIRED — labels the demo container
+image: sgp-lab-docker:latest
+pre_pull:
+  - alpine:latest
+state:                            # optional live state chip in the header
+  label: demo container
+  command: docker inspect -f '{{.State.Status}}' demo 2>/dev/null || echo "not created"
+steps:                            # ordered, guided click-to-insert commands
+  - id: create-demo
+    label: Create and start the container
+    run: docker run -d --name demo alpine:latest sleep 300
+    expect: |
+      A long container ID is printed; the state chip flips to `running`.
+:::
+```
+
+- `steps[]` — ordered guided commands. `run` is inserted into the terminal for
+  the learner to run; `label` names the step; `expect` is a "what you should
+  see" note (collapsible before, auto-shown after the step is done). Steps
+  auto-advance when the command is submitted (Enter).
+- `examples[]` — optional free-form commands for exploration (rendered as
+  chips below the stepper).
+- `state` — optional poll; `command` is `exec`'d every few seconds and its
+  output drives the state chip in the terminal header.
+
+**Container sharing (memory):** each distinct `id` maps to exactly **one**
+persistent demo container per learner, label-addressed and reused across all
+slides of the chapter (the orchestrator re-attaches on re-ensure; the terminal
+tmux session and scrollback survive slide navigation). Inline demos on
+different slides should therefore reuse the **same** `id` so the whole chapter
+costs a single container — a new `id` spawns a new container, so only mint a
+new one for a genuinely different environment. The validator warns when a
+chapter declares more than two distinct demo ids. Containers are destroyed
+when the learner leaves the chapter, and the orchestrator TTL sweeper reclaims
+abandoned ones.
 
 ### `labs/{lab-id}/lab.yaml` — lab definition
 
@@ -367,8 +414,11 @@ Current state: 0 errors, 16 skeleton warnings (git labs 2–10, docker labs 4–
   `AWS_REGION`. The publish steps are gated on `S3_BUCKET` being set.
 - **Steps**: checkout → setup-python 3.12 → `pip install pyyaml awscli` →
   `python scripts/validate_content.py content-v2/` (gate) →
-  `python scripts/generate_manifest.py content-v2/ out/` →
-  `aws s3 sync out/ s3://${S3_BUCKET}/`.
+  `python scripts/generate_manifest.py content-v2/ out/` → upload
+  `out/published/` → upload `out/latest.json` **last** (it is the pointer
+  clients act on; `cp`, not `sync` — identical content re-uploads so a rebuilt
+  artifact under an unchanged version is never skipped). When the webhook
+  trigger lands (§6), a final step calls the worker `POST /sync`.
 
 Artifact layout in the bucket:
 
@@ -383,6 +433,11 @@ published/{version}/manifest.json               # {version, files: [{path, sha25
 - `version` = content-derived sha256 (over sorted `"path sha256"` lines) —
   identical content → identical version → no re-download.
 - Tarball is deterministic (mtime 0, uid/gid 0, mode 0644).
+- `artifact_sha256` = sha256 of the **raw (uncompressed) tar bytes** — never
+  the gzip stream. This is the one convention the whole chain agrees on
+  (generator, worker `seeder.py`, frontend bootstrap); a publisher that hashes
+  the compressed bytes instead hard-fails the worker's checksum guard (see
+  `docs/bugs.md` "artifact_sha256 convention mismatch").
 - `manifest.json` `files[]` drives the worker's per-file integrity check.
 
 ---
@@ -396,8 +451,9 @@ The worker is **S3-only** — it never reads a mounted `content-v2`. Every cycle
    - Compares `version` with the `contentVersion` already seeded in Firestore
      (`_seeded_content_version`); if unchanged and `s3_dir/index.json`
      exists, it skips (already current).
-   - Otherwise downloads `published/{version}/content.tar.gz`, verifies its
-     sha256 against `latest.json` `artifact_sha256`, downloads
+   - Otherwise downloads `published/{version}/content.tar.gz`, verifies the
+     sha256 of its decompressed bytes against `latest.json` `artifact_sha256`
+     (the raw tar is byte-deterministic; the gzip stream is not), downloads
      `manifest.json` (must match the version), extracts to a temp dir,
      verifies every file against the manifest, then moves the verified
      contents into `s3_dir` (volume-mount-safe — moves children rather than
@@ -431,6 +487,37 @@ Cadence: on startup, then every `SYNC_INTERVAL_SECONDS` (default 300s).
 `GET /status` exposes `content_source` (`s3`), `published_version`, and the
 last result; `POST /sync` forces a cycle. `GET /health` reports the S3
 content dir.
+
+### Triggered sync (webhook)
+
+Publishing is **push** (CI → S3), but seeding was **pull** (worker poll), so a
+published version could take up to `SYNC_INTERVAL_SECONDS` to reach Firestore.
+The webhook pattern removes that window: after the S3 upload, CI calls
+`POST /sync` and the worker validates + seeds **immediately**; the poll stays
+only as a reconciliation safety net.
+
+Why this is webhook logic, not "the worker in CI":
+
+- **The worker is a runtime consumer, not a pipeline stage.** It holds Firestore
+  write credentials (`GOOGLE_APPLICATION_CREDENTIALS`); CI holds only S3
+  credentials. Triggering the runtime service rather than seeding from CI keeps
+  those trust domains separate.
+- **Idempotent and convergent.** `download_content()` already short-circuits
+  when the version is seeded *and* still verified; `sync_courses()` is a full
+  reconcile. Re-triggering `POST /sync` (re-run workflows, parallel pushes, a
+  second publish under the same version) is always a no-op or a correct
+  rewrite — there is no "seed state" to corrupt.
+- **The checksum guard stays.** A webhook is just a nudge; the worker still
+  downloads, verifies `artifact_sha256` + the per-file manifest, and refuses to
+  seed a mismatched artifact. Event-driven freshness must not weaken integrity.
+
+Requirements before this lands (tracked in `docs/deferred-improvements.md`
+Item D):
+1. A "Trigger worker sync" CI step that hits `POST /sync` after `latest.json`.
+2. Auth for `POST /sync` (shared-secret header) before the worker is reachable
+   outside dev.
+3. Optionally raise `SYNC_INTERVAL_SECONDS` once the webhook is the primary
+   trigger — the poll then exists purely to self-heal.
 
 ---
 
@@ -524,9 +611,9 @@ Responsibilities:
 1. `GET /content/version` from the backend → compare with the local version
    marker (e.g. a `version` file next to the extracted content).
 2. If changed (or absent): download `published/{version}/content.tar.gz`
-   directly from S3 (public read — no credentials), verify sha256 against
-   `latest.json` `artifact_sha256`, extract into the local content dir,
-   write the version marker.
+   directly from S3 (public read — no credentials), verify sha256 of the
+   decompressed bytes against `latest.json` `artifact_sha256`, extract into
+   the local content dir, write the version marker.
 3. Frontend serves TOC/chapters/instructions from that dir; the orchestrator
    spawns labs from the same `lab.yaml` files (it already receives
    `image`/`apt_packages`/`pre_pull` in the `start` request).
@@ -552,23 +639,56 @@ identical version → no re-download.
 2. Run `python scripts/validate_content.py content-v2/` locally — fix errors,
    review warnings.
 3. Commit + push to `dev` (path `content-v2/**`) → CI validates and publishes
-   to S3 (§5).
-4. The worker picks up the new version on its next cycle (or `POST /sync`) —
-   check `/status` for `published_version` and `status: ok`.
+   to S3 (§5) and, once the webhook is wired (§6), pushes the worker to seed
+   all the way to Firestore.
+4. Until the webhook lands, the worker picks the new version up on its next
+   poll (or `POST /sync`) — check `/status` for `published_version` and
+   `status: ok`.
 5. Verify in the frontend: course page → chapter → lab.
 
 **Course immutability**: once users are enrolled, structure is append-only —
-don't reorder or delete modules/chapters/labs, don't rename IDs. See
-`MIGRATION.md` → "Course Immutability Rules".
+see §11.
+
+---
+
+## 11. Course immutability (on enrollment)
+
+Progress is stored as `{moduleId: {chapterId: "completed"}}` (chapters) and
+`{moduleId: {labId: "completed"}}` (labs); "100% complete" is computed by
+comparing the enrollment's completed items against `totalChapters`/`totalLabs`
+from the Firestore `courses` document (seeded by the worker). Structural edits
+after enrollment orphan progress entries or skew percentages.
+
+**Once a course has enrolled users, it is structurally immutable — changes are
+append-only.**
+
+| Change | Allowed? | Effect on existing enrollments |
+|--------|----------|-------------------------------|
+| Fix typo in chapter markdown / lab YAML / course metadata | Yes | None — content/messages only |
+| Append a module / chapter / lab | Yes | `totalChapters`/`totalLabs` grows; existing percentages shift slightly (acceptable) |
+| Reorder modules/chapters/labs | No | Invalidates progress-map order references |
+| Delete a module/chapter/lab | No | Orphaned progress entries, wrong percentage |
+| Rename a module/chapter/lab ID | No | Progress keys no longer match — effectively deletes that progress |
+| Move an item between parents | No | Progress references the wrong parent |
+
+**Pre-launch** (no real users): relaxed — keep stable IDs by convention; the
+worker re-seeds (sync is idempotent, so wiping Firestore is enough).
+
+**Post-launch enforcement** (not implemented, tracked under the backlog): a
+worker `--check-structure` mode plus a `structuralHash` over item IDs/ordering —
+the worker rejects destructive diffs instead of seeding them, and the backend
+refuses to serve a course whose structural hash doesn't match Firestore.
 
 ---
 
 ## Related docs
 
-- `README.md` — architecture overview, content tree, API tables
-- `backend/README.md` — provider abstraction, backend config
-- `next-app/README.md` — frontend structure, validation flow
-- `orchestrator/schemas/README.md` — lab authoring guide + JSON Schema
-- `MIGRATION.md` — how the canonical format evolved, locked decisions
-- `deferred-improvements.md` — backlog (Item B, the old backend S3Provider
-  plan, is superseded by §9)
+- `README.md` — architecture overview, service table, quick links
+- `docs/setup.md` — environment setup + local publish, start, and verify steps
+- `docs/development.md` — hot reload, volume mounts, useful commands
+- `backend/README.md` — backend (metadata API) config + endpoints
+- `next-app/README.md` — frontend structure, content bootstrap, validation flow
+- `orchestrator/README.md` + `orchestrator/schemas/README.md` — orchestrator
+  API + lab authoring guide / JSON Schema
+- `postman/README.md` — end-to-end Postman suite for the content-delivery flow
+- `deferred-improvements.md` — backlog (Items B/C/D context)

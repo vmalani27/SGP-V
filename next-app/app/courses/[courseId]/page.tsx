@@ -1,8 +1,10 @@
 import { notFound } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { getCourse, getAllItems, itemHref } from '@/lib/content-server';
+import { getCourseChanges } from '@/lib/content-local';
 import CourseProgressHeader from './CourseProgressHeader';
 import CourseCurriculum from './CourseCurriculum';
+import CourseSidebar from './CourseSidebar';
 
 export default async function CoursePage({
   params,
@@ -17,6 +19,8 @@ export default async function CoursePage({
   const firstItem = allItems[0];
 
   const firstItemHref = firstItem ? itemHref(courseId, firstItem) : '#';
+
+  const changes = await getCourseChanges(courseId);
 
   return (
     <main className="min-h-screen bg-bg text-text">
@@ -37,25 +41,13 @@ export default async function CoursePage({
         <div className="grid gap-8 lg:grid-cols-3">
           <div className="lg:col-span-1">
             <div className="sticky top-24 space-y-5">
-              <div className="rounded-xl border border-line bg-panel p-5">
-                <h3 className="mb-4 font-semibold text-text">What You&apos;ll Learn</h3>
-                <ul className="space-y-3 text-sm text-muted">
-                  {course.modules.map((mod) => (
-                    <li key={mod.id} className="flex items-start gap-2">
-                      <svg className="mt-0.5 h-4 w-4 shrink-0 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                      <span>{mod.description}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <CourseSidebar course={course} />
             </div>
           </div>
           <div className="lg:col-span-2">
             <h2 className="mb-6 text-xl font-bold text-text">Course Curriculum</h2>
             <div className="space-y-4">
-              <CourseCurriculum courseId={courseId} modules={course.modules} />
+              <CourseCurriculum courseId={courseId} course={course} modules={course.modules} changes={changes} />
             </div>
           </div>
         </div>

@@ -53,6 +53,7 @@ import hashlib
 import logging
 import shutil
 import tarfile
+import gzip
 from datetime import datetime
 from pathlib import Path
 
@@ -286,6 +287,88 @@ def _seeded_content_version(db) -> str | None:
     return None
 
 
+def _fetch_manifest(client, version: str) -> dict | None:
+    """Fetch published/{version}/manifest.json from S3, or None on failure.
+
+    Used to compute the diff against the previously published version. The
+    manifest is never inside the content tarball, so it must be fetched.
+    """
+    key = f"published/{version}/manifest.json"
+    try:
+        resp = client.get_object(Bucket=S3_BUCKET, Key=key)
+        return json.loads(resp["Body"].read().decode("utf-8"))
+    except client.exceptions.NoSuchKey:
+        logger.info("No manifest for previous version %s", version)
+        return None
+    except Exception:
+        logger.warning("Failed to fetch previous manifest %s", key, exc_info=True)
+        return None
+
+
+def _diff_manifests(from_version: str, to_version: str, old_files, new_files) -> dict:
+    """Compare two manifests' file lists, producing per-path change records.
+
+    Per-path classification:
+      - "new":      present in the new version only
+      - "removed":  present in the old version only
+      - "modified": present in both but content (sha256) differs
+
+    The version is content-derived (sha256 over "path sha256" lines), so any
+    file change always yields a new version, and the diff tells the UI which
+    chapters/labs were touched.
+    """
+    old = {
+        f["path"]: f["sha256"]
+        for f in (old_files or [])
+        if isinstance(f, dict) and f.get("path")
+    }
+    new = {
+        f["path"]: f["sha256"]
+        for f in (new_files or [])
+        if isinstance(f, dict) and f.get("path")
+    }
+
+    changes = []
+    for path in sorted(set(old) | set(new)):
+        if path not in old:
+            changes.append({"path": path, "change": "new"})
+        elif path not in new:
+            changes.append({"path": path, "change": "removed"})
+        elif old[path] != new[path]:
+            changes.append({"path": path, "change": "modified"})
+
+    return {
+        "version": to_version,
+        "from_version": from_version,
+        "changes": changes,
+        "updatedAt": datetime.utcnow(),
+    }
+
+
+def _content_changes_key(doc: dict) -> tuple:
+    """Comparable key for a content_changes doc, excluding the timestamp."""
+    return tuple(sorted(
+        (k, json.dumps(v, sort_keys=True, default=str))
+        for k, v in doc.items()
+        if k != "updatedAt"
+    ))
+
+
+def _store_content_changes(db, diff: dict) -> None:
+    """Idempotent upsert of a version's diff into the content_changes collection.
+
+    Doc id = target version. The backend reads it back in /content/version so
+    the client can badge chapters/labs as new or updated.
+    """
+    ref = db.collection("content_changes").document(diff["version"])
+    existing = ref.get()
+    if existing.exists and _content_changes_key(existing.to_dict()) == _content_changes_key(diff):
+        return
+    ref.set(diff)
+    logger.info("Stored content changes for version %s (%d changed files)",
+                diff["version"], len(diff["changes"]))
+
+
 class ContentNotPublished(Exception):
     """Raised when the bucket is reachable but nothing has been published yet."""
 
@@ -319,15 +402,28 @@ def _clear_dir(path: Path) -> None:
             child.unlink()
 
 
+_VERIFIED_SHA_MARKER = ".verified-artifact-sha256"
+
+
+def _read_verified_sha(s3_dir: Path) -> str:
+    """Artifact sha256 that was actually downloaded and verified, or ''."""
+    try:
+        return (s3_dir / _VERIFIED_SHA_MARKER).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 def download_content(s3_dir: Path, db) -> tuple[str, str] | None:
     """Make the latest published content available on s3_dir.
 
     Returns (version, artifact_sha256) when S3 is the active source
-    (downloading it first if the version changed), or None when S3 is
-    unconfigured, unreachable, or has no published content yet — the caller
-    treats that as a hard failure, never a fallback.
+    (downloading it first if the version changed or latest.json's
+    artifact_sha256 no longer matches the last verified download), or None
+    when S3 is unconfigured, unreachable, or has no published content yet —
+    the caller treats that as a hard failure, never a fallback.
 
-    Raises on integrity failures — a corrupt download must not seed silently.
+    Raises on integrity failures — a corrupt download must not seed silently,
+    and an unverified hash must never be returned to the caller.
     """
     try:
         latest = _fetch_latest(db)
@@ -341,14 +437,25 @@ def download_content(s3_dir: Path, db) -> tuple[str, str] | None:
     if not version:
         raise ValueError("latest.json is missing 'version'")
 
-    if version == _seeded_content_version(db) and (s3_dir / "index.json").exists():
-        return version, latest.get("artifact_sha256", "")  # already current
+    expected_sha = latest.get("artifact_sha256", "")
+
+    # A version match alone is not enough to skip the download: latest.json can
+    # be rewritten under an unchanged version (republish drift, hash-convention
+    # change), so only skip when its artifact hash matches what we verified.
+    if (
+        version == _seeded_content_version(db)
+        and (s3_dir / "index.json").exists()
+        and (not expected_sha or expected_sha == _read_verified_sha(s3_dir))
+    ):
+        return version, expected_sha  # already current + still verified
 
     client = _s3_client()
     prefix = f"published/{version}/"
 
     tarball = client.get_object(Bucket=S3_BUCKET, Key=f"{prefix}content.tar.gz")["Body"].read()
-    artifact_sha256 = hashlib.sha256(tarball).hexdigest()[:16]
+    # artifact_sha256 covers the raw (uncompressed) tar bytes — the gzip stream
+    # is not byte-stable across Python/zlib versions, the tar is.
+    artifact_sha256 = hashlib.sha256(gzip.decompress(tarball)).hexdigest()[:16]
     expected = latest.get("artifact_sha256")
     if expected and artifact_sha256 != expected:
         raise RuntimeError(f"Content tarball checksum mismatch for version {version}")
@@ -359,6 +466,22 @@ def download_content(s3_dir: Path, db) -> tuple[str, str] | None:
     if manifest.get("version") != version:
         raise RuntimeError("manifest.json version does not match latest.json")
     files = manifest.get("files", [])
+
+    # Publish a per-version changelog so the client can badge chapters/labs as
+    # new/updated. Only meaningful once there is a previously seeded version —
+    # a first publish must not flag everything as new.
+    previous_version = _seeded_content_version(db)
+    if previous_version and previous_version != version:
+        prev_manifest = _fetch_manifest(client, previous_version)
+        if prev_manifest:
+            diff = _diff_manifests(
+                previous_version, version, prev_manifest.get("files"), files
+            )
+            _store_content_changes(db, diff)
+    elif previous_version == version:
+        logger.info("Content version unchanged (%s) — skipping changelog", version)
+    else:
+        logger.info("First published content (no previous version) — no changelog")
 
     # Extract to a temp sibling dir, verify every file, then atomically swap.
     tmp_dir = s3_dir.with_name(s3_dir.name + ".tmp")
@@ -393,6 +516,7 @@ def download_content(s3_dir: Path, db) -> tuple[str, str] | None:
         raise
 
     logger.info("Downloaded content version %s from S3", version)
+    (s3_dir / _VERIFIED_SHA_MARKER).write_text(artifact_sha256, encoding="utf-8")
     return version, artifact_sha256
 
 
@@ -448,6 +572,13 @@ def sync_courses(
             "contentHash": _content_hash(course_dir),
             "updatedAt": datetime.utcnow(),
         }
+
+        # Optional course enrichment for the curriculum sidebar. Only copies
+        # keys that are actually present in source, so documents authored
+        # without them stay unchanged.
+        for field in ("prerequisites", "environment", "keyTakeaways", "quickLinks"):
+            if course_data.get(field) is not None:
+                doc_data[field] = course_data[field]
 
         if content_version is not None:
             doc_data["contentVersion"] = content_version

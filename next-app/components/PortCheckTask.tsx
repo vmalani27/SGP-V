@@ -1,6 +1,7 @@
 'use client';
 
 import type { LabTask, TaskStatus } from '@/lib/task-types';
+import RichText from './RichText';
 
 interface PortCheckTaskProps {
   task: LabTask;
@@ -16,7 +17,10 @@ export default function PortCheckTask({ task, status, onValidate, error, validat
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-text leading-relaxed">{task.prompt}</p>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Task</p>
+        <RichText content={task.prompt} />
+      </div>
 
       <div className="p-3 rounded-lg bg-gray-800/50 border border-gray-700/50 space-y-2">
         <p className="text-xs text-muted">
@@ -28,10 +32,7 @@ export default function PortCheckTask({ task, status, onValidate, error, validat
 
       {error && (
         <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-          <p className="text-sm text-red-300">{error}</p>
-          {task.hint && (
-            <p className="text-xs text-muted mt-1">Hint: {task.hint}</p>
-          )}
+          <RichText content={error} size="sm" className="prose-error" />
         </div>
       )}
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import TheorySection from './TheorySection';
+import SlideReader from './SlideReader';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { itemHref } from '@/lib/content-server';
@@ -24,7 +24,6 @@ export default function ChapterClient({
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [chapterComplete, setChapterComplete] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,17 +50,13 @@ export default function ChapterClient({
     };
   }, [courseId, chapterId]);
 
-  const handleMarkComplete = async () => {
+  const handleCompleteAndContinue = async () => {
     try {
       await api.courses.updateProgress(courseId, moduleId, chapterId);
       await refreshEnrollments();
     } catch {
       // Progress save is best-effort
     }
-    setChapterComplete(true);
-  };
-
-  const handleNext = () => {
     if (nextItem) {
       router.push(itemHref(courseId, nextItem));
     } else {
@@ -89,40 +84,22 @@ export default function ChapterClient({
 
   return (
     <div className="space-y-6">
-      <TheorySection content={content} />
-
-      {!chapterComplete ? (
-        <div className="flex justify-end">
-          <button
-            onClick={handleMarkComplete}
-            className="rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-bg transition hover:bg-accent/90"
-          >
-            Mark Chapter as Complete
-          </button>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-emerald-400 font-medium">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-            </svg>
-            Chapter completed!
-          </div>
-          <button
-            onClick={handleNext}
-            className="flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-bg transition hover:bg-accent/90"
-          >
-            {nextItem
-              ? nextItem.type === 'lab'
-                ? 'Start Lab'
-                : 'Next Chapter'
-              : 'Back to Course'}
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-      )}
+      <SlideReader
+        content={content}
+        onComplete={handleCompleteAndContinue}
+        completeLabel={
+          nextItem
+            ? nextItem.type === 'lab'
+              ? 'Start Lab'
+              : 'Continue'
+            : 'Complete Course'
+        }
+        onCompleteIcon={
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
+          </svg>
+        }
+      />
     </div>
   );
 }

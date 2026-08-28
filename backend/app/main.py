@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core import firebase_config  # Initialize Firebase Admin SDK
 from app.utils.firebase_util import verify_firebase_token
-from app.routers import users, courses, content, labs
+from app.routers import users, courses, content, labs, demos
 
 
 app = FastAPI(title="SGP Firebase Reference Backend")
@@ -21,6 +21,7 @@ app.include_router(users.router)
 app.include_router(courses.router)
 app.include_router(content.router)
 app.include_router(labs.router)
+app.include_router(demos.router)
 
 
 @app.get("/")

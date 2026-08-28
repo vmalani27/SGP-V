@@ -4,11 +4,18 @@ WebSocket terminal — tmux-based with JWT authentication.
 The browser never talks to the orchestrator directly. The backend proxies the
 terminal WebSocket and sends the JWT as the FIRST message (a `{"type": "auth",
 "token": ...}` handshake) — never as a URL query parameter. The orchestrator
-validates it on connect, resolves the container from the session, and attaches
-to a tmux session.
+validates it on connect, resolves the container, and attaches to a tmux
+session.
 
-On disconnect: tmux keeps running, container alive (40-min timeout).
-On reconnect: tmux reattaches with full scrollback preserved.
+The token claims select how the container is resolved:
+- kind="lab"  (default): a session_id that indexes the in-memory sessions dict.
+- kind="demo": a demo_id + user_id, resolved by Docker labels so the same
+  disposable demo container is reused across a chapter (and across restarts).
+
+On disconnect: tmux keeps running, container alive (40-min lab / 30-min demo
+timeout). On reconnect: tmux reattaches with full scrollback preserved. Demo
+sessions are created-if-missing (never killed on reattach) so scrollback and
+shell history survive slide navigation within a chapter.
 
 Every connection attaches its own `tmux attach-session` client. Closing the
 docker exec stream does NOT terminate the exec process (verified: the daemon
@@ -125,6 +132,39 @@ def _is_json_message(payload: bytes) -> dict | None:
     return msg
 
 
+def _resolve_container_name(claims: dict) -> tuple[str, str] | None:
+    """Resolve which container and tmux session a token claim targets.
+
+    Returns (container_name, tmux_session). ``kind="demo"`` containers are
+    resolved by Docker labels (user_id + demo_id) — the same label lookup the
+    backend uses — so a demo terminal survives restarts and reuses the demo
+    container across a chapter. Anything else (default) is a lab session_id.
+    """
+    kind = claims.get("kind", "lab")
+    if kind == "demo":
+        from app.config import LABEL_DEMO_ID, LABEL_USER_ID
+        from app.services.docker_service import DockerService
+
+        demo_id = claims.get("demo_id")
+        user_id = claims.get("user_id")
+        if not demo_id:
+            return None
+        containers = DockerService().get_labs_by_labels({
+            LABEL_USER_ID: user_id or "",
+            LABEL_DEMO_ID: demo_id,
+        })
+        if not containers:
+            return None
+        containers.sort(key=lambda c: c.get("created", ""), reverse=True)
+        return containers[0]["name"], "demo"
+
+    session_id = claims.get("session_id")
+    session = sessions.get(session_id)
+    if not session or not session.container_name:
+        return None
+    return session.container_name, "lab"
+
+
 @router.websocket("/ws/terminal")
 async def terminal(websocket: WebSocket):
     await websocket.accept()
@@ -140,19 +180,38 @@ async def terminal(websocket: WebSocket):
         await websocket.close(code=4001, reason="Invalid or expired token")
         return
 
-    # Resolve the container from the session — no container name in the URL.
-    session_id = claims.get("session_id")
-    session = sessions.get(session_id)
-    if not session or not session.container_name:
+    # Resolve the container from the token claims — no container name in the URL.
+    resolved = _resolve_container_name(claims)
+    if not resolved:
         await websocket.close(code=4003, reason="Session mismatch")
         return
 
-    container_name = session.container_name
+    container_name, tmux_session = resolved
+    kind = claims.get("kind", "lab")
 
     docker = aiodocker.Docker()
     pidfile = f"/tmp/.tmux_attach_{secrets.token_hex(6)}.pid"
     try:
         container = await docker.containers.get(container_name)
+
+        # Ensure the target container is running before attempting an exec.
+        try:
+            info = await container.show()
+            state = info.get("State", {}) or {}
+            # Some Docker APIs return a boolean 'Running', others a 'Status' string.
+            is_running = state.get("Running") or (state.get("Status") == "running")
+            if not is_running:
+                cid = info.get("Id", "")
+                logger.error(
+                    f"Terminal error for '{container_name}': container {cid} is not running"
+                )
+                try:
+                    await websocket.close(code=4009, reason="Container not running")
+                except Exception:
+                    pass
+                return
+        except Exception as e:
+            logger.debug(f"Failed to inspect container '{container_name}': {e}")
 
         # Atomically create-or-attach: tries creating a new detached session
         # (fails silently if one already exists), then attaches regardless.
@@ -162,14 +221,30 @@ async def terminal(websocket: WebSocket):
         # terminate the process. Mouse mode is enabled so the frontend's wheel
         # scrolls tmux's scrollback history (xterm's own buffer only holds what
         # was rendered in the current tab session, not the full tmux history).
+        # docker exec -u student does NOT recompute supplementary groups, so a
+        # student never sees a runtime docker group (usermod -aG docker during
+        # lab setup). Start the exec as ROOT and drop to student via sudo, which
+        # runs initgroups() on setuid. Verified live: docker exec -u student
+        # lacks the docker group; `sudo -u student id` includes it.
+        #
+        # Demo sessions are created-if-missing (no kill on reattach) so shell
+        # history and scrollback survive slide navigation within a chapter.
+        session_cmd = (
+            f"tmux has-session -t {tmux_session} 2>/dev/null "
+            f"|| tmux new-session -d -s {tmux_session} \"bash -l\" 2>/dev/null; "
+        ) if kind == "demo" else (
+            f"tmux has-session -t {tmux_session} 2>/dev/null "
+            f"&& tmux kill-session -t {tmux_session} 2>/dev/null || true; "
+            f"tmux new-session -d -s {tmux_session} \"bash -l\" 2>/dev/null || true; "
+        )
         attach_cmd = [
             "bash", "-c",
-            f"echo $$ > {pidfile}; "
-            "tmux new-session -d -s lab '/bin/bash -l' 2>/dev/null; "
-            "tmux set-option -g mouse on 2>/dev/null; "
-            "tmux set-option -g history-limit 5000 2>/dev/null; "
-            "tmux set-option -s set-clipboard on 2>/dev/null; "
-            "exec tmux attach-session -t lab",
+            f"sudo -u student bash -c 'echo $$ > {pidfile}; "
+            f"{session_cmd}"
+            f"tmux set-option -g mouse on 2>/dev/null; "
+            f"tmux set-option -g history-limit 5000 2>/dev/null; "
+            f"tmux set-option -s set-clipboard on 2>/dev/null; "
+            f"exec tmux attach-session -t {tmux_session}'",
         ]
 
         exec_obj = await container.exec(
@@ -178,7 +253,7 @@ async def terminal(websocket: WebSocket):
             stdout=True,
             stderr=True,
             tty=True,
-            user="student",
+            user="root",
         )
         stream = exec_obj.start(detach=False)
 

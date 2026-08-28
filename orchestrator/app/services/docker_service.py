@@ -37,11 +37,10 @@ class DockerService:
         try:
             self.client.images.get(image)
         except ImageNotFound:
-            try:
-                logger.info(f"Image '{image}' not found locally, pulling...")
-                self.client.images.pull(image)
-            except APIError:
-                raise RuntimeError(f"Image '{image}' not found and could not be pulled.")
+            raise RuntimeError(
+                f"Image '{image}' not found on the Docker host. "
+                "Lab images must be pre-built before the orchestrator starts."
+            )
 
         try:
             container = self.client.containers.run(
@@ -183,7 +182,24 @@ class DockerService:
 
     def exec_command(self, name: str, cmd: list[str], user: str | None = None) -> tuple[int, str]:
         container = self._get_container(name)
-        exit_code, output = container.exec_run(cmd, user=user, demux=True)
+        if user and user != "root" and cmd[:2] == ["/bin/bash", "-c"]:
+            # docker exec -u <user> does NOT recompute supplementary groups for
+            # the spawned process (verified on sgp-lab-docker: student is in the
+            # docker group via /etc/group, yet `docker exec -u student` yields no
+            # docker access). Drop privileges via sudo from root instead, which
+            # runs initgroups() and picks up the current /etc/group — the same
+            # mechanism as the terminal attach. Falls back to a plain `-u user`
+            # exec when sudo is missing (e.g. bare minimal images).
+            script = cmd[2]
+            exit_code, output = container.exec_run(
+                ["sudo", "-u", user, "/bin/bash", "-c", script],
+                user="root",
+                demux=True,
+            )
+            if exit_code == 127 and b"sudo" in (output[0] or b"") + (output[1] or b""):
+                exit_code, output = container.exec_run(cmd, user=user, demux=True)
+        else:
+            exit_code, output = container.exec_run(cmd, user=user, demux=True)
         stdout = (output[0] or b"").decode()
         stderr = (output[1] or b"").decode()
         combined = stdout if not stderr else f"{stdout}\n{stderr}"

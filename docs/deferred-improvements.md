@@ -71,3 +71,114 @@ later"). No S3/MinIO is available for development.
    files. Worker keeps reading the local filesystem as source of truth for dev.
 5. Verify parity: `curl /api/v1/content/courses` + a lab config + tasks with
    `CONTENT_SOURCE=s3` vs `filesystem`.
+
+---
+
+## Item C — Disposable Ubuntu VM for orchestrator hosting (exploratory)
+
+**Type:** Hosting option under evaluation
+
+This is not the current default architecture. It is one possible way to host the
+lab orchestrator for development or packaged distribution, with the VM treated
+as disposable infrastructure rather than the source of truth.
+
+### Baseline contract
+
+| Component | Specification |
+|-----------|---------------|
+| Hypervisor | VMware Workstation / VirtualBox |
+| Guest OS | Ubuntu Server 22.04.5 LTS |
+| Architecture | x86_64 / amd64 |
+| vCPU | 2 |
+| RAM | 4 GB recommended |
+| Disk | 40 GB, dynamically allocated |
+| Network | NAT with DHCP |
+| Host access | Fixed port forwarding preferred over depending on the VM IP |
+| SSH | Optional, but recommended |
+| Docker Engine | 28.5.2 |
+| Docker runtime | Standard Docker + Sysbox |
+| Sysbox CE | 0.7.0 |
+| sysbox-runc | 0.7.0 |
+
+### Intended use
+
+- Start from a minimal Ubuntu Server install.
+- Provision Docker and Sysbox inside the VM.
+- Run the orchestrator inside the VM.
+- Expose the orchestrator with host port forwarding, for example `localhost:8000` → VM `:8000`.
+- Keep credentials out of the VM image or OVA.
+- Treat the VM as rebuildable from repository notes and provisioning scripts.
+
+### Reproducibility note
+
+The repository should eventually hold the provisioning contract for this path,
+for example under `infra/vm/` with version pins, autoinstall material, and shell
+scripts for Docker/Sysbox installation and configuration.
+
+### Lifecycle sketch
+
+Fresh Ubuntu VM → install Docker → install Sysbox → configure runtimes → obtain
+SGP software → build or pull lab images → configure networking → start
+orchestrator → SGP environment ready.
+
+### Distribution variants
+
+- Development: git clone, checkout a known version, build and run.
+- Distribution: pull a versioned container image and run.
+
+### Vagrant note
+
+If Vagrant proves reliable for reproducing the VM baseline, it becomes a useful
+machine-as-code wrapper around this path: a developer can provision the exact
+Ubuntu + Docker + Sysbox environment from versioned notes instead of rebuilding
+it manually. If that works end to end, it should reduce setup time for small
+rollouts and make the host environment easier to reset when it drifts.
+
+This option stays exploratory until it proves simpler than the current
+deployment path for the chosen audience.
+
+---
+
+## Item D — Webhook-triggered worker sync (pipeline → `POST /sync`) 📝 DESIGNED, NOT WIRED
+
+**Type:** Enhancement (Worker + CI)  
+**Status:** Design documented in `docs/CONTENT-PIPELINE.md` §6 ("Triggered
+sync (webhook)"). Not implemented.
+
+### Problem / context
+
+Publishing is push (CI → S3) but seeding is pull (worker polls S3 every
+`SYNC_INTERVAL_SECONDS`, default 300s), so a published version can sit in S3
+for up to five minutes before Firestore reflects it. The trigger idea was
+discussed after a checksum-mismatch incident: it is webhook logic (a nudge to a
+runtime service), not a reason to fold the worker into CI — the worker is a
+runtime S3→Firestore consumer that holds Firestore write credentials, while CI
+holds only S3 credentials.
+
+### Design
+
+1. `.github/workflows/publish-content.yml`: after the S3 upload (`latest.json`
+   last), add a "Trigger worker sync" step that calls the worker
+   `POST /sync` (worker URL + shared-secret header via `secrets`).
+2. `worker/app/main.py`: gate `POST /sync` behind a shared-secret header token
+   (`X-Sync-Token`) before the worker is reachable outside dev. The 300s poll
+   stays as a self-healing reconciliation net, so a missed/failed webhook is
+   caught later by the cycle.
+3. Optionally raise `SYNC_INTERVAL_SECONDS` (e.g. 15 min) once the webhook is
+   the primary trigger.
+
+### Guarantees (why this is safe)
+
+- Idempotent: `download_content()` short-circuits when the version is already
+  seeded + verified; `sync_courses()` is a full reconcile, so re-triggering is
+  always a no-op or a correct rewrite.
+- Integrity is unchanged: the webhook only starts a cycle; the worker still
+  verifies `artifact_sha256` + the per-file manifest and refuses mismatched
+  artifacts (hard failure — see `docs/bugs.md`).
+
+### Acceptance
+
+- Push to `dev` → worker `/status` shows the new `published_version` within
+  seconds, not minutes.
+- Re-running the workflow / parallel pushes do not corrupt Firestore (idempotent).
+- `POST /sync` without the token returns `4xx`.

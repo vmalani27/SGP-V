@@ -1,28 +1,43 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Osc52Extractor } from './osc52';
 import '@xterm/xterm/css/xterm.css';
+
+export interface LabTerminalHandle {
+  /** Type text into the terminal as if the student typed it (no Enter). */
+  insert: (text: string) => void;
+  focus: () => void;
+  isConnected: () => boolean;
+}
 
 interface LabTerminalProps {
   wsUrl: string;
   wsToken: string;
   onDisconnect?: () => void;
   onReconnect?: () => void;
+  onTerminated?: (reason: { code: number; message?: string }) => void;
+  /** Fires on every key the user types (not on programmatic insert). */
+  onInput?: (data: string) => void;
   className?: string;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
 
-export default function LabTerminal({
-  wsUrl,
-  wsToken,
-  onDisconnect,
-  onReconnect,
-  className = '',
-}: LabTerminalProps) {
+const LabTerminal = forwardRef<LabTerminalHandle, LabTerminalProps>(function LabTerminal(
+  {
+    wsUrl,
+    wsToken,
+    onDisconnect,
+    onReconnect,
+    onTerminated,
+    onInput,
+    className = '',
+  }: LabTerminalProps,   /*creates the lab terminal instance*/
+  ref
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -33,8 +48,26 @@ export default function LabTerminal({
   const lastDataAt = useRef(Date.now());
   const osc52Ref = useRef<Osc52Extractor | null>(null);
   const [state, setState] = useState<ConnectionState>('connecting');
+  const [termination, setTermination] = useState<{ code: number; message?: string } | null>(null);
   const wsUrlRef = useRef(wsUrl);
   const wsTokenRef = useRef(wsToken);
+  const onInputRef = useRef(onInput);
+
+  useImperativeHandle(ref, () => ({
+    insert(text: string) {
+      const ws = wsRef.current;
+      const term = termRef.current;
+      if (!term || !ws || ws.readyState !== WebSocket.OPEN) return;
+      term.input(text);
+      term.focus();
+    },
+    focus() {
+      termRef.current?.focus();
+    },
+    isConnected() {
+      return wsRef.current?.readyState === WebSocket.OPEN;
+    },
+  }));
 
   // Keep wsUrl/wsToken refs in sync
   useEffect(() => {
@@ -44,6 +77,10 @@ export default function LabTerminal({
   useEffect(() => {
     wsTokenRef.current = wsToken;
   }, [wsToken]);
+
+  useEffect(() => {
+    onInputRef.current = onInput;
+  }, [onInput]);
 
   const copyToClipboard = (text: string) => {
     try {
@@ -150,8 +187,16 @@ export default function LabTerminal({
     };
 
     ws.onclose = (event) => {
-      if (event.code === 4001 || event.code === 4003) {
+      // Terminal close codes from the orchestrator, forwarded by the backend:
+      //  4001 — invalid/expired token (rare: token lives 45min > lab 40min)
+      //  4003 — session no longer exists: the lab was shut down (time limit
+      //         reached or destroyed out-of-band). Do NOT reconnect — surface
+      //         the termination to the parent so it can show the right UI.
+      if (event.code === 4003 || event.code === 4001) {
+        const reason = { code: event.code, message: event.reason || undefined };
         setState('error');
+        setTermination(reason);
+        onTerminated?.(reason);
         return;
       }
 
@@ -202,6 +247,7 @@ export default function LabTerminal({
 
     // Forward terminal input to WebSocket
     term.onData((data) => {
+      onInputRef.current?.(data);
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(new TextEncoder().encode(data));
@@ -359,8 +405,27 @@ export default function LabTerminal({
                 <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
                   <span className="text-red-400 text-lg">!</span>
                 </div>
-                <p className="text-red-400 text-sm">Connection failed</p>
-                <p className="text-gray-500 text-xs">Token may have expired. Refresh the page.</p>
+                {termination?.code === 4003 ? (
+                  <>
+                    <p className="text-red-400 text-sm">Lab environment shut down</p>
+                    <p className="text-gray-500 text-xs">
+                      The session reached its time limit and the environment was
+                      stopped.
+                    </p>
+                  </>
+                ) : termination?.code === 4001 ? (
+                  <>
+                    <p className="text-red-400 text-sm">Session token expired</p>
+                    <p className="text-gray-500 text-xs">
+                      Refresh the page to reconnect to your lab.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-red-400 text-sm">Connection failed</p>
+                    <p className="text-gray-500 text-xs">Refresh the page to retry.</p>
+                  </>
+                )}
               </>
             )}
             {state === 'disconnected' && (
@@ -376,4 +441,6 @@ export default function LabTerminal({
       )}
     </div>
   );
-}
+});
+
+export default LabTerminal;

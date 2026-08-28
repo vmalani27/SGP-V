@@ -1,10 +1,10 @@
 'use client';
 
-import type { LabTask, TaskStatus, TaskProgressData } from '@/lib/task-types';
+import type { TaskStatus, TaskProgressData } from '@/lib/task-types';
 import MultipleChoiceTask from './MultipleChoiceTask';
 import TerminalActionTask from './TerminalActionTask';
 import PortCheckTask from './PortCheckTask';
-import TaskProgress from './TaskProgress';
+import TaskHelp from './TaskHelp';
 
 interface LabTaskRendererProps {
   progress: TaskProgressData;
@@ -21,38 +21,50 @@ export default function LabTaskRenderer({
   validating,
   onValidate,
 }: LabTaskRendererProps) {
-  if (progress.completed) {
+  const { tasks, currentIndex, completed } = progress;
+
+  if (completed) {
     return (
       <div className="space-y-4">
-        <TaskProgress currentIndex={progress.tasks.length} total={progress.tasks.length} completed />
-        <div className="p-6 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-          <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
-            <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-            </svg>
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-6 text-center">
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20 font-bold text-emerald-400">
+            ✓
           </div>
-          <h3 className="text-lg font-semibold text-emerald-300 mb-1">Lab Complete</h3>
-          <p className="text-sm text-muted">All tasks completed successfully.</p>
+          <h3 className="mb-1 text-base font-semibold text-emerald-300">Lab Complete</h3>
+          <p className="font-mono text-xs text-muted">All {tasks.length} tasks verified. Submit to finish.</p>
         </div>
       </div>
     );
   }
 
-  const task = progress.tasks[progress.currentIndex];
+  const task = tasks[currentIndex];
   if (!task) return null;
 
   const status = taskStatuses[task.id] || 'pending';
   const error = taskErrors[task.id];
+  const progressPercent = Math.round(((currentIndex + 1) / tasks.length) * 100);
 
   return (
-    <div className="space-y-4">
-      <TaskProgress
-        currentIndex={progress.currentIndex}
-        total={progress.tasks.length}
-        completed={false}
-      />
+    <div className="space-y-6 font-sans text-text antialiased">
+      {/* 1. Step Indicator & Hairline Progress Bar */}
+      <div>
+        <div className="flex items-center justify-between font-mono text-[11px] text-muted">
+          <span className="font-semibold uppercase tracking-wider text-accent">
+            TASK {currentIndex + 1} OF {tasks.length}
+          </span>
+          <span className="text-muted/50 font-mono">ID: {task.id}</span>
+        </div>
 
-      <div className="space-y-3">
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-line/60">
+          <div
+            className="h-full bg-accent transition-all duration-300"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      </div>
+
+      {/* 2. Active Task Execution */}
+      <div className="space-y-4">
         {task.type === 'multiple_choice' && (
           <MultipleChoiceTask
             task={task}
@@ -79,6 +91,9 @@ export default function LabTaskRenderer({
             validating={validating}
           />
         )}
+
+        {/* Hints / Assistance */}
+        <TaskHelp task={task} />
       </div>
     </div>
   );

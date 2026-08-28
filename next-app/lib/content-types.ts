@@ -37,6 +37,11 @@ export interface ContentCourse {
   description: string;
   level: string;
   modules: ContentModule[];
+  /** Course enrichment for the curriculum sidebar (authored in course.yaml). */
+  prerequisites?: string[];
+  environment?: string[];
+  keyTakeaways?: string[];
+  quickLinks?: { label: string; href: string }[];
 }
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────
@@ -57,6 +62,25 @@ export interface CourseItem {
   moduleId: string;
   moduleTitle: string;
 }
+
+// ─── Content update badges ────────────────────────────────────────────────────
+// The worker computes a per-version changelog (courses vs courses) which the
+// frontend maps to "new" / "updated" chips on individual chapters and labs.
+
+export type ContentChangeType = 'new' | 'modified' | 'removed';
+
+export interface ContentChange {
+  path: string;
+  change: ContentChangeType;
+}
+
+export interface ItemChange {
+  kind: 'chapter' | 'lab';
+  change: 'new' | 'modified';
+}
+
+/** Map of item id → change, for a single course. */
+export type CourseChanges = Record<string, ItemChange>;
 
 // ─── Deprecated: static quiz types (kept for QuizSection, to be removed in Phase 4) ──
 

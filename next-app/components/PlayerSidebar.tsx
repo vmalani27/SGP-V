@@ -1,8 +1,32 @@
 'use client';
 
 import Link from 'next/link';
-import type { ContentCourse } from '@/lib/content-types';
+import type { ContentCourse, CourseItem } from '@/lib/content-types';
 import { getModuleItems, getAllItems, itemHref } from '@/lib/content-server';
+
+function ClipIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16" />
+    </svg>
+  );
+}
+
+function FileIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v6m0 0l-2.5-2.5M12 13l2.5-2.5M4 17V5a2 2 0 0 1 2-2h8l6 6v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.25}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+    </svg>
+  );
+}
 
 export default function PlayerSidebar({
   course,
@@ -20,18 +44,20 @@ export default function PlayerSidebar({
   onToggle?: () => void;
 }) {
   const allItems = getAllItems(course);
-
   const currentIdx = allItems.findIndex((item) => item.id === currentItemId);
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto border-r border-line bg-panel">
-      <div className="flex items-center justify-between border-b border-line px-4 py-3">
-        <span className="text-xs font-semibold text-muted">Course Content</span>
+    <div className="flex h-full flex-col overflow-hidden bg-panel text-text select-none">
+      {/* Sidebar Header */}
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-line px-4">
+        <span className="font-mono text-xs font-semibold uppercase tracking-wider text-muted">
+          Course Content
+        </span>
         {onToggle && (
           <button
             onClick={onToggle}
-            className="rounded p-1 text-muted hover:bg-line/20 hover:text-text transition"
-            title="Close sidebar"
+            className="rounded p-1 text-muted transition hover:bg-line/20 hover:text-text"
+            title="Close sidebar (ESC)"
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -39,7 +65,9 @@ export default function PlayerSidebar({
           </button>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto px-3 py-5">
+
+      {/* Module & Item List */}
+      <div className="flex-1 overflow-y-auto divide-y divide-line/30">
         {course.modules.map((mod, modIdx) => {
           const modItems = getModuleItems(mod);
           const modCompleted = modItems.filter((item) =>
@@ -49,25 +77,26 @@ export default function PlayerSidebar({
           ).length;
 
           return (
-            <div key={mod.id} className="mb-5">
-              <div className="mb-1.5 flex items-center justify-between px-3">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-muted/50">
+            <div key={mod.id} className="py-2.5">
+              {/* Module Header */}
+              <div className="mb-1 flex items-center justify-between px-4 py-1 font-mono text-[11px]">
+                <span className="truncate font-semibold uppercase tracking-wider text-muted">
                   {modIdx + 1}. {mod.title}
                 </span>
-                {modCompleted > 0 && (
-                  <span className="text-[10px] text-muted/40 tabular-nums">
-                    {modCompleted}/{modItems.length}
-                  </span>
-                )}
+                <span className="shrink-0 font-mono text-[10px] text-muted/60 tabular-nums">
+                  {modCompleted}/{modItems.length}
+                </span>
               </div>
 
+              {/* Items */}
               <div className="space-y-px">
-                {modItems.map((item, idx) => {
+                {modItems.map((item) => {
                   const globalIdx = allItems.findIndex((i) => i.id === item.id);
                   const isCurrent = item.id === currentItemId;
-                  const isCompleted = item.type === 'lab'
-                    ? completedLabIds.includes(item.id)
-                    : completedChapterIds.includes(item.id);
+                  const isCompleted =
+                    item.type === 'lab'
+                      ? completedLabIds.includes(item.id)
+                      : completedChapterIds.includes(item.id);
                   const isBefore = globalIdx < currentIdx;
                   const isLocked = !isCurrent && !isCompleted && !isBefore && currentIdx !== -1;
 
@@ -78,39 +107,44 @@ export default function PlayerSidebar({
                     <Link
                       key={`${item.type}-${item.id}`}
                       href={href}
-                      className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition ${
+                      className={`group flex items-center gap-2.5 border-l-2 py-2 pl-4 pr-3 transition ${
                         isCurrent
-                          ? 'bg-accent/10 text-accent font-medium'
+                          ? 'border-accent bg-line/10 font-medium text-text'
                           : isLocked
-                          ? 'text-muted/30 pointer-events-none'
-                          : isCompleted
-                          ? 'text-muted/70 hover:text-text hover:bg-line/10'
-                          : 'text-muted hover:text-text hover:bg-line/10'
+                          ? 'border-transparent text-muted/30 pointer-events-none'
+                          : 'border-transparent text-muted hover:bg-line/10 hover:text-text'
                       }`}
                     >
-                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                          isCurrent
-                            ? 'bg-accent text-bg'
-                            : isCompleted
-                            ? 'bg-emerald-500/15 text-emerald-400'
-                            : isLab
-                            ? 'bg-amber-500/15 text-amber-400'
-                            : 'bg-line/15 text-muted/50'
-                        }`}>
-                          {isCompleted ? (
-                            <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                            </svg>
-                          ) : isLab ? (
-                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
-                            </svg>
-                          ) : (
-                            idx + 1
-                          )}
-                        </span>
+                      {/* Icon */}
+                      <span
+                        className={`shrink-0 ${
+                          isCompleted
+                            ? 'text-emerald-400/80'
+                            : isCurrent
+                            ? 'text-accent'
+                            : 'text-muted/60 group-hover:text-text'
+                        }`}
+                      >
+                        {isLab ? <ClipIcon className="h-4 w-4" /> : <FileIcon className="h-4 w-4" />}
+                      </span>
 
-                      <span className="truncate">{item.title}</span>
+                      {/* Title */}
+                      <span
+                        className={`min-w-0 flex-1 truncate text-xs ${
+                          isCurrent
+                            ? 'text-text font-medium'
+                            : isCompleted
+                            ? 'text-muted'
+                            : 'text-text'
+                        }`}
+                      >
+                        {item.title}
+                      </span>
+
+                      {/* Completed Checkmark */}
+                      {isCompleted && (
+                        <CheckIcon className="h-3.5 w-3.5 shrink-0 text-emerald-400/80" />
+                      )}
                     </Link>
                   );
                 })}

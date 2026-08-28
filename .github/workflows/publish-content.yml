@@ -39,8 +39,12 @@ jobs:
 
       - name: Publish to S3
         if: env.S3_BUCKET != ''
+        # cp (not sync): always overwrites, so a rebuilt artifact under an
+        # unchanged content-derived version can never be skipped. latest.json
+        # is uploaded last — it is the pointer clients act on.
         run: |
-          aws s3 sync out/ "s3://${S3_BUCKET}/"
+          aws s3 cp out/published/ "s3://${S3_BUCKET}/published/" --recursive
+          aws s3 cp out/latest.json "s3://${S3_BUCKET}/latest.json"
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

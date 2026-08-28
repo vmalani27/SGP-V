@@ -1,40 +1,24 @@
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
-import type { ContentModule } from '@/lib/content-types';
+import { computeCurriculumStatus } from '@/lib/curriculum';
+import type { ContentModule, ContentCourse, CourseChanges } from '@/lib/content-types';
 import CourseAccordion from './CourseAccordion';
 
 export default function CourseCurriculum({
   courseId,
+  course,
   modules,
+  changes,
 }: {
   courseId: string;
+  course: ContentCourse;
   modules: ContentModule[];
+  changes: CourseChanges;
 }) {
   const { getEnrollment } = useAuth();
-  const enrollment = getEnrollment(courseId);
-
-  const completedChapterIds: string[] = [];
-  if (enrollment?.progress) {
-    for (const modVal of Object.values(enrollment.progress)) {
-      if (modVal && typeof modVal === 'object') {
-        for (const [chId, status] of Object.entries(modVal as Record<string, unknown>)) {
-          if (status === 'completed') completedChapterIds.push(chId);
-        }
-      }
-    }
-  }
-
-  const completedLabIds: string[] = [];
-  if (enrollment?.labsProgress) {
-    for (const modVal of Object.values(enrollment.labsProgress)) {
-      if (modVal && typeof modVal === 'object') {
-        for (const [labId, status] of Object.entries(modVal)) {
-          if (status === 'completed') completedLabIds.push(labId);
-        }
-      }
-    }
-  }
+  const status = computeCurriculumStatus(course, getEnrollment(courseId));
+  const activeItemId = status.nextIncomplete?.id ?? null;
 
   return (
     <>
@@ -44,8 +28,10 @@ export default function CourseCurriculum({
           module={mod}
           courseId={courseId}
           moduleIndex={modIndex}
-          completedChapterIds={completedChapterIds}
-          completedLabIds={completedLabIds}
+          completedChapterIds={status.completedChapterIds}
+          completedLabIds={status.completedLabIds}
+          activeItemId={activeItemId}
+          changes={changes}
         />
       ))}
     </>

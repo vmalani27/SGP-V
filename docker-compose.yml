@@ -20,7 +20,6 @@ services:
       - CONTENT_LOCAL_DIR=/app/.content
     depends_on:
       - backend
-      - orchestrator
     restart: unless-stopped
 
   backend:
@@ -34,25 +33,12 @@ services:
     environment:
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
       - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON:-}
-      - CONTENT_PUBLIC_BASE_URL=${CONTENT_PUBLIC_BASE_URL:-http://localhost.floci.io:4566/course-content}
-      - ORCHESTRATOR_URL=http://orchestrator:8000
-      - WS_ORCHESTRATOR_URL=ws://orchestrator:8000
+      - CONTENT_PUBLIC_BASE_URL=${CONTENT_PUBLIC_BASE_URL:-http://localhost.floci.io:4566/my-content-bucket}
+      - ORCHESTRATOR_URL=http://host.docker.internal:8001
+      - WS_ORCHESTRATOR_URL=ws://host.docker.internal:8001
       - JWT_SECRET=${JWT_SECRET:-dev-only-change-in-production}
-    restart: unless-stopped
-
-  orchestrator:
-    build:
-      context: ./orchestrator
-    container_name: sgp-orchestrator
-    ports:
-      - "8001:8000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./orchestrator:/app
-    environment:
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - LAB_PREFIX=sgp-lab
-      - JWT_SECRET=${JWT_SECRET:-dev-only-change-in-production}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   worker:
@@ -73,7 +59,7 @@ services:
       - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON:-}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
       - SYNC_INTERVAL_SECONDS=300
-      - S3_BUCKET=course-content
+      - S3_BUCKET=my-content-bucket
       - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://localhost.floci.io:4566}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
@@ -82,7 +68,25 @@ services:
       - backend
     restart: unless-stopped
 
+  floci:
+    image: floci/floci:latest
+    container_name: floci
+    ports:
+      - "4566:4566"
+
+    environment:
+      FLOCI_STORAGE_MODE: hybrid
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+
+    volumes:
+      - floci-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    restart: unless-stopped
+
+
 volumes:
   frontend_next:
   frontend_content:
   worker_content:
+  floci-data:

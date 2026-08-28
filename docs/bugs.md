@@ -27,3 +27,79 @@ Notes
 References
 - Discussion and suggested validation patterns are recorded in the issue that inspired this entry.
 
+---
+
+## Resolved root causes
+
+These were root-caused and fixed; kept as records so the reasoning (and the
+rebuild steps) survive.
+
+### `artifact_sha256` convention mismatch (gzip stream vs raw tar) — worker checksum hard-fail
+
+Symptom
+- On `2026-08-28`, after a normal `publish-content` CI run, the worker cycle
+  failed repeatedly with:
+  `RuntimeError: Content tarball checksum mismatch for version d139fdc9a662520e`.
+  CI reported success — publishing never self-verifies; the worker is the
+  integrity gate.
+
+Root cause
+- The **committed** `scripts/generate_manifest.py` wrote
+  `artifact_sha256 = sha256(gzip.compress(tar_bytes))` — the hash of the
+  **gzipped stream** — while `worker/app/seeder.py`
+  (`download_content()`) verifies `sha256(gzip.decompress(tarball))` — the hash
+  of the **raw (uncompressed) tar bytes**. Those two cannot be equal; the gzip
+  stream is not byte-stable, the deterministic tar is.
+- The working tree already carried the fix (hash the raw tar bytes) but it had
+  not been committed, so CI kept running the old code. (The `7a0bb0f2e5b2e267`
+  sitting in a local `out/latest.json` was a stale local build of pre-push
+  content — the pushed content's real version was `d139fdc9a662520e`.)
+
+Fix / verification
+- `scripts/generate_manifest.py` now hashes the raw tar bytes — the one
+  convention shared by the generator, `worker/app/seeder.py`, and the frontend
+  bootstrap.
+- `latest.json` re-uploaded with the correct `artifact_sha256`; the worker
+  verified and seeded (`d139fdc9a662520e`, 2 synced / 0 errors).
+- `docs/CONTENT-PIPELINE.md` §5 now documents the raw-tar convention explicitly.
+
+Rebuild steps for a future occurrence
+1. `aws s3 cp published/{v}/content.tar.gz -` → `sha256(gunzip(...))` and
+   compare to `latest.json.artifact_sha256`.
+2. If they differ, the publisher hashed something else (usually the gzip
+   stream); regenerate `latest.json` with `generate_manifest.py`'s own value.
+
+References
+- The pipeline publish steps and trigger design: `docs/CONTENT-PIPELINE.md` §5
+  and §6 ("Triggered sync (webhook)").
+
+---
+
+### Task gates were validating the wrong tmux session (session name ≠ `session_id`)
+
+Symptom
+- A "run the container" task (building-images lab-5 task 4) never passed even
+  when the student ran the container themselves in the lab terminal.
+
+Root cause
+- `orchestrator/app/websocket/terminal.py` returns
+  `session.container_name, "lab"` — lab tmux sessions are literally named
+  `"lab"`, never `session_id`. The validation gate ran
+  `tmux capture-pane -pt {{session_id}}`, which could never match a real tmux
+  session, so the gate was untestable by design.
+
+Fix / verification
+- Validation redesigned to the **named-container** pattern: the student runs
+  `docker run --name <name> <image>` themselves; the validator checks a
+  container with that name exists, its `.Config.Image` is the expected image,
+  and `docker logs` contains the expected output (exact-match `RUN_OK`).
+  Applied to building-images lab-5 and lab-6; verified end-to-end in a sandbox
+  (happy path passes; missing container and wrong image both rejected).
+- `{{session_id}}` is no longer used by any content; backend `_substitute_session`
+  remains as harmless defense-in-depth.
+
+References
+- Lab YAML constraints this pattern encourages: a named container is persistent
+  (`--name`, no `--rm`) so `docker inspect`/`docker logs` can act on it.
+  See `docs/CONTENT-PIPELINE.md` §2 task types.
+

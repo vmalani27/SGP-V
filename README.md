@@ -5,30 +5,52 @@ A KodeKloud-style platform for learning Git and Docker through hands-on interact
 ## Architecture
 
 ```
-┌──────────────────┐         ┌──────────────────┐         ┌──────────────┐
-│  sgp-frontend    │────────→│  sgp-backend     │────────→│  Firebase    │
-│  Next.js 3000    │         │  FastAPI 8000    │         │  Auth + DB   │
-└──────────────────┘         └───────┬──────────┘         └──────────────┘
-                                     │
-                                     │ REST + WebSocket
-                                     ▼
-                              ┌──────────────────┐         ┌──────────────┐
-                              │  sgp-orchestrator│────────→│  Docker      │
-                              │  FastAPI 8001    │         │  + Sysbox    │
-                              └──────────────────┘         └──────────────┘
-
-                              ┌──────────────────┐         ┌──────────────┐
-                              │  sgp-worker      │────────→│  Firebase    │
-                              │  FastAPI 8002    │         │  Firestore   │
-                              └──────────────────┘         └──────────────┘
+                          ┌─────────────────────── HOST · docker compose ───────────────────────┐
+                          │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+                          │  │ sgp-frontend │─→│ sgp-backend  │─→│  Firebase    │              │
+                          │  │  Next.js:3000│  │ FastAPI:8000 │  │  Auth + DB   │              │
+                          │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  ┌────────┐ │
+                          │  bootstrap│ REST + WS     │ Firestore        │ firebase │  sgp-   │ │
+                          │         └─────────┐      └── host.docker.internal:8001      │worker  │ │
+                          └───────────────────┼─────────────────────────────────────────│:8002   │ │
+                                              ▼                                        │ S3→FS  │ │
+                                              │                                        └───┬────┘ │
+                                              ▼                                            │ seed
+                          ┌──────────────┐                                            ┌────▼───────┐
+                          │  S3 bucket   │                                            │ Firebase   │
+                          │  (Floci dev) │◀──────────────────────────────────────────│ Firestore  │
+                          │ latest.json +│   download + verify artifact_sha256        └────────────┘
+                          │ published/…  │
+                          └──────────────┘
+                                   ▲
+                                   │ CI (publish-content) validate → generate_manifest → upload
+                          ┌────────┴─────┐   ┌──────────────────────────────────────────────────────┐
+                          │              │   │  VAGRANT VM · Ubuntu Server 22.04 · VMware/VirtualBox│
+                          │              │   │  ┌──────────────────┐      ┌─────────────────────┐   │
+                          │              │   │  │  sgp-orchestrator│───→│  Docker Engine       │   │
+                          │              │   │  │  FastAPI :8001   │     │  + Sysbox            │   │
+                          │              │   │  │  (guest :8000)   │     │  (lab containers)    │   │
+                          │              │   │  └──────────────────┘      └─────────────────────┘   │
+                          └──────────────┘   └──────────────────────────────────────────────────────┘
 ```
+
+The docker compose stack (`frontend`, `backend`, `worker`, `floci`) runs on the
+host; the **orchestrator runs inside a Vagrant VM** (`Vagrantfile`, provisioned by
+`provisioning/`) — the VM's own Docker + Sysbox engine hosts the lab containers,
+and the VM's guest `:8000` is host-forwarded to `:8001` where the backend reaches it.
 
 | Service | Port | Responsibility |
 |---------|------|----------------|
-| **sgp-frontend** | 3000 | UI, auth flow, learning wizard, xterm.js terminal |
-| **sgp-backend** | 8000 | API gateway, Firebase auth, content serving, enrollment/progress |
-| **sgp-orchestrator** | 8001 | Docker container lifecycle, command execution, WebSocket terminal |
-| **sgp-worker** | 8002 | Content validation, Firestore metadata sync |
+| **sgp-frontend** | 3000 | UI, auth flow, learning wizard, xterm.js terminal, **content bootstrap** (downloads the published artifact from S3, verifies it, extracts it locally, and serves course content from local files) |
+| **sgp-backend** | 8000 | **Pure metadata + data-location API**: Firebase auth, course catalog/TOC from Firestore, enrollment/progress, lab lifecycle proxy, and the content version handshake (`GET /api/v1/content/version`). Reads **no content files**. |
+| **sgp-orchestrator** | 8001 | Docker container lifecycle, command execution, WebSocket terminal — runs **inside the Vagrant VM** (guest 8000, host-forwarded to 8001) |
+| **sgp-worker** | 8002 | **S3-only**: downloads the published content artifact, validates it, seeds course metadata to Firestore |
+
+> The backend no longer serves course files. Course metadata lives in Firestore
+> (seeded by the worker), the content bytes live in the S3 bucket and, once
+> downloaded, in the frontend's local content dir. For the full plan see
+> [docs/CLIENT-APP-PLAN.md](docs/CLIENT-APP-PLAN.md) and
+> [docs/CONTENT-PIPELINE.md](docs/CONTENT-PIPELINE.md).
 
 ## What Each Component Does
 
@@ -36,26 +58,39 @@ A KodeKloud-style platform for learning Git and Docker through hands-on interact
 - Login/register with Firebase Authentication
 - Course catalog and enrollment
 - Chapter viewer with theory + quizzes
-- Lab viewer with tasks runner, WebSocket terminal, and submit flow
+- Lab viewer with task runner, WebSocket terminal, and submit flow
 - Runs YAML-driven lab tasks: multiple choice, terminal commands, port checks
 - Success animation + Submit Lab modal (records completion, destroys container)
-- Gets all content from backend API (never talks to orchestrator directly)
+- **Content bootstrap** (`lib/content-local.ts`): on first content request it
+  calls `GET /api/v1/content/version`, compares against a local version marker,
+  and if changed downloads `published/{version}/content.tar.gz` from S3,
+  verifies its sha256 against the handshake, extracts into `/app/.content/data`,
+  and writes the marker. Subsequent requests are a no-op.
+- Serves chapters / lab instructions / lab config from the local content dir via
+  same-origin `/api/local-content/*` routes — no backend content calls.
 - Drives the learning flow (modules → chapters → labs)
 
 ### Backend (`backend/`)
 - Verifies Firebase ID tokens (Bearer auth)
 - Syncs user profiles to Firestore (`users` collection)
 - Tracks enrollment and progress in Firestore (`enrollments` collection)
-- Serves all course content via `ContentProvider` abstraction (filesystem now, S3 later)
+- Serves the **course catalog + TOC from Firestore** (`GET /api/v1/courses`, `GET /api/v1/courses/{id}`)
+- Exposes the **content version handshake**: `GET /api/v1/content/version` →
+  `{version, download_url, artifact_sha256}` derived from the worker-persisted
+  `contentVersion`/`artifact_sha256` in Firestore + a configured public base URL
 - Proxies lab lifecycle to orchestrator (start, stop, resume, restart, destroy, exec)
+  — the **lab environment config and task validation specs are supplied by the
+  client** in the request bodies; the backend never reads `lab.yaml`
 - Proxies the terminal WebSocket: browser connects to the backend (`/api/v1/labs/ws/lab`), the backend bridges frames to the orchestrator's internal `/ws/terminal` — the orchestrator address is never exposed to the browser and the JWT is sent as a first-message handshake, not in the URL
 - Validates lab task answers server-side (exec in container — answers never leave the container)
 - Tracks chapter and lab completion in Firestore (`progress` + `labsProgress`)
-- Computes enrollment percentage from `totalChapters` in Firestore courses
 
-### Orchestrator (`orchestrator/`)
+### Orchestrator (`orchestrator/` — runs inside the Vagrant VM)
+- Runs on the VM (see `Vagrantfile`: synced folder `./orchestrator → /opt/sgp/orchestrator`,
+  guest `:8000` → host `:8001`, provisioned by `provisioning/install-{docker,sysbox,orchestrator}.sh`
+  and `provisioning/build-lab-images.sh`)
 - Creates Sysbox Docker containers for lab environments (labelled `com.sgp.user_id` / `course_id` / `lab_id`)
-- Runs arbitrary commands inside containers (`POST /labs/{id}/exec`)
+- Runs arbitrary commands inside containers (`POST /labs/{id}/exec`, supports a `user` field)
 - Provides WebSocket terminal (`/ws/terminal`, JWT first-message handshake) with tmux persistence — the browser connects via the backend proxy
 - Source of truth for sessions: `GET /labs/by_key` recovers a live container from its labels after a restart
 - Resizes the remote PTY to match the client (`resize` frames), so terminals stay in sync
@@ -63,17 +98,28 @@ A KodeKloud-style platform for learning Git and Docker through hands-on interact
 - Zero content knowledge — reads no course files
 
 ### Worker (`worker/`)
-- Validates `content-v2/` schema (index.json, course.yaml + module.yaml TOC, markdown existence, lab YAML structure)
-- Syncs course metadata to Firestore `courses` collection
-- Idempotent: uses `contentHash` to skip unchanged courses
-- Removes orphaned courses from Firestore
-- Runs on a polling loop (300s interval)
-- **Does NOT do anything at lab runtime** — no Docker socket, no container/image management. Base lab images
-  (`sgp-lab-ubuntu/docker/git`) are built from `orchestrator/lab-images/` and ensured (pull/build) by the
-  orchestrator at start; the worker only reads content and writes course metadata to Firestore.
+- **S3-only** — never reads a mounted `content-v2`. On every cycle:
+  1. `download_content()` — fetch `latest.json`, compare `version` with the
+     already-seeded `contentVersion`; if changed, download the tarball, verify
+     `artifact_sha256` + the per-file manifest, and extract into the writable
+     volume (`/data/content`). Integrity failures raise — a corrupt download
+     never seeds silently.
+  2. `validate_all()` — schema checks on the downloaded artifact (errors block
+     seeding; warnings like skeleton labs do not).
+  3. `sync_courses()` — **full reconciliation**: rebuilds the derived document
+     and rewrites Firestore whenever the stored doc differs, so stale derived
+     fields (e.g. `totalChapters: 0`) can never persist. `contentHash` is kept
+     for cheap skip checks but never gates a write. Orphaned courses are deleted.
+- Runs on a polling loop (300s interval); `POST /sync` forces a cycle; `GET /status`
+  shows `published_version` and the last result
+- **Does NOT do anything at lab runtime** — no Docker socket, no container/image
+  management. Base lab images (`sgp-lab-ubuntu/docker/git`) are built from
+  `orchestrator/lab-images/` and ensured (pull/build) by the orchestrator at start.
 
 ### Content (`content-v2/`)
-Single source of truth for all course data. Mounted read-only into all services.
+Single source of truth for all course data. **Published to S3** (CI on push to
+`dev`, or manually via `scripts/`), then downloaded by the worker (metadata) and
+by the frontend (bytes).
 
 ```
 content-v2/
@@ -101,42 +147,63 @@ tasks:
     prompt: "How many images are available?"
     type: multiple_choice
     validation:
-      command: "docker images -q | wc -l"
-      match_type: exact
+      expected_answer: "2"
 ```
 Lab config lives at `labs/{lab-id}/lab.yaml`, instructions at `labs/{lab-id}/instructions.md`.
 The environment is always a string reference to a shared `environments/{name}.yaml`.
 
-> End-to-end reference (file templates, validation, Firestore seeding, serving,
-> frontend rendering, authoring workflow): see [docs/CONTENT-PIPELINE.md](docs/CONTENT-PIPELINE.md).
+> End-to-end reference (file templates, validation, Firestore seeding, publishing,
+> authoring workflow): see [docs/CONTENT-PIPELINE.md](docs/CONTENT-PIPELINE.md).
 
 ### Validation model
-- All validation is exec-based and server-side. The frontend calls `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` with the task id (and selected option for multiple-choice tasks).
-- The backend runs the validation command in the lab container via the orchestrator and matches the output against `expected_output` using the `match_type` (contains/exact/regex/port).
-- Task types: `multiple_choice`, `terminal_action`, `port_check`. Multiple-choice options are resolved server-side (dynamic options supported), so answers never ship to the client.
-- **No static answers in content files.** Correct answers never leave the container.
+- Two distinct kinds of checks (see CONTENT-PIPELINE §"Answer-based vs state-based"):
+  - **Answer-based** — `multiple_choice`. The student's choice is compared to
+    `validation.expected_answer`; nothing is executed, so it stays valid
+    regardless of later lab state.
+  - **State-based** — `terminal_action` (and `port_check`/`file_check`). The
+    backend runs `validation.command` in the container and decides from
+    `expected_exit_code` (preferred) or matches the output via `match_type`
+    (contains/exact/regex/line_count).
+- Validation runs server-side; the backend executes the client-supplied `command`
+  in the live container via the orchestrator. **No static answers leave the server.**
+- `match_type`/`expected_output` are only consulted when `expected_exit_code` is absent.
 
 ## Firestore Collections
 
 | Collection | Written by | Document ID | Shape |
 |------------|-----------|-------------|-------|
-| `courses` | Worker | Course ID (e.g. `git-fundamentals`) | Full module/chapter/lab TOC + `contentHash` + `totalChapters` |
+| `courses` | Worker | Course ID (e.g. `git-fundamentals`) | `{id, title, description, level, modules:[{id,title,description,order, items:[{type,id,title}], chapters:[{id,title,description,order}], labs:[{id,title,description,chapterId,order}]}], totalChapters, totalLabs, contentHash, contentVersion, artifact_sha256, updatedAt, createdAt}` (no `slug`/`estimatedHours`) |
 | `users` | Backend (on login) | Firebase Auth UID | `enrolledCourses: [courseId, ...]` |
-| `enrollments` | Backend (on enroll/progress) | `{uid}_{courseId}` | `progress: {moduleId: {chapterId: "completed"}}` + `labsProgress: {moduleId: {labId: "completed"}}` |
+| `enrollments` | Backend (on enroll/progress) | `{uid}_{courseId}` | `progress: {moduleId: {chapterId: "completed"}}` + `labsProgress: {moduleId: {labId: "completed"}}` + `taskResults: {moduleId: {labId: {taskId: {attempts, passed, firstPassedAt?, lastAttemptAt}}}}` (written on every lab task validation; `passed` is sticky, `attempts` counts every check) |
 
-## Content API (Backend)
+## Content Delivery Model
 
-Backend is the sole proxy for all content. Content is served via `ContentProvider` abstraction — swap `FilesystemProvider` for `S3Provider` when S3 is ready.
+```
+content-v2/ ──CI / scripts──► S3 bucket (Floci dev)     canonical content bytes, public read
+
+S3 ──► worker (cloud) ──► Firestore                     catalog metadata + contentVersion
+backend (cloud) = Firestore API: auth, progress, catalog + GET /content/version
+
+frontend (student machine):
+    boot: GET /content/version  →  compare local marker
+          if changed: download {content.tar.gz} → verify artifact_sha256 → extract
+          serve TOC / chapters / lab instructions / lab config from local files
+orchestrator: spawns lab containers from the client-supplied env config in `start`
+```
 
 | Endpoint | Auth | Description |
 |----------|------|-------------|
-| `GET /api/v1/content/courses` | No | Course catalog |
-| `GET /api/v1/content/courses/{id}` | No | Course TOC (modules, chapters, labs with titles) |
-| `GET /api/v1/content/courses/{id}/chapters/{chapterId}` | No | Chapter markdown + metadata |
-| `GET /api/v1/content/courses/{id}/labs` | No | Lab list for a course |
-| `GET /api/v1/content/courses/{id}/labs/{labId}/instructions` | No | Lab instructions markdown |
-| `GET /api/v1/content/courses/{id}/labs/{labId}/config` | No | Lab YAML config (environment resolved + tasks) |
-| `GET /api/v1/content/courses/{id}/labs/{labId}/tasks` | No | Lab tasks (extracted from config, flat format) |
+| `GET /api/v1/content/version` | No | `{version, download_url, artifact_sha256}` — the client's bootstrap handshake (no file I/O) |
+| `GET /api/v1/courses` | No | Course catalog from Firestore |
+| `GET /api/v1/courses/{id}` | No | Course TOC from Firestore (modules/items/chapters/labs) |
+| `GET /api/local-content/chapters/{courseId}/{chapterId}` | No | Chapter markdown served from the frontend's **local** content dir |
+| `GET /api/local-content/labs/{courseId}/{labId}/instructions` | No | Lab instructions served locally |
+| `GET /api/local-content/labs/{courseId}/{labId}/config` | No | Lab YAML config served locally (environment resolved) |
+| `GET /api/local-content/labs/{courseId}/{labId}/tasks` | No | Lab tasks served locally |
+
+The old file-serving backend routes (`/api/v1/content/courses`, `/content/chapters`,
+`/content/labs/...`) and the `FilesystemProvider` abstraction have been **removed** —
+the backend never reads course files.
 
 ## Lab Lifecycle API (Backend Proxy)
 
@@ -144,15 +211,17 @@ All lab lifecycle calls are proxied through the backend. The frontend never talk
 
 | Endpoint | Auth | Description |
 |----------|------|-------------|
-| `GET  /api/v1/labs/courses/{id}/labs/{labId}/active` | Yes | Reconnect to existing session |
-| `POST /api/v1/labs/courses/{id}/labs/{labId}/start` | Yes | Start lab container |
+| `GET  /api/v1/labs/courses/{id}/labs/{labId}/active` | Yes | Reconnect to existing session (label-based, survives restarts) |
+| `POST /api/v1/labs/courses/{id}/labs/{labId}/start` | Yes | Start lab container — body is the **client-supplied** env config `{image, apt_packages, pre_pull, setup}` |
 | `GET  /api/v1/labs/courses/{id}/labs/{labId}/status/{sid}` | No | Session status |
 | `POST /api/v1/labs/courses/{id}/labs/{labId}/stop/{sid}` | No | Stop container |
 | `POST /api/v1/labs/courses/{id}/labs/{labId}/resume/{sid}` | No | Resume container |
 | `DELETE /api/v1/labs/courses/{id}/labs/{labId}/{sid}` | Yes | Destroy container |
 | `POST /api/v1/labs/courses/{id}/labs/{labId}/exec/{sid}` | No | Run command in container |
-| `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` | Yes | Validate a task answer (exec in container) |
+| `POST /api/v1/labs/courses/{id}/labs/{labId}/tasks` | Yes | Enrich the **client-supplied** task list (dynamic multiple-choice options resolved in-container) |
+| `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` | Yes | Validate a task using the **client-supplied** `task_type` + `validation` spec (exec in container) |
 | `POST /api/v1/labs/courses/{id}/labs/{labId}/token/{sid}` | Yes | Refresh WebSocket token |
+| `WS /api/v1/labs/ws/lab` | Handshake | Proxied terminal WebSocket (JWT as first message) |
 
 ## Quick Start
 
@@ -160,6 +229,9 @@ All lab lifecycle calls are proxied through the backend. The frontend never talk
 - Docker Engine with Sysbox runtime (`sysbox-runc`)
 - Docker Compose v2
 - A Firebase project (Auth + Firestore enabled)
+- An S3-compatible store reachable at `http://localhost.floci.io:4566` (Floci for dev)
+  with a `course-content` bucket — or point the worker/backend at any S3 endpoint
+  via env vars
 
 ### 1. Configure environment
 
@@ -168,28 +240,55 @@ Create `.env` in the project root:
 # Firebase (required)
 FIREBASE_PROJECT_ID=your-project-id
 FIREBASE_CREDENTIALS_JSON={"type":"service_account",...}
+
+# S3 content store (dev Floci)
+CONTENT_PUBLIC_BASE_URL=http://localhost.floci.io:4566/course-content
+AWS_ENDPOINT_URL=http://localhost.floci.io:4566
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
 ```
 
-The frontend environment variables are set in `docker-compose.yml`:
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-```
+### 2. Publish content (once)
 
-### 2. Start all services
+The backend and worker are S3-only, so the bucket must have a published artifact
+before the stack works. In CI this happens automatically on push to `dev`
+(`.github/workflows/publish-content.yml`). Locally:
 
 ```bash
-docker compose up
+# Validate the content (exit 0 required)
+python scripts/validate_content.py content-v2/
+
+# Build the deterministic artifact into out/
+python scripts/generate_manifest.py content-v2/ out/
+
+# Publish to the S3-compatible store (Floci dev)
+export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
+aws --endpoint-url http://localhost.floci.io:4566 s3 mb s3://course-content   # once
+aws --endpoint-url http://localhost.floci.io:4566 s3 sync out/ s3://course-content/
 ```
 
-### 3. Seed course data
+### 3. Start all services
 
-The worker automatically validates and syncs `content-v2/` to Firestore on startup (and every 300s). Check the worker logs:
+The compose stack runs the frontend, backend, worker, and Floci on the host;
+the orchestrator runs in the Vagrant VM:
+
+```bash
+docker compose up --build
+vagrant up          # provisions + starts the VM (Docker + Sysbox + orchestrator)
+```
+
+### 4. Verify the worker syncs
+
+The worker downloads the artifact from S3, validates it, and seeds Firestore on
+startup (and every 300s, or immediately via `POST /sync`):
 
 ```bash
 docker compose logs -f worker
+curl http://localhost:8002/status        # status: ok, published_version set
+curl http://localhost:8000/api/v1/content/version   # {version, download_url, artifact_sha256}
 ```
 
-### 4. Build lab images (for orchestrator)
+### 5. Build lab images (for orchestrator)
 
 ```bash
 cd orchestrator/lab-images
@@ -212,19 +311,25 @@ docker build -t sgp-lab-git:latest -f Dockerfile.git .
 All services use hot reload:
 - **Frontend**: Next.js dev server + `CHOKIDAR_USEPOLLING=true`
 - **Backend**: Uvicorn `--reload` (watches `.py` files)
-- **Orchestrator**: Uvicorn `--reload` (watches `.py` files)
 - **Worker**: Uvicorn `--reload` (watches `.py` files)
+- **Orchestrator**: Uvicorn `--reload` inside the Vagrant VM (`./orchestrator` is
+  synced to the VM).
 
 ### Volume mounts
 
 | Mount | Container | Purpose |
 |-------|-----------|---------|
-| `./content-v2:/app/content:ro` | Backend, Worker | Read-only course content |
+| `frontend_content:/app/.content` | Frontend | Persisted local content store (downloaded artifact + version marker) |
+| `worker_content:/data/content` | Worker | Persisted downloaded content (S3 extraction target) |
 | `./next-app:/app` | Frontend | Source code hot reload |
 | `./backend:/app` | Backend | Source code hot reload |
-| `./orchestrator:/app` | Orchestrator | Source code hot reload |
 | `./worker:/app` | Worker | Source code hot reload |
-| `/var/run/docker.sock` | Orchestrator | Docker daemon access for lab containers |
+| `./backend/app/core/credentials.json:/app/credentials.json:ro` | Worker | Firebase service account (fallback credential source) |
+
+The orchestrator is **not** in the compose stack: it runs inside the Vagrant VM
+against the VM's own Docker socket (VM's `docker.sock` is not the host's).
+
+> The backend has **no** `content-v2` mount — it reads no course files.
 
 ### Useful commands
 
@@ -241,10 +346,13 @@ docker compose logs -f
 # View logs for one service
 docker compose logs -f backend
 
+# Force a worker sync cycle
+curl -X POST http://localhost:8002/sync
+
 # Stop all services
 docker compose down
 
-# Stop and remove volumes (fresh start)
+# Stop and remove volumes (fresh content re-download)
 docker compose down -v
 
 # Rebuild a single service
@@ -255,8 +363,10 @@ docker compose up --build backend
 
 ```
 SGP_V/
-├── docker-compose.yml                 # 4 services: frontend, backend, orchestrator, worker
-├── content-v2/                        # Source of truth for all course data
+├── docker-compose.yml                 # host stack: frontend, backend, worker, floci (orchestrator runs in the Vagrant VM)
+├── Vagrantfile                        # orchestrator VM: Ubuntu 22.04, guest :8000 → host :8001
+├── provisioning/                      # VM provisioning: install-{docker,sysbox,orchestrator}.sh, build-lab-images.sh
+├── content-v2/                        # Source of truth for all course data (published to S3)
 │   ├── index.json                     # Course catalog (v2)
 │   ├── environments/                  # Shared environment definitions
 │   │   └── docker-basic.yaml          # base_image, pre_pull for DinD labs
@@ -264,24 +374,18 @@ SGP_V/
 │       ├── git-fundamentals/
 │       │   ├── course.yaml            # TOC — module refs (canonical YAML)
 │       │   └── modules/
-│       │       ├── git-basics/
-│       │       │   ├── module.yaml    # ordered items (chapters + labs)
-│       │       │   ├── chapters/      # chapter-1.md, chapter-2.md, chapter-3.md
-│       │       │   └── labs/          # lab-N/lab.yaml + lab-N/instructions.md
+│       │       ├── git-basics/        # module.yaml + chapters/ + labs/
 │       │       ├── branching-history/
 │       │       ├── remote-collaboration/
 │       │       └── complete-workflow/
 │       └── docker-mastery/
 │           ├── course.yaml            # TOC — module refs
 │           └── modules/
-│               ├── docker-fundamentals/
-│               │   ├── module.yaml    # ordered items (chapters + labs)
-│               │   ├── chapters/      # chapter-1.md, chapter-2.md, chapter-3.md
-│               │   └── labs/          # lab-N/lab.yaml + lab-N/instructions.md
+│               ├── docker-fundamentals/   # module.yaml + chapters/ + labs/
 │               ├── building-images/ ...
 │               ├── container-networking/ ...
 │               └── persistent-storage/ ...
-├── orchestrator/                      # Docker lab executor (FastAPI)
+├── orchestrator/                      # Docker lab executor (FastAPI) — runs inside the Vagrant VM
 │   ├── lab-images/                    # Base image Dockerfiles
 │   │   ├── Dockerfile.ubuntu          # sgp-lab-ubuntu: systemd + student user
 │   │   ├── Dockerfile.docker          # sgp-lab-docker: + Docker daemon (DinD)
@@ -294,7 +398,7 @@ SGP_V/
 │   │   │   ├── health.py              # GET /health
 │   │   │   └── schemas.py             # GET /schemas/yaml, /schemas/sample
 │   │   ├── services/
-│   │   │   └── docker_service.py      # Docker SDK wrapper
+│   │   │   └── docker_service.py      # Docker SDK wrapper (exec supports user)
 │   │   ├── models/
 │   │   │   └── session.py             # LabSession, LabStatus
 │   │   └── websocket/
@@ -305,65 +409,54 @@ SGP_V/
 │   │   └── README.md                  # Course author guide
 │   ├── Dockerfile
 │   └── requirements.txt
-├── backend/                           # API gateway + auth + content + lab proxy (FastAPI)
+├── backend/                           # Metadata API: auth + catalog + progress + lab proxy (FastAPI)
 │   ├── app/
 │   │   ├── main.py
-│   │   ├── config.py                  # ORCHESTRATOR_URL, CONTENT_DIR, CONTENT_SOURCE
+│   │   ├── config.py                  # ORCHESTRATOR_URL, CONTENT_PUBLIC_BASE_URL, JWT_*
 │   │   ├── core/
 │   │   │   ├── firebase_config.py     # Admin SDK init
+│   │   │   ├── credentials.json       # Service account (worker mounts this too)
 │   │   │   └── firestore_db.py        # Firestore client
 │   │   ├── models/
 │   │   │   └── user.py
 │   │   ├── routers/
-│   │   │   ├── users.py               # User sync, profile, enrollments (% calc)
-│   │   │   ├── courses.py             # CRUD, enroll, progress (PUT /progress)
-│   │   │   ├── content.py             # Content API (TOC, chapters, labs, tasks)
-│   │   │   └── labs.py                # Lab lifecycle proxy → orchestrator
-│   │   ├── services/
-│   │   │   └── content_provider.py    # ContentProvider ABC + FilesystemProvider
+│   │   │   ├── users.py               # User sync, profile, enrollments
+│   │   │   ├── courses.py             # Catalog/TOC from Firestore, enroll, progress
+│   │   │   ├── content.py             # GET /api/v1/content/version (version handshake only)
+│   │   │   └── labs.py                # Lab lifecycle proxy → orchestrator (client-supplied config)
 │   │   └── utils/
 │   │       └── firebase_util.py       # Token verification
 │   ├── Dockerfile
 │   └── requirements.txt
-├── worker/                            # Content sync to Firestore (FastAPI)
+├── worker/                            # S3 → validate → seed Firestore (FastAPI)
 │   ├── app/
 │   │   ├── main.py                    # Background sync loop + /health, /status, /sync
-│   │   ├── config.py                  # CONTENT_DIR, Firebase init, get_firestore()
-│   │   ├── validator.py               # v2 schema: index, TOC, lab YAML (both formats)
-│   │   └── seeder.py                  # Firestore upsert with contentHash, orphan cleanup
+│   │   ├── config.py                  # CONTENT_DIR_S3, S3_*, Firebase init
+│   │   ├── validator.py               # v2 schema: index, TOC, lab YAML
+│   │   └── seeder.py                  # download_content + full-reconcile sync_courses
 │   ├── Dockerfile
 │   └── requirements.txt
+├── scripts/
+│   ├── generate_manifest.py           # Build out/ artifact (deterministic tarball + manifest)
+│   └── validate_content.py            # CI/local content validation gate
+├── postman/                           # End-to-end API test suite + env (see postman/README.md)
+├── out/                               # Local publish output (gitignored)
 └── next-app/                          # Frontend (Next.js)
     ├── app/
     │   ├── page.tsx                   # Landing page
     │   ├── login/page.tsx
     │   ├── register/page.tsx
     │   ├── dashboard/page.tsx
-    │   └── courses/
-    │       └── [courseId]/
-    │           ├── page.tsx           # Course detail
-    │           ├── CourseProgressHeader.tsx
-    │           ├── chapters/[chapterId]/page.tsx
-    │           └── labs/[labId]/page.tsx
-    ├── components/
-    │   ├── Navbar.tsx
-    │   ├── LabTerminal.tsx               # xterm.js terminal (WebSocket + resize)
-    │   ├── LabTaskRenderer.tsx           # steps through lab tasks
-    │   ├── MultipleChoiceTask.tsx        # server-validated options
-    │   ├── TerminalActionTask.tsx        # run-command tasks
-    │   ├── PortCheckTask.tsx             # port/path check tasks
-    │   ├── TaskProgress.tsx              # n/total indicator
-    │   ├── CelebrationOverlay.tsx        # correct-answer animation
-    │   ├── SubmitLabModal.tsx            # submit flow (record + destroy)
-    │   ├── ChapterClient.tsx
-    │   ├── LearningPlayer.tsx
-    │   └── ...
+    │   ├── api/local-content/...      # Same-origin routes serving local content
+    │   └── courses/[courseId]/...     # Course detail, chapters, labs
+    ├── components/                    # Navbar, LabTerminal, LabTaskRenderer, tasks, ...
     ├── lib/
     │   ├── firebase.ts
     │   ├── auth-context.tsx
     │   ├── api.ts
     │   ├── task-types.ts
-    │   ├── content-server.ts
+    │   ├── content-server.ts          # Catalog/TOC helpers (Firestore-backed)
+    │   ├── content-local.ts           # Content bootstrap: download/verify/extract + local readers
     │   └── content-types.ts
     ├── Dockerfile
     └── package.json
@@ -377,10 +470,11 @@ SGP_V/
 |----------|---------|-------------|
 | `FIREBASE_PROJECT_ID` | — | Firebase project ID |
 | `FIREBASE_CREDENTIALS_JSON` | — | Service account JSON (or use `GOOGLE_APPLICATION_CREDENTIALS`) |
-| `CONTENT_DIR` | `/app/content` | Path to content-v2 mount |
-| `CONTENT_SOURCE` | `filesystem` | Content provider backend (`filesystem` or `s3` in future) |
+| `CONTENT_PUBLIC_BASE_URL` | — | Public S3 base URL used to build the artifact `download_url` (e.g. `http://localhost.floci.io:4566/course-content`) |
 | `ORCHESTRATOR_URL` | `http://orchestrator:8000` | Orchestrator REST base URL (internal) |
 | `WS_ORCHESTRATOR_URL` | `ws://localhost:8001` | Orchestrator WS base URL (internal, server-side only — never sent to the browser) |
+| `JWT_SECRET` | `dev-only-change-in-production` | Secret for terminal WebSocket handshake tokens |
+| `JWT_EXPIRY_MINUTES` | `45` | WebSocket token lifetime |
 
 ### Orchestrator
 
@@ -394,75 +488,59 @@ SGP_V/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CONTENT_DIR` | `/app/content` | Path to content-v2 mount |
+| `CONTENT_DIR_S3` | `/data/content` | Writable volume where downloaded content is extracted |
+| `S3_BUCKET` | — | Bucket with the published artifact |
+| `AWS_ENDPOINT_URL` | — | S3-compatible endpoint (e.g. `http://localhost.floci.io:4566`) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | — | S3 credentials |
 | `FIREBASE_PROJECT_ID` | — | Firebase project ID |
-| `FIREBASE_CREDENTIALS_JSON` | — | Service account JSON |
-| `GOOGLE_APPLICATION_CREDENTIALS` | `/app/credentials.json` | Fallback credential path |
+| `FIREBASE_CREDENTIALS_JSON` | — | Service account JSON (or mount `credentials.json`) |
 | `SYNC_INTERVAL_SECONDS` | `300` | Polling interval for content sync |
 
 ### Frontend
 
 | Variable | Description |
 |----------|-------------|
-| `NEXT_PUBLIC_API_BASE_URL` | Backend URL (default: `http://localhost:8000`) |
+| `NEXT_PUBLIC_API_BASE_URL` | Backend URL the browser uses (default: `http://localhost:8000`) |
+| `BACKEND_API_URL` | Backend URL the Next.js server uses for the version handshake (internal) |
+| `CONTENT_LOCAL_DIR` | Local content store dir (default: `/app/.content`) |
 | `NEXT_PUBLIC_FIREBASE_*` | Firebase client config |
-
-## Deployment Architecture (target)
-
-Current state: all services run locally with `content-v2/` mounted as a Docker volume. Worker polls the filesystem.
-
-Target: S3-backed content with event-driven sync.
-
-```
-┌─────────────┐     S3 event      ┌─────────────┐
-│  S3 Bucket  │──────────────────→│   Worker     │
-│ (content-v2)│   (PUT/DELETE)    │ (Lambda)     │
-└──────┬──────┘                   └──────┬──────┘
-       │                                  │
-       │  GET (presigned URL)            │  sync metadata
-       │                                  ▼
-       │                          ┌──────────────┐
-       │                          │   Firestore   │
-       │                          └──────────────┘
-       ▼
-┌─────────────┐
-│   Backend    │  reads from S3
-│  (FastAPI)   │
-└─────────────┘
-```
-
-- **Content authoring**: push to S3, no rebuild needed
-- **Worker**: Lambda triggered by S3 events, validates + syncs to Firestore instantly
-- **Backend**: reads content from S3 (presigned URLs or CloudFront)
-- **Course immutability**: once a course has enrolled users, structural changes are append-only. See `MIGRATION.md` for full rules.
 
 ## Current Status
 
 ### Working
 - Firebase login/register + user sync
-- Course catalog from Firestore
+- Course catalog + TOC served from **Firestore** (worker-seeded)
 - Enrollment and progress tracking with percentage calculation
 - Chapter theory viewer + quiz flow (client-side grading, progress persisted to Firestore)
-- Content-v2 as source of truth with worker sync
-- Worker validates both YAML and JSON course formats, syncs metadata to Firestore
-- Worker reads `course.yaml` (primary) with `course.json` fallback
-- Backend content serving via ContentProvider abstraction (filesystem reads, S3-ready)
-- Orchestrator labs-only mode — zero content knowledge
-- Lab lifecycle proxy: start, stop, resume, restart, destroy, exec through backend
-- **Lab task runner**: `multiple_choice`, `terminal_action`, and `port_check` tasks, validated server-side (answers never leave the container)
-- Success animation + Submit Lab modal on completion (records lab completion to Firestore, destroys the container, returns to course)
-- WebSocket terminal with tmux persistence, binary resize frames, and PTY resize so the remote size matches the local terminal
+- **Client-side content bootstrap**: version handshake → download → sha256 verify → local extract → serve (chapters/lab instructions/config come from `/app/.content`, no backend content calls)
+- Backend is a pure metadata + data-location API (`GET /api/v1/content/version`); no `content-v2` mount, no `FilesystemProvider`
+- Worker is **S3-only** and performs a **full-reconcile** Firestore sync (populated `modules[]`, correct `totalChapters`/`totalLabs`, `contentVersion` + `artifact_sha256` persisted, idempotent skips)
+- Content publishing via `scripts/` + CI (`publish-content.yml`): validate → generate manifest/tarball → sync to S3
+- Lab lifecycle proxy (start/stop/resume/restart/destroy/exec) with **client-supplied** env config + task validation specs
+- **Lab task runner**: `multiple_choice`, `terminal_action`, `port_check`, and `file_check` tasks; answer-based vs state-based validation (exit-code checks preferred); dynamic multiple-choice options resolved in-container
+- Success animation + Submit Lab modal (records completion, destroys the container, advances along the linear path)
+- WebSocket terminal with tmux persistence, binary resize frames, PTY resize; JWT first-message handshake through the backend proxy
+- Session read-through cache keyed by Docker labels (`GET /labs/by_key`) — re-attaches after restarts instead of duplicating containers
 - Restart preserves the container (stop + resume) so student changes (e.g. docker group membership) persist
-- Lab completion shown in the course curriculum TOC (`labsProgress`)
-- Tasks endpoint: extracts tasks from the canonical per-lab YAML format
-- Shared environment definitions (`environments/docker-basic.yaml`, `environments/linux-basic.yaml`)
-- Canonical course format: `course.yaml` → `module.yaml` (`items`) → `labs/{id}/lab.yaml` + `instructions.md`, shared env refs. No course.json, monolithic phases, or flat lab YAML remain
-- All 10 Docker Mastery labs are discoverable through course TOC (lab-1..3 have authored tasks, the rest are skeleton stubs)
-- Worker validates cleanly with warnings (skeleton labs) and seeds accurate Firestore docs (real `order`, `description`, `chapterId`, resolved titles); graceful `validation_failed` state without blocking the cycle
+- `validation.execution_user` + `expected_exit_code` added to the lab schema; `execution_user: root` authored for docker lab-1's run-simple-container task
 
 ### In Progress
-- Content authoring: task definitions for labs 4-10 (both courses)
+- Content authoring: task definitions for labs 4-10 (both courses) — 16/20 labs are skeleton stubs
 
 ### Remaining
-- S3 deployment architecture (swap `FilesystemProvider` for `S3Provider`) — see `docs/deferred-improvements.md`
+- Client plan item 5: **content-integrity sync** (`feat/content-integrity-sync`) — client hash on sync calls + `content_outdated` warning + auto-sync
+- Client plan item 6: **NEW content badges** (`feat/new-content-badges`) — diff item IDs on version change, engage-to-dismiss badge expiry
+- Backend honoring `validation.execution_user` for validation execs (backend currently hardcodes `user: student` in `_run_orchestrator_exec`) — the docs/bugs.md group-membership false-negative remains open in the backend
 - Course immutability enforcement in worker (`structuralHash`)
+- Automated test harness (none exists yet; see `docs/TESTING.md` for the manual suite)
+
+## Docs
+
+- [docs/PHASE-0.md](docs/PHASE-0.md) — product problem definition: primary user, proposition, first customer, frozen architecture decisions, kill criteria (**read before any new work**)
+- [docs/CLIENT-APP-PLAN.md](docs/CLIENT-APP-PLAN.md) — client-side content delivery implementation plan + branch list
+- [docs/CONTENT-PIPELINE.md](docs/CONTENT-PIPELINE.md) — content format, validation, publishing, seeding reference
+- [docs/TESTING.md](docs/TESTING.md) — prerequisites, user stories, success criteria, and manual test steps for the fixes so far
+- [docs/bugs.md](docs/bugs.md) — known issue: group-membership / transient shell state validation false negatives
+- [docs/deferred-improvements.md](docs/deferred-improvements.md) — backlog (Item B, the old backend S3Provider plan, is superseded)
+- [postman/README.md](postman/README.md) — Postman end-to-end API suite covering the content-delivery flow
+- [MIGRATION.md](MIGRATION.md) — how the canonical format evolved, locked decisions

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import LAB_PREFIX, LABEL_LAB_ID, LABEL_USER_ID, LABEL_COURSE_ID
-from app.models.session import LabSession, LabStatus
+from app.models.session import LabSession, LabStatus, parse_created_at
 from app.services.docker_service import DockerService, get_docker_service, lab_id_to_number
 
 
@@ -49,6 +49,7 @@ def _session_from_container(c: dict) -> LabSession | None:
         container_id=c.get("id"),
         container_name=name,
         status=status,
+        created_at=parse_created_at(c.get("created")),
     )
 
 
@@ -92,11 +93,12 @@ def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_dock
         })
 
     try:
+        if req.pre_pull or req.setup:
+            docker_svc.wait_for_docker(session.container_name)
+
         if req.pre_pull:
-            docker_svc.wait_for_docker(session.container_name)
             docker_svc.pre_pull_images(session.container_name, req.pre_pull)
-        elif req.setup:
-            docker_svc.wait_for_docker(session.container_name)
+
         for setup_cmd in req.setup:
             exit_code, output = docker_svc.exec_command(
                 session.container_name,

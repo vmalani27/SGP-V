@@ -10,8 +10,13 @@
           <mxGeometry x="820" y="15" width="130" height="45" as="geometry"/>
         </mxCell>
 
+        <!-- Host: docker compose stack -->
+        <mxCell id="host_compose" value="HOST — docker compose stack (sgp-frontend · sgp-backend · sgp-worker · floci)" style="rounded=1;dashed=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1240" height="700" as="geometry"/>
+        </mxCell>
+
         <!-- content-v2 -->
-        <mxCell id="content_container" value="content-v2/ — source of truth (mounted read-only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="content_container" value="content-v2/ — source of truth (repo; publish → S3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="60" y="80" width="440" height="280" as="geometry"/>
         </mxCell>
         <mxCell id="content_index" value="index.json — course catalog" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="content_container">
@@ -66,7 +71,7 @@
         <mxCell id="be_enroll" value="Users / enrollments + progress (PUT /progress, PUT /labs/{id}/progress)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
           <mxGeometry x="20" y="120" width="270" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="be_content" value="ContentProvider — FilesystemProvider (reads content-v2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
+        <mxCell id="be_content" value="Content version handshake — GET /api/v1/content/version (Firestore contentVersion + S3 download_url)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
           <mxGeometry x="20" y="200" width="270" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="be_lifecycle" value="Lab lifecycle proxy → orchestrator (start/stop/resume/restart/destroy/exec) + WS bridge (GET /ws/lab → /ws/terminal)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
@@ -79,9 +84,19 @@
           <mxGeometry x="310" y="205" width="270" height="50" as="geometry"/>
         </mxCell>
 
+        <!-- Vagrant VM: orchestrator + lab runtime host -->
+        <mxCell id="vagrant_vm" value="VAGRANT VM — Ubuntu Server 22.04 · VMware/VirtualBox (provisioned via provisioning/*.sh; guest :8000 → host :8001)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="750" width="1220" height="330" as="geometry"/>
+        </mxCell>
+
+        <!-- S3 content store -->
+        <mxCell id="s3_container" value="S3 bucket (Floci — dev) · latest.json + published/{version}/{content.tar.gz, manifest.json}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="365" width="440" height="55" as="geometry"/>
+        </mxCell>
+
         <!-- sgp-orchestrator -->
-        <mxCell id="orchestrator_container" value="sgp-orchestrator — FastAPI · :8001 (zero content knowledge)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="580" y="780" width="600" height="280" as="geometry"/>
+        <mxCell id="orchestrator_container" value="sgp-orchestrator — FastAPI · :8001 (zero content knowledge; guest :8000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="vagrant_vm">
+          <mxGeometry x="560" y="40" width="620" height="260" as="geometry"/>
         </mxCell>
         <mxCell id="orch_docker" value="Docker SDK — container lifecycle + exec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="orchestrator_container">
           <mxGeometry x="20" y="60" width="270" height="50" as="geometry"/>
@@ -109,7 +124,7 @@
         <mxCell id="wk_seeder" value="Seeder — sync_courses (upsert courses, delete orphans, contentHash skip)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="worker_container">
           <mxGeometry x="240" y="60" width="180" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="wk_loop" value="Sync loop every 300s: validate → seed (idempotent via contentHash)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="worker_container">
+        <mxCell id="wk_loop" value="Sync loop every 300s (or POST /sync — webhook trigger): download → validate → seed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="worker_container">
           <mxGeometry x="20" y="180" width="400" height="45" as="geometry"/>
         </mxCell>
 
@@ -133,9 +148,9 @@
           <mxGeometry x="290" y="50" width="120" height="45" as="geometry"/>
         </mxCell>
 
-        <!-- Docker Engine -->
-        <mxCell id="docker_container" value="Docker Engine + Sysbox runtime (local)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="60" y="780" width="440" height="280" as="geometry"/>
+        <!-- Docker Engine (inside the VM) -->
+        <mxCell id="docker_container" value="Docker Engine + Sysbox runtime (inside the VM — VM-local docker.sock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="vagrant_vm">
+          <mxGeometry x="20" y="40" width="520" height="260" as="geometry"/>
         </mxCell>
         <mxCell id="docker_engine" value="Docker Engine (docker.sock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;fontStyle=1;" vertex="1" parent="docker_container">
           <mxGeometry x="20" y="60" width="400" height="45" as="geometry"/>
@@ -163,13 +178,13 @@
         <mxCell id="e_backend_firebase" value="Firebase Admin SDK — Firestore (users, enrollments)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="backend_container" target="firebase_container">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_backend_content" value="read content-v2 (FilesystemProvider)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="backend_container" target="content_container">
+        <mxCell id="e_backend_orchestrator" value="lifecycle + validate proxy + WS terminal bridge — host.docker.internal:8001 (→ VM guest :8000)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="backend_container" target="orchestrator_container">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_backend_orchestrator" value="lifecycle + validate proxy + WS terminal bridge (internal, /ws/terminal)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="backend_container" target="orchestrator_container">
+        <mxCell id="e_worker_s3" value="download latest.json + tarball — verify artifact_sha256 + per-file manifest (S3-only)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="worker_container" target="s3_container">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_worker_content" value="read content-v2 (validate)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="worker_container" target="content_container">
+        <mxCell id="e_fe_bootstrap" value="content bootstrap — download + verify + extract (version handshake via backend)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="s3_container">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e_worker_firebase" value="seed courses collection" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="worker_container" target="firebase_container">
