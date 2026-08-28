@@ -53,14 +53,14 @@ tasks:
       expected_output: DOCKERFILE_OK
     error_message: >-
       Building `~/my-image/Dockerfile` and running the resulting image did not
-      print `hello from my image`. The check builds a temporary image from your
-      Dockerfile and runs it, so the Dockerfile must build successfully and the
-      container must print the file's contents. Read your Dockerfile with
-      `cat ~/my-image/Dockerfile` and check the build output above.
+      print `hello from my image`. The image must build successfully, and a
+      container created from it must print the file's contents when it starts.
+      Read your Dockerfile with `cat ~/my-image/Dockerfile` and check the build
+      output above.
     hints:
       - "A Dockerfile is a plain text file named exactly `Dockerfile` — no extension."
       - "Use `FROM alpine:latest` for the base, `WORKDIR /app` for the working directory, and `COPY hello.txt .` to copy your file in."
-      - "Finish with a `CMD` (e.g. `CMD [\"cat\", \"hello.txt\"]`) or an `ENTRYPOINT` that prints the file. The check builds and runs your image, so the container must actually print `hello from my image`."
+      - "Finish with a `CMD` (e.g. `CMD [\"cat\", \"hello.txt\"]`) or an `ENTRYPOINT` that prints the file, so a container created from the image prints `hello from my image` when it starts."
     solution:
       command: >-
         printf 'FROM alpine:latest\n\nWORKDIR /app\n\nCOPY hello.txt .\n\nCMD ["cat", "hello.txt"]\n'
@@ -87,22 +87,30 @@ tasks:
 
   - id: run-image
     prompt: >-
-      Run the `my-first-image` image. The container should print the contents
-      of `hello.txt` and exit. Verify the output contains `hello from my image`.
+      Run the `my-first-image` image as a container named `hello`. The
+      container should print the contents of `hello.txt` and exit.
     type: terminal_action
     validation:
-      command: "docker run --rm my-first-image 2>/dev/null | grep -qx 'hello from my image' && echo RUN_OK"
+      command: >-
+        docker inspect -f '{{.Config.Image}}' hello 2>/dev/null |
+        grep -qx 'my-first-image' &&
+        docker logs hello 2>/dev/null | grep -qx 'hello from my image' &&
+        echo RUN_OK
       match_type: exact
       expected_output: RUN_OK
     error_message: >-
-      Running `my-first-image` did not print `hello from my image`. Try
-      `docker run --rm my-first-image` and read the output.
+      There is no container named `hello` created from your `my-first-image`
+      image. This step only counts once you run `docker run --name hello
+      my-first-image` in your terminal and that container prints `hello from
+      my image` in its logs. Remove a stale `hello` first with `docker rm -f
+      hello`, and don't use `--rm` — it deletes the container before it can be
+      checked.
     hints:
-      - "Which command starts a container from an image? It takes the image name."
-      - "`docker run --rm my-first-image` runs it and removes the container afterwards."
-      - "Your CMD should print the file — if nothing prints, check that `hello.txt` was copied into the working directory by the build."
+      - "Which flag gives a container a name? `docker run --name <name> <image>`."
+      - "`docker run --name hello my-first-image` runs the image, prints the file, and exits — but the container stays around to inspect."
+      - "Confirm with `docker ps -a` (state: `Exited`) and `docker logs hello`. If nothing prints, verify `hello.txt` was copied into the image."
     solution:
-      command: "docker run --rm my-first-image"
+      command: "docker run --name hello my-first-image"
 
   - id: what-built
     prompt: >-
@@ -110,7 +118,7 @@ tasks:
       Which statement correctly describes the relationship between them?
     type: multiple_choice
     options:
-      - "docker build produces an image from a Dockerfile; docker run produces a container from an image"
+      - "docker build produces an image; docker run produces a container"
       - "docker build produces a container; docker run produces an image"
       - "The Dockerfile, the image, and the container are all the same thing"
     validation:

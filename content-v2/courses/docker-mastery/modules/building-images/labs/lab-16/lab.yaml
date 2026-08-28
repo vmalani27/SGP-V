@@ -1,0 +1,260 @@
+id: lab-16
+title: Build Context and Secrets
+difficulty: intermediate
+environment: docker-build
+
+setup:
+  - command: "usermod -aG docker student"
+
+objectives:
+  - Create a project with application code and secret files
+  - Build an image without .dockerignore and observe secrets in the image
+  - Use docker history to detect leaked secrets
+  - Create .dockerignore to exclude secrets
+  - Rebuild and verify secrets are excluded from the image
+
+tasks:
+  - id: create-project
+    prompt: >-
+      Create a project directory named `secret-app` in your home directory.
+      Inside it, create an `app.py` file containing `print('app running')`, a
+      `.env` file containing `DATABASE_PASSWORD=mysecret123`, and a
+      `config.json` file containing `{"api_key": "sk-12345"}`.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/secret-app/app.py &&
+        grep -q "print('app running')" ~/secret-app/app.py &&
+        test -f ~/secret-app/.env &&
+        grep -q 'DATABASE_PASSWORD=mysecret123' ~/secret-app/.env &&
+        test -f ~/secret-app/config.json &&
+        grep -q 'sk-12345' ~/secret-app/config.json && echo PROJECT_OK
+      match_type: exact
+      expected_output: PROJECT_OK
+    error_message: >-
+      ~/secret-app should contain app.py, .env, and config.json with the
+      specified contents. Check with `ls ~/secret-app` and `cat` each file.
+    hints:
+      - "Create the directory with `mkdir -p ~/secret-app`."
+      - "app.py should print 'app running' when executed."
+      - ".env should contain DATABASE_PASSWORD=mysecret123 and config.json should contain the API key."
+    solution:
+      command: >-
+        mkdir -p ~/secret-app &&
+        echo "print('app running')" > ~/secret-app/app.py &&
+        echo 'DATABASE_PASSWORD=mysecret123' > ~/secret-app/.env &&
+        echo '{"api_key": "sk-12345"}' > ~/secret-app/config.json
+
+  - id: write-dockerfile
+    prompt: >-
+      In `~/secret-app`, write a `Dockerfile` that starts from
+      `python:3.12-alpine`, sets the working directory to `/app`, copies all
+      files from the build context into the image, and runs the Python script
+      when a container starts.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/secret-app/Dockerfile &&
+        grep -q 'FROM python:3.12-alpine' ~/secret-app/Dockerfile &&
+        grep -q 'WORKDIR /app' ~/secret-app/Dockerfile &&
+        grep -q 'COPY' ~/secret-app/Dockerfile &&
+        grep -q 'CMD' ~/secret-app/Dockerfile && echo DOCKERFILE_OK
+      match_type: exact
+      expected_output: DOCKERFILE_OK
+    error_message: >-
+      ~/secret-app/Dockerfile should contain FROM, WORKDIR, COPY, and CMD. Read
+      it with `cat ~/secret-app/Dockerfile`.
+    hints:
+      - "Start with `FROM python:3.12-alpine`."
+      - "Set WORKDIR to `/app` and copy all files with `COPY . .`."
+      - "Finish with `CMD [\"python\", \"app.py\"]`."
+    solution:
+      command: >-
+        printf 'FROM python:3.12-alpine\n\nWORKDIR /app\n\nCOPY . .\n\nCMD ["python", "app.py"]\n'
+        > ~/secret-app/Dockerfile
+
+  - id: build-with-secrets
+    prompt: >-
+      Build an image from `~/secret-app` and tag it `secret-app`. This build
+      has no .dockerignore, so all files including secrets will be copied into
+      the image.
+    type: terminal_action
+    validation:
+      command: "docker image inspect secret-app >/dev/null 2>&1 && echo IMAGE_BUILT"
+      match_type: exact
+      expected_output: IMAGE_BUILT
+    error_message: >-
+      No image tagged `secret-app` exists. Build it with
+      `docker build -t secret-app ~/secret-app` and check `docker images`.
+    hints:
+      - "Build with `docker build -t secret-app ~/secret-app`."
+      - "The build should succeed because there are no syntax errors."
+      - "Verify with `docker images` — secret-app should be listed."
+    solution:
+      command: "docker build -t secret-app ~/secret-app"
+
+  - id: verify-secrets-exposed
+    prompt: >-
+      Run the image and confirm it prints `app running`. Then use
+      `docker history` to inspect the image layers. You should see evidence of
+      the .env file being copied into the image — the secrets are exposed.
+    type: terminal_action
+    validation:
+      command: >-
+        docker run --rm secret-app 2>/dev/null | grep -q 'app running' &&
+        docker history secret-app --no-trunc 2>/dev/null | grep -q 'DATABASE_PASSWORD' &&
+        echo SECRETS_EXPOSED
+      match_type: exact
+      expected_output: SECRETS_EXPOSED
+    error_message: >-
+      The image should print `app running` and docker history should show the
+      DATABASE_PASSWORD in the image layers. Run `docker history secret-app
+      --no-trunc` to see the leaked secrets.
+    hints:
+      - "Run the image with `docker run --rm secret-app`."
+      - "Check image history with `docker history secret-app --no-trunc`."
+      - "The .env file contents should be visible in one of the layers."
+    solution:
+      command: >-
+        docker run --rm secret-app &&
+        docker history secret-app --no-trunc
+
+  - id: verify-secret-in-image
+    prompt: >-
+      Use `docker run` with an entrypoint override to cat the .env file directly
+      from the image. This proves the secret is baked into the image layers and
+      accessible to anyone with the image.
+    type: terminal_action
+    validation:
+      command: >-
+        docker run --rm --entrypoint cat secret-app /app/.env 2>/dev/null |
+        grep -q 'DATABASE_PASSWORD=mysecret123' && echo SECRET_ACCESSIBLE
+      match_type: exact
+      expected_output: SECRET_ACCESSIBLE
+    error_message: >-
+      The .env file should be readable from the image. Run
+      `docker run --rm --entrypoint cat secret-app /app/.env` to confirm.
+    hints:
+      - "Override the entrypoint with `docker run --rm --entrypoint cat secret-app /app/.env`."
+      - "The file should contain DATABASE_PASSWORD=mysecret123."
+      - "This proves secrets are baked into the image layers."
+    solution:
+      command: "docker run --rm --entrypoint cat secret-app /app/.env"
+
+  - id: create-dockerignore
+    prompt: >-
+      Create a `.dockerignore` file in `~/secret-app` that excludes `.env` and
+      `config.json` from the build context. These files should not reach the
+      image.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/secret-app/.dockerignore &&
+        grep -q '\.env' ~/secret-app/.dockerignore &&
+        grep -q 'config\.json' ~/secret-app/.dockerignore && echo DOCKERIGNORE_OK
+      match_type: exact
+      expected_output: DOCKERIGNORE_OK
+    error_message: >-
+      ~/secret-app/.dockerignore should exist and contain entries for .env and
+      config.json. Check with `cat ~/secret-app/.dockerignore`.
+    hints:
+      - "Create .dockerignore with `echo -e '.env\\nconfig.json' > ~/secret-app/.dockerignore`."
+      - "The file should list both .env and config.json."
+      - "Verify with `cat ~/secret-app/.dockerignore`."
+    solution:
+      command: "echo -e '.env\\nconfig.json' > ~/secret-app/.dockerignore"
+
+  - id: rebuild-with-ignore
+    prompt: >-
+      Rebuild the `secret-app` image (same tag) so the .dockerignore takes
+      effect. The rebuild should exclude .env and config.json from the image.
+    type: terminal_action
+    validation:
+      command: "docker build -t secret-app ~/secret-app >/dev/null 2>&1 && echo REBUILD_OK"
+      match_type: exact
+      expected_output: REBUILD_OK
+    error_message: >-
+      Rebuild with `docker build -t secret-app ~/secret-app` to apply the
+      .dockerignore.
+    hints:
+      - "Rebuild with `docker build -t secret-app ~/secret-app`."
+      - "The .dockerignore will exclude .env and config.json from the build context."
+      - "Verify the build succeeds."
+    solution:
+      command: "docker build -t secret-app ~/secret-app"
+
+  - id: verify-secrets-excluded
+    prompt: >-
+      Run the rebuilt image and confirm it still prints `app running`. Then try
+      to cat the .env file from the image — it should fail because the file is
+      no longer in the image. Also check that config.json is excluded.
+    type: terminal_action
+    validation:
+      command: >-
+        docker run --rm secret-app 2>/dev/null | grep -q 'app running' &&
+        ! docker run --rm --entrypoint cat secret-app /app/.env 2>/dev/null &&
+        ! docker run --rm --entrypoint cat secret-app /app/config.json 2>/dev/null &&
+        echo SECRETS_EXCLUDED
+      match_type: exact
+      expected_output: SECRETS_EXCLUDED
+    error_message: >-
+      The image should run but .env and config.json should not be accessible.
+      Run `docker run --rm --entrypoint cat secret-app /app/.env` to verify.
+    hints:
+      - "Run the app with `docker run --rm secret-app`."
+      - "Try to cat .env with `docker run --rm --entrypoint cat secret-app /app/.env`."
+      - "The command should fail because the file is excluded."
+    solution:
+      command: >-
+        docker run --rm secret-app &&
+        docker run --rm --entrypoint cat secret-app /app/.env 2>&1 &&
+        docker run --rm --entrypoint cat secret-app /app/config.json 2>&1
+
+  - id: verify-secrets-still-local
+    prompt: >-
+      Confirm that .env and config.json still exist in your local project
+      directory. The .dockerignore only excludes them from the image — the
+      original files remain on your machine.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/secret-app/.env &&
+        grep -q 'DATABASE_PASSWORD=mysecret123' ~/secret-app/.env &&
+        test -f ~/secret-app/config.json &&
+        grep -q 'sk-12345' ~/secret-app/config.json && echo LOCAL_FILES_OK
+      match_type: exact
+      expected_output: LOCAL_FILES_OK
+    error_message: >-
+      .env and config.json should still exist locally with their original
+      contents. Check with `cat ~/secret-app/.env` and
+      `cat ~/secret-app/config.json`.
+    hints:
+      - "Check with `ls ~/secret-app`."
+      - "Cat the files with `cat ~/secret-app/.env` and `cat ~/secret-app/config.json`."
+      - ".dockerignore only affects the build context, not your local files."
+    solution:
+      command: >-
+        cat ~/secret-app/.env &&
+        cat ~/secret-app/config.json
+
+  - id: explain-security
+    prompt: >-
+      Why is it critical to exclude .env files and secrets from Docker images
+      using .dockerignore?
+    type: multiple_choice
+    options:
+      - "Secrets baked into image layers can be extracted with docker history, exposing credentials to anyone with the image"
+      - ".env files make images larger and slower to build"
+      - "Docker cannot run containers with .env files in the image"
+    validation:
+      expected_answer: "Secrets baked into image layers can be extracted with docker history, exposing credentials to anyone with the image"
+    error_message: >-
+      Secrets in image layers are visible to anyone who pulls the image. They
+      can be extracted with docker history or by inspecting the image filesystem.
+    hints:
+      - "What did you observe when you ran `docker history secret-app`?"
+      - "Anyone with the image can read its layers."
+      - "Secrets in images are a security vulnerability."
+    error_hint: >-
+      Secrets in image layers are visible to anyone who pulls the image. They
+      can be extracted with docker history or by inspecting the image filesystem.

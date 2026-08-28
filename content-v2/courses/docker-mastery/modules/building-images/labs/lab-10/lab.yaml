@@ -1,12 +1,216 @@
 id: lab-10
 title: Multi-Stage Builds
 difficulty: intermediate
-environment: docker-basic
+environment: docker-build
 
 setup:
   - command: "usermod -aG docker student"
 
 objectives:
-  - Create a multi-stage Dockerfile
-  - Reduce final image size
-  - Copy artifacts between build stages
+  - Create a Node.js application with TypeScript compilation
+  - Write a single-stage Dockerfile and observe the large image size
+  - Rewrite as a multi-stage build to separate build and runtime
+  - Compare image sizes and verify the application still works
+
+tasks:
+  - id: create-project
+    prompt: >-
+      Create a project directory named `node-app` in your home directory. Inside
+      it, create a `package.json` with `name: "node-app"`, `scripts: { "build":
+      "echo 'building...'", "start": "node dist/server.js" }`, and
+      `devDependencies: { "typescript": "^5.3.0" }`. Also create a
+      `tsconfig.json` with `compilerOptions: { "outDir": "./dist" }`, a
+      `src/server.js` file containing `console.log('server ready')`, and a
+      `dist/` directory with a placeholder file.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/node-app/package.json &&
+        grep -q '"name": "node-app"' ~/node-app/package.json &&
+        test -f ~/node-app/tsconfig.json &&
+        grep -q '"outDir"' ~/node-app/tsconfig.json &&
+        test -f ~/node-app/src/server.js &&
+        grep -q "server ready" ~/node-app/src/server.js &&
+        test -d ~/node-app/dist && echo PROJECT_OK
+      match_type: exact
+      expected_output: PROJECT_OK
+    error_message: >-
+      ~/node-app should contain package.json, tsconfig.json, src/server.js,
+      and a dist/ directory. Check with `ls -R ~/node-app`.
+    hints:
+      - "Create the directory structure with `mkdir -p ~/node-app/src ~/node-app/dist`."
+      - "package.json needs name, scripts, and devDependencies fields."
+      - "tsconfig.json needs compilerOptions with outDir set to ./dist."
+    solution:
+      command: >-
+        mkdir -p ~/node-app/src ~/node-app/dist &&
+        echo '{}' > ~/node-app/dist/.gitkeep &&
+        printf '{\n  "name": "node-app",\n  "scripts": { "build": "echo \'building...\'", "start": "node dist/server.js" },\n  "devDependencies": { "typescript": "^5.3.0" }\n}\n'
+        > ~/node-app/package.json &&
+        printf '{\n  "compilerOptions": { "outDir": "./dist" }\n}\n'
+        > ~/node-app/tsconfig.json &&
+        echo "console.log('server ready')" > ~/node-app/src/server.js
+
+  - id: write-single-stage
+    prompt: >-
+      In `~/node-app`, write a `Dockerfile` that starts from `node:20`, sets the
+      working directory to `/app`, copies all files, runs `npm install`, runs
+      `npm run build`, exposes port 3000, and starts the application with
+      `npm start`. This is a single-stage build.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/node-app/Dockerfile &&
+        grep -q 'FROM node:20' ~/node-app/Dockerfile &&
+        grep -q 'WORKDIR /app' ~/node-app/Dockerfile &&
+        grep -q 'COPY' ~/node-app/Dockerfile &&
+        grep -q 'npm install' ~/node-app/Dockerfile &&
+        grep -q 'npm run build' ~/node-app/Dockerfile &&
+        grep -q 'EXPOSE' ~/node-app/Dockerfile &&
+        grep -q 'npm start' ~/node-app/Dockerfile && echo DOCKERFILE_OK
+      match_type: exact
+      expected_output: DOCKERFILE_OK
+    error_message: >-
+      ~/node-app/Dockerfile should contain FROM node:20, WORKDIR, COPY, npm
+      install, npm run build, EXPOSE, and npm start. Read it with
+      `cat ~/node-app/Dockerfile`.
+    hints:
+      - "Start with `FROM node:20` for the full Node.js image."
+      - "Copy all files with `COPY . .` after setting WORKDIR."
+      - "Run `npm install` then `npm run build`, then expose port 3000 and start with `npm start`."
+    solution:
+      command: >-
+        printf 'FROM node:20\n\nWORKDIR /app\n\nCOPY . .\n\nRUN npm install\n\nRUN npm run build\n\nEXPOSE 3000\n\nCMD ["npm", "start"]\n'
+        > ~/node-app/Dockerfile
+
+  - id: build-single-stage
+    prompt: >-
+      Build an image from `~/node-app` and tag it `node-app-single`. Check the
+      image size with `docker images`. This image includes the full Node.js
+      runtime, npm, TypeScript compiler, and all dev dependencies.
+    type: terminal_action
+    validation:
+      command: >-
+        docker image inspect node-app-single >/dev/null 2>&1 &&
+        docker image inspect node-app-single --format '{{.Size}}' 2>/dev/null |
+        awk '{if ($1 > 500000000) print "SIZE_LARGE_OK"}' && echo BUILD_OK
+      match_type: exact
+      expected_output: BUILD_OK
+    error_message: >-
+      The node-app-single image should exist and be larger than 500MB. Build it
+      with `docker build -t node-app-single ~/node-app` and check
+      `docker images node-app-single`.
+    hints:
+      - "Build with `docker build -t node-app-single ~/node-app`."
+      - "Check size with `docker images node-app-single`."
+      - "The full node:20 image is about 1GB, so this image will be large."
+    solution:
+      command: "docker build -t node-app-single ~/node-app"
+
+  - id: write-multi-stage
+    prompt: >-
+      Rewrite the Dockerfile as a multi-stage build. Use `node:20-alpine` as
+      the build stage (named `builder`) that installs dependencies and builds
+      the project. Then create a final stage also from `node:20-alpine` that
+      copies only the built files from the builder stage. The final image should
+      expose port 3000 and start with `npm start`.
+    type: terminal_action
+    validation:
+      command: >-
+        grep -q 'AS builder' ~/node-app/Dockerfile &&
+        grep -q 'FROM node:20-alpine' ~/node-app/Dockerfile &&
+        grep -q 'COPY --from=builder' ~/node-app/Dockerfile &&
+        grep -q 'EXPOSE' ~/node-app/Dockerfile &&
+        grep -q 'npm start' ~/node-app/Dockerfile && echo MULTI_STAGE_OK
+      match_type: exact
+      expected_output: MULTI_STAGE_OK
+    error_message: >-
+      The Dockerfile should have two FROM statements, with the first named
+      `builder`. The second stage should use `COPY --from=builder`. Read it
+      with `cat ~/node-app/Dockerfile`.
+    hints:
+      - "Start with `FROM node:20-alpine AS builder` for the build stage."
+      - "In the final stage, use `COPY --from=builder /app/dist ./dist` to copy built files."
+      - "Also copy package.json and run `npm prune --production` to get only runtime dependencies."
+    solution:
+      command: >-
+        printf 'FROM node:20-alpine AS builder\n\nWORKDIR /app\n\nCOPY . .\n\nRUN npm install\n\nRUN npm run build\n\nFROM node:20-alpine\n\nWORKDIR /app\n\nCOPY --from=builder /app/dist ./dist\n\nCOPY --from=builder /app/package.json ./\n\nRUN npm prune --production\n\nEXPOSE 3000\n\nCMD ["npm", "start"]\n'
+        > ~/node-app/Dockerfile
+
+  - id: build-multi-stage
+    prompt: >-
+      Rebuild the image with the same tag `node-app-single` (overwriting the
+      previous one). Check the new image size — it should be significantly
+      smaller because the build tools are no longer in the final image.
+    type: terminal_action
+    validation:
+      command: >-
+        docker image inspect node-app-single >/dev/null 2>&1 &&
+        docker image inspect node-app-single --format '{{.Size}}' 2>/dev/null |
+        awk '{if ($1 < 300000000) print "SIZE_SMALL_OK"}' && echo REBUILD_OK
+      match_type: exact
+      expected_output: REBUILD_OK
+    error_message: >-
+      The rebuilt node-app-single image should exist and be smaller than 300MB.
+      Rebuild with `docker build -t node-app-single ~/node-app` and check
+      `docker images node-app-single`.
+    hints:
+      - "Rebuild with `docker build -t node-app-single ~/node-app`."
+      - "The multi-stage build should produce a much smaller image."
+      - "Check size with `docker images node-app-single`."
+    solution:
+      command: "docker build -t node-app-single ~/node-app"
+
+  - id: verify-works
+    prompt: >-
+      Run the smaller image and confirm it still starts correctly. The container
+      should print `server ready` to its logs.
+    type: terminal_action
+    validation:
+      command: >-
+        docker run -d --name node-test -p 3000:3000 node-app-single 2>/dev/null &&
+        sleep 2 &&
+        docker logs node-test 2>/dev/null | grep -q 'server ready' &&
+        docker stop node-test >/dev/null 2>&1 &&
+        docker rm node-test >/dev/null 2>&1 &&
+        echo APP_WORKS
+      match_type: exact
+      expected_output: APP_WORKS
+    error_message: >-
+      The container should print `server ready` to its logs. Run it with
+      `docker run -d --name node-test -p 3000:3000 node-app-single` and check
+      `docker logs node-test`.
+    hints:
+      - "Run detached with `docker run -d --name node-test -p 3000:3000 node-app-single`."
+      - "Wait a moment, then check logs with `docker logs node-test`."
+      - "Clean up with `docker stop node-test && docker rm node-test`."
+    solution:
+      command: >-
+        docker run -d --name node-test -p 3000:3000 node-app-single &&
+        sleep 2 &&
+        docker logs node-test &&
+        docker stop node-test &&
+        docker rm node-test
+
+  - id: explain-benefit
+    prompt: >-
+      Your multi-stage build copies only the compiled output and production
+      dependencies to the final image. What is the primary benefit of this
+      approach?
+    type: multiple_choice
+    options:
+      - "The final image is smaller and has fewer vulnerabilities because build tools are excluded"
+      - "The build runs faster because it uses Alpine Linux"
+      - "The application starts faster because there are fewer files"
+    validation:
+      expected_answer: "The final image is smaller and has fewer vulnerabilities because build tools are excluded"
+    error_message: >-
+      Multi-stage builds reduce image size and attack surface by excluding build
+      tools, compilers, and dev dependencies from the production image.
+    hints:
+      - "What was removed from the final image compared to the single-stage build?"
+      - "Build tools and dev dependencies are not needed at runtime."
+      - "Smaller images mean less to push, pull, and attack."
+    error_hint: >-
+      Multi-stage builds reduce image size and attack surface by excluding build
+      tools, compilers, and dev dependencies from the production image.

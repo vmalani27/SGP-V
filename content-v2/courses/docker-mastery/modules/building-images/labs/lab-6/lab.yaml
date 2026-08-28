@@ -54,7 +54,7 @@ tasks:
         test -f ~/greeter/Dockerfile &&
         grep -qE '^FROM +alpine(:latest)?$' ~/greeter/Dockerfile &&
         grep -q 'WORKDIR /app' ~/greeter/Dockerfile &&
-        grep -q 'COPY greet.sh' ~/greeter/Dockerfile &&
+        grep -qE 'COPY.*greet\.sh' ~/greeter/Dockerfile &&        
         grep -q 'RUN' ~/greeter/Dockerfile &&
         grep -q 'EXPOSE' ~/greeter/Dockerfile &&
         grep -q 'CMD' ~/greeter/Dockerfile && echo DOCKERFILE_OK
@@ -93,22 +93,30 @@ tasks:
 
   - id: run-image
     prompt: >-
-      Run a container from `greeter-app`. It should print
-      `hello from the image` and exit. Verify the output.
+      Run a container from `greeter-app` named `greeter`. It should print
+      `hello from the image` and exit.
     type: terminal_action
     validation:
-      command: "docker run --rm greeter-app 2>/dev/null | grep -qx 'hello from the image' && echo RUN_OK"
+      command: >-
+        docker inspect -f '{{.Config.Image}}' greeter 2>/dev/null |
+        grep -qx 'greeter-app' &&
+        docker logs greeter 2>/dev/null | grep -qx 'hello from the image' &&
+        echo RUN_OK
       match_type: exact
       expected_output: RUN_OK
     error_message: >-
-      Running `greeter-app` did not print `hello from the image`. Try
-      `docker run --rm greeter-app` and read the output.
+      There is no container named `greeter` created from your `greeter-app`
+      image. This step only counts once you run `docker run --name greeter
+      greeter-app` in your terminal and that container prints `hello from the
+      image` in its logs. Remove a stale `greeter` first with `docker rm -f
+      greeter`, and don't use `--rm` — it deletes the container before it can
+      be checked.
     hints:
-      - "Which command starts a container from an image?"
-      - "`docker run --rm greeter-app` runs it and removes the container afterwards."
-      - "Your CMD runs the script — if nothing prints, the RUN step may not have made it executable, or CMD may reference the wrong path."
+      - "Which flag gives a container a name? `docker run --name <name> <image>`."
+      - "`docker run --name greeter greeter-app` runs the image, prints the text, and exits — but the container stays around to inspect."
+      - "Confirm with `docker ps -a` (state: `Exited`) and `docker logs greeter`. If nothing prints, the RUN step may not have made the script executable, or CMD may reference the wrong path."
     solution:
-      command: "docker run --rm greeter-app"
+      command: "docker run --name greeter greeter-app"
 
   - id: verify-expose
     prompt: >-

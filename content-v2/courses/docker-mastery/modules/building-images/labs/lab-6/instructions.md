@@ -14,9 +14,9 @@ The last lab used three instructions (`FROM`, `COPY`, `CMD`). This lab adds the 
 
 Builds an image from the Dockerfile in the given directory.
 
-### `docker run --rm <image>`
+### `docker run --name <name> <image>`
 
-Runs a container from the image and removes it after it exits.
+Runs a container from the image under a name. It stays around after it exits so you can inspect it (no `--rm`).
 
 ### `docker image inspect <image> --format '{{json .Config.ExposedPorts}}'`
 
@@ -31,7 +31,7 @@ You build a small "greeter" image that runs a shell script. The script must be e
 1. Create `~/greeter/greet.sh` — a `#!/bin/sh` script that prints `hello from the image`, marked executable.
 2. Write a Dockerfile using all six common instructions: `FROM`, `WORKDIR`, `COPY`, `RUN`, `EXPOSE`, `CMD`.
 3. Build the image as `greeter-app`.
-4. Run it and confirm it prints `hello from the image`.
+4. Run it as a container named `greeter` and confirm it prints `hello from the image`.
 5. Inspect the image and confirm port `8080` is documented.
 6. State which instructions run at build time and which at run time.
 
@@ -40,7 +40,7 @@ You build a small "greeter" image that runs a shell script. The script must be e
 - [ ] **create-script** — Create an executable `~/greeter/greet.sh` that prints `hello from the image`.
 - [ ] **write-dockerfile** — Write a Dockerfile with `FROM`, `WORKDIR`, `COPY`, `RUN`, `EXPOSE`, and `CMD`.
 - [ ] **build-image** — Build it as `greeter-app`.
-- [ ] **run-image** — Run it and confirm it prints `hello from the image`.
+- [ ] **run-image** — Run it as a container named `greeter` and confirm it prints `hello from the image`.
 - [ ] **verify-expose** — Confirm the image documents port `8080`.
 - [ ] **when-run** — Identify when `RUN` and `CMD` each execute.
 

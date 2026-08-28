@@ -2,6 +2,21 @@ id: git-fundamentals
 title: Git Fundamentals
 description: From your first commit to advanced branching strategies and CI/CD integration.
 level: beginner
+prerequisites:
+  - Basic command-line usage (navigate directories, edit files)
+  - A text editor of your choice (or Git's built-in editor)
+environment:
+  - Ubuntu 22.04 (jammy)
+keyTakeaways:
+  - Master core Git workflows and repository lifecycle management
+  - Handle branching, merging, and merge conflict resolution
+  - Manage remote repositories and collaborative pull request workflows
+  - Inspect history, undo changes safely, and track repository state
+quickLinks:
+  - label: Git Reference
+    href: https://git-scm.com/docs
+  - label: Pro Git Book
+    href: https://git-scm.com/book/en/v2
 modules:
   - git-basics
   - branching-history

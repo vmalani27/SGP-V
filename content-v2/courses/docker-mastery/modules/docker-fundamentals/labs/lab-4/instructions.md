@@ -38,16 +38,6 @@ Shows every mount: its `Type` (volume or bind), `Source`, `Destination`, and rea
 
 You follow a file through every stage of the container lifecycle, then store it in two kinds of persistent storage and compare them.
 
-## Objective
-
-1. Start a running `data-demo` container from `alpine`, create `/data/hello.txt`, stop it, start it again, and confirm the file survives.
-2. Remove `data-demo`, run a fresh one from the same image, and confirm the file is gone.
-3. Confirm the `alpine:latest` image is unchanged.
-4. Create a `my-data` volume, write a file through a `writer` container, remove it, and recover the file with a new `reader` container.
-5. Remove `reader`, confirm the volume survives, then remove the volume.
-6. Bind-mount `/home/student/shared` into a `binder` container, write a file, remove the container, and confirm the file remains on the lab environment.
-7. Inspect `Mounts` and identify how to tell a volume from a bind mount.
-
 ## Tasks
 
 - [ ] **create-data** — Start a background `data-demo` container from `alpine`.

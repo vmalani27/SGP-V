@@ -31,3 +31,5 @@ items:
     id: chapter-11
   - type: lab
     id: lab-11
+  - type: lab
+    id: lab-16

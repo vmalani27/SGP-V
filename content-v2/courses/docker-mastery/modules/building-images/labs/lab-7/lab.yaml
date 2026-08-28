@@ -7,17 +7,18 @@ setup:
   - command: "usermod -aG docker student"
 
 objectives:
-  - Build an image from a project directory
-  - Observe that files inside the build context reach the image
-  - Use a .dockerignore file to exclude a file from the build context
-  - Verify the excluded file never reaches the image
+  - Understand the Docker build context boundary
+  - Observe how unignored files reach the container filesystem
+  - Configure a .dockerignore to exclude sensitive files
+  - Verify build context exclusion at runtime
 
 tasks:
   - id: create-project
+    summary: Set up a workspace with an application file and a sensitive secret.
     prompt: >-
-      Create a project directory named `context-demo` in your home directory.
-      Inside it, create a file `app.txt` containing `application data` and a
-      file `secret.txt` containing `super secret`.
+      Create a project directory named `~/context-demo`. Inside it, create
+      `app.txt` containing `application data` and `secret.txt` containing
+      `super secret`.
     type: terminal_action
     validation:
       command: >-
@@ -28,53 +29,41 @@ tasks:
       match_type: exact
       expected_output: PROJECT_OK
     error_message: >-
-      ~/context-demo should contain app.txt (with `application data`) and
-      secret.txt (with `super secret`). Check with `ls ~/context-demo`.
+      ~/context-demo should contain app.txt (with 'application data') and
+      secret.txt (with 'super secret'). Verify with `ls ~/context-demo`.
     hints:
-      - "Which command creates a directory? Which command writes text to a file?"
-      - "`mkdir -p ~/context-demo` creates the directory; `echo 'application data' > ~/context-demo/app.txt` writes a file."
-      - "Create both files, then verify with `ls ~/context-demo`."
-    solution:
-      command: >-
-        mkdir -p ~/context-demo &&
-        echo 'application data' > ~/context-demo/app.txt &&
-        echo 'super secret' > ~/context-demo/secret.txt
+      - "Create the directory with `mkdir -p ~/context-demo`."
+      - "Create files using `echo 'text' > ~/context-demo/<filename>`."
 
   - id: write-dockerfile
+    summary: Define a Dockerfile that ingests the entire build context.
     prompt: >-
-      In `~/context-demo`, write a `Dockerfile` that starts from
-      `alpine:latest`, sets the working directory to `/app`, copies the entire
-      contents of the build context into the image, and lists the files in
-      `/app` when a container starts.
+      In `~/context-demo`, create a `Dockerfile` using `alpine:latest`. Set the
+      working directory to `/app`, copy the entire build context into it, and
+      set the default command to list the contents of `/app`.
     type: terminal_action
     validation:
       command: >-
         test -f ~/context-demo/Dockerfile &&
         grep -qE '^FROM +alpine(:latest)?$' ~/context-demo/Dockerfile &&
         grep -q 'WORKDIR /app' ~/context-demo/Dockerfile &&
-        grep -q 'COPY' ~/context-demo/Dockerfile &&
+        grep -q 'COPY \. \.' ~/context-demo/Dockerfile &&
         grep -q 'CMD' ~/context-demo/Dockerfile && echo DOCKERFILE_OK
       match_type: exact
       expected_output: DOCKERFILE_OK
     error_message: >-
-      ~/context-demo/Dockerfile should contain FROM, WORKDIR, a COPY that
-      copies the context, and a CMD that lists /app. Read it with
-      `cat ~/context-demo/Dockerfile`.
+      ~/context-demo/Dockerfile must contain FROM, WORKDIR /app, COPY . ., and a
+      CMD listing /app. Check with `cat ~/context-demo/Dockerfile`.
     hints:
-      - "You know FROM, WORKDIR, and CMD from the last two labs."
-      - "`COPY . .` copies everything in the build context into the working directory — the whole context, not a single file."
-      - "For the CMD, list the directory: `CMD [\"ls\", \"-1\", \"/app\"]`."
-    solution:
-      command: >-
-        printf 'FROM alpine:latest\n\nWORKDIR /app\n\nCOPY . .\n\nCMD ["ls", "-1", "/app"]\n'
-        > ~/context-demo/Dockerfile
+      - "To copy everything from the build context, use `COPY . .`."
+      - "To list files on startup, use `CMD [\"ls\", \"-1\", \"/app\"]`."
 
   - id: build-included
+    summary: Build and run the image to observe default context ingestion.
     prompt: >-
-      Build an image from `~/context-demo` and tag it `context-demo`. Then run
-      it and confirm that BOTH `app.txt` and `secret.txt` are present in the
-      image. This is the default behavior — everything in the build context
-      reaches the image.
+      Build the image from `~/context-demo` with the tag `context-demo`. Run a
+      container from it to confirm that BOTH `app.txt` and `secret.txt` are
+      present inside the image.
     type: terminal_action
     validation:
       command: >-
@@ -85,20 +74,14 @@ tasks:
       match_type: exact
       expected_output: BOTH_INCLUDED
     error_message: >-
-      The image should list both app.txt and secret.txt when run. Check the
-      image exists (`docker images`) and run it with `docker run --rm
-      context-demo`.
-    hints:
-      - "Build with `docker build -t context-demo ~/context-demo`."
-      - "Run it with `docker run --rm context-demo` — the CMD lists /app."
-      - "Both files should be listed: with no .dockerignore, everything in the build context is copied into the image."
-    solution:
-      command: "docker build -t context-demo ~/context-demo"
+      The image should contain both app.txt and secret.txt. Build with
+      `docker build -t context-demo ~/context-demo` and test with `docker run --rm context-demo`.
 
   - id: add-dockerignore
+    summary: Configure context exclusion rules.
     prompt: >-
       Create a `.dockerignore` file in `~/context-demo` that excludes
-      `secret.txt` from the build context.
+      `secret.txt` from being sent to the Docker daemon during build.
     type: terminal_action
     validation:
       command: >-
@@ -107,43 +90,14 @@ tasks:
       match_type: exact
       expected_output: IGNORE_OK
     error_message: >-
-      ~/context-demo/.dockerignore should exist and contain a line for
-      secret.txt. Check with `cat ~/context-demo/.dockerignore`.
-    hints:
-      - "A .dockerignore file lives in the build context, next to the Dockerfile, and lists files to exclude."
-      - "Write the file with `echo 'secret.txt' > ~/context-demo/.dockerignore`."
-      - "Verify with `cat ~/context-demo/.dockerignore`."
-    solution:
-      command: "echo 'secret.txt' > ~/context-demo/.dockerignore"
+      ~/context-demo/.dockerignore should contain a line for secret.txt.
+      Verify with `cat ~/context-demo/.dockerignore`.
 
-  - id: rebuild-excluded
+  - id: rebuild-and-verify
+    summary: Rebuild the image and verify that the excluded file is absent.
     prompt: >-
-      Rebuild the `context-demo` image (the same tag) so the .dockerignore
-      takes effect. Then run it and confirm that `app.txt` is still present but
-      `secret.txt` is now GONE from the image.
-    type: terminal_action
-    validation:
-      command: >-
-        docker run --rm context-demo 2>/dev/null | grep -qx 'app.txt' &&
-        docker run --rm context-demo 2>/dev/null | grep -qx 'secret.txt' &&
-        echo SECRET_STILL_THERE
-      match_type: exact
-      expected_output: SECRET_STILL_THERE
-    error_message: >-
-      secret.txt is still in the image. Rebuild with
-      `docker build -t context-demo ~/context-demo` so the .dockerignore takes
-      effect, then run it again.
-    hints:
-      - "A .dockerignore only takes effect on the NEXT build — rebuild with the same tag."
-      - "`docker build -t context-demo ~/context-demo` rebuilds it."
-      - "After rebuilding, `docker run --rm context-demo` should list app.txt but not secret.txt."
-    solution:
-      command: "docker build -t context-demo ~/context-demo"
-
-  - id: verify-excluded
-    prompt: >-
-      Run the `context-demo` image once more and confirm the final state:
-      `app.txt` is present and `secret.txt` is absent.
+      Rebuild the `context-demo` image using the same tag. Run the container to
+      verify that `app.txt` is present while `secret.txt` is completely absent.
     type: terminal_action
     validation:
       command: >-
@@ -153,31 +107,24 @@ tasks:
       match_type: exact
       expected_output: EXCLUDED_OK
     error_message: >-
-      The image should contain app.txt but not secret.txt. Run
-      `docker run --rm context-demo` and check the listing.
+      secret.txt is still inside the image. Rebuild with
+      `docker build -t context-demo ~/context-demo` so .dockerignore takes effect.
     hints:
-      - "Run the image and read its output — the CMD lists /app."
-      - "app.txt should be listed; secret.txt should not."
-      - "The .dockerignore removed secret.txt from the build context, so the rebuilt image never received it."
-    solution:
-      command: "docker run --rm context-demo"
+      - "Run `docker build -t context-demo ~/context-demo` to recompile the layers."
+      - "Run `docker run --rm context-demo` to inspect the output."
 
   - id: outside-context
+    summary: Conceptual checkpoint on build context boundaries.
     prompt: >-
-      You placed `secret.txt` in the build context and excluded it with
-      `.dockerignore`. Suppose you instead tried to `COPY` a file from a
-      sibling directory like `COPY ../other/file.txt .`. Why would that fail?
+      Suppose you attempted to run `COPY ../sibling-dir/config.json .` from
+      inside your Dockerfile. Why would the Docker daemon reject this?
     type: multiple_choice
     options:
-      - "COPY can only access files inside the build context, not paths outside it"
-      - "COPY cannot copy text files"
-      - "Docker disallows all COPY instructions with a dot in the source path"
+      - "COPY can only access files within the build context directory passed to docker build"
+      - "COPY instructions cannot reference JSON configuration files"
+      - "Docker disallows all relative parent directory operators (`..`) across all directives"
     validation:
-      expected_answer: "COPY can only access files inside the build context, not paths outside it"
+      expected_answer: "COPY can only access files within the build context directory passed to docker build"
     error_message: >-
-      The build context is the boundary of the build: COPY can only see files
-      inside the directory you hand to `docker build`.
-    hints:
-      - "What does the `.` argument to `docker build` actually mean?"
-      - "The build context is the directory Docker reads from — everything COPY references must be inside it."
-      - "A path like `../other/` points outside the context, so the build cannot see it."
+      The build context acts as a security and isolation boundary. The daemon
+      cannot access filesystem paths outside the context root directory.

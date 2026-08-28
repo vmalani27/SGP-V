@@ -1,12 +1,213 @@
 id: lab-11
 title: Image Debugging
 difficulty: intermediate
-environment: docker-basic
+environment: docker-build
 
 setup:
   - command: "usermod -aG docker student"
 
 objectives:
-  - Debug image build failures
-  - Inspect image layers
-  - Optimize layer caching
+  - Diagnose why a container exits immediately
+  - Use docker logs and docker inspect to identify failures
+  - Fix broken Dockerfile instructions
+  - Verify the corrected image runs successfully
+
+tasks:
+  - id: create-broken-app
+    prompt: >-
+      Create a project directory named `broken-app` in your home directory.
+      Inside it, create an `app.py` file containing a simple Python script that
+      prints `app output` and a `Dockerfile` that starts from `python:3.12-alpine`,
+      sets the working directory to `/app`, copies `app.py` into the image, and
+      runs the script with `python app.py`. However, intentionally set the
+      working directory to `/wrong/path` instead of `/app`.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/broken-app/app.py &&
+        grep -q "print('app output')" ~/broken-app/app.py &&
+        test -f ~/broken-app/Dockerfile &&
+        grep -q 'FROM python:3.12-alpine' ~/broken-app/Dockerfile &&
+        grep -q 'WORKDIR /wrong/path' ~/broken-app/Dockerfile &&
+        grep -q 'COPY app.py' ~/broken-app/Dockerfile &&
+        grep -q 'python app.py' ~/broken-app/Dockerfile && echo BROKEN_APP_OK
+      match_type: exact
+      expected_output: BROKEN_APP_OK
+    error_message: >-
+      ~/broken-app should contain app.py with `print('app output')` and a
+      Dockerfile with WORKDIR set to `/wrong/path`. Check with
+      `cat ~/broken-app/app.py` and `cat ~/broken-app/Dockerfile`.
+    hints:
+      - "Create the directory with `mkdir -p ~/broken-app`."
+      - "app.py should print 'app output' when run."
+      - "The Dockerfile should have WORKDIR /wrong/path to simulate the bug."
+    solution:
+      command: >-
+        mkdir -p ~/broken-app &&
+        echo "print('app output')" > ~/broken-app/app.py &&
+        printf 'FROM python:3.12-alpine\n\nWORKDIR /wrong/path\n\nCOPY app.py .\n\nCMD ["python", "app.py"]\n'
+        > ~/broken-app/Dockerfile
+
+  - id: build-broken
+    prompt: >-
+      Build an image from `~/broken-app` and tag it `broken-app`. The build
+      should succeed (Dockerfile syntax is valid), but the image has a runtime
+      problem.
+    type: terminal_action
+    validation:
+      command: "docker image inspect broken-app >/dev/null 2>&1 && echo IMAGE_BUILT"
+      match_type: exact
+      expected_output: IMAGE_BUILT
+    error_message: >-
+      No image tagged `broken-app` exists. Build it with
+      `docker build -t broken-app ~/broken-app` and check `docker images`.
+    hints:
+      - "Build with `docker build -t broken-app ~/broken-app`."
+      - "The Dockerfile syntax is correct, so the build should succeed."
+      - "Verify with `docker images` — broken-app should be listed."
+    solution:
+      command: "docker build -t broken-app ~/broken-app"
+
+  - id: run-broken
+    prompt: >-
+      Run the `broken-app` image. The container should exit immediately. Observe
+      the exit behavior — the container starts and stops almost instantly.
+    type: terminal_action
+    validation:
+      command: >-
+        docker run --rm broken-app 2>/dev/null; echo "exit_code=$?" |
+        grep -q "exit_code=1" && echo EXIT_DETECTED
+      match_type: exact
+      expected_output: EXIT_DETECTED
+    error_message: >-
+      The container should exit with code 1 (error). Run
+      `docker run --rm broken-app` and observe the exit code.
+    hints:
+      - "Run with `docker run --rm broken-app`."
+      - "The container exits immediately because the working directory is wrong."
+      - "Check the exit code with `echo $?` after running."
+    solution:
+      command: "docker run --rm broken-app"
+
+  - id: diagnose-with-logs
+    prompt: >-
+      Run the container again, but this time capture its output using docker
+      logs. The error message should indicate that the file cannot be found in
+      the wrong directory. Identify the specific error.
+    type: terminal_action
+    validation:
+      command: >-
+        docker run -d --name broken-test broken-app 2>/dev/null &&
+        sleep 1 &&
+        docker logs broken-test 2>&1 | grep -qi "no such file\|not found\|error" &&
+        docker rm -f broken-test >/dev/null 2>&1 &&
+        echo LOGS_OK
+      match_type: exact
+      expected_output: LOGS_OK
+    error_message: >-
+      Docker logs should show an error about the file not being found. Run the
+      container and check `docker logs`.
+    hints:
+      - "Run detached with `docker run -d --name broken-test broken-app`."
+      - "Check logs with `docker logs broken-test`."
+      - "The error should mention the file path or directory."
+    solution:
+      command: >-
+        docker run -d --name broken-test broken-app &&
+        sleep 1 &&
+        docker logs broken-test 2>&1 &&
+        docker rm -f broken-test
+
+  - id: diagnose-with-inspect
+    prompt: >-
+      Use `docker inspect` to examine the container's configuration. Look at the
+      `WorkingDir` field in the container config — it should show `/wrong/path`.
+      This confirms the Dockerfile set the wrong working directory.
+    type: terminal_action
+    validation:
+      command: >-
+        docker inspect broken-app --format '{{.Config.WorkingDir}}' 2>/dev/null |
+        grep -q '/wrong/path' && echo INSPECT_OK
+      match_type: exact
+      expected_output: INSPECT_OK
+    error_message: >-
+      `docker inspect broken-app --format '{{.Config.WorkingDir}}'` should show
+      `/wrong/path`. Run this command to verify.
+    hints:
+      - "Use `docker inspect broken-app --format '{{.Config.WorkingDir}}'` to see the working directory."
+      - "The output should show `/wrong/path`, which is the bug."
+      - "This confirms the Dockerfile set WORKDIR incorrectly."
+    solution:
+      command: "docker inspect broken-app --format '{{.Config.WorkingDir}}'"
+
+  - id: fix-dockerfile
+    prompt: >-
+      Fix the Dockerfile in `~/broken-app` by changing the working directory from
+      `/wrong/path` to `/app`. The application files should be copied to and
+      executed from `/app`.
+    type: terminal_action
+    validation:
+      command: >-
+        grep -q 'WORKDIR /app' ~/broken-app/Dockerfile &&
+        ! grep -q 'WORKDIR /wrong/path' ~/broken-app/Dockerfile && echo FIX_OK
+      match_type: exact
+      expected_output: FIX_OK
+    error_message: >-
+      The Dockerfile should now have `WORKDIR /app` instead of
+      `WORKDIR /wrong/path`. Read it with `cat ~/broken-app/Dockerfile`.
+    hints:
+      - "Edit the Dockerfile to change `WORKDIR /wrong/path` to `WORKDIR /app`."
+      - "The COPY instruction should copy app.py into /app."
+      - "Verify with `cat ~/broken-app/Dockerfile`."
+    solution:
+      command: >-
+        sed -i 's|WORKDIR /wrong/path|WORKDIR /app|g' ~/broken-app/Dockerfile
+
+  - id: rebuild-and-verify
+    prompt: >-
+      Rebuild the `broken-app` image with the fixed Dockerfile. Then run it and
+      confirm it now prints `app output` and exits successfully (exit code 0).
+    type: terminal_action
+    validation:
+      command: >-
+        docker build -t broken-app ~/broken-app >/dev/null 2>&1 &&
+        docker run --rm broken-app 2>/dev/null | grep -q 'app output' &&
+        echo REBUILD_OK
+      match_type: exact
+      expected_output: REBUILD_OK
+    error_message: >-
+      The rebuilt image should print `app output` when run. Rebuild with
+      `docker build -t broken-app ~/broken-app` and run with
+      `docker run --rm broken-app`.
+    hints:
+      - "Rebuild with `docker build -t broken-app ~/broken-app`."
+      - "Run with `docker run --rm broken-app`."
+      - "The container should print `app output` and exit with code 0."
+    solution:
+      command: >-
+        docker build -t broken-app ~/broken-app &&
+        docker run --rm broken-app
+
+  - id: explain-debugging
+    prompt: >-
+      When debugging a container that exits immediately, which combination of
+      commands gives you the most complete picture of what went wrong?
+    type: multiple_choice
+    options:
+      - "docker logs shows stdout/stderr output; docker inspect shows the container configuration including WorkingDir and Entrypoint"
+      - "docker ps shows the exit code; docker images shows the image size"
+      - "docker run -it shows the error; docker rm cleans up the container"
+    validation:
+      expected_answer: "docker logs shows stdout/stderr output; docker inspect shows the container configuration including WorkingDir and Entrypoint"
+    error_message: >-
+      docker logs captures the application output (including error messages),
+      while docker inspect reveals the container's configuration (like working
+      directory and entrypoint). Together they diagnose most runtime issues.
+    hints:
+      - "Which command shows what the container printed?"
+      - "Which command shows the container's configuration?"
+      - "Logs show output; inspect shows configuration."
+    error_hint: >-
+      docker logs captures the application output (including error messages),
+      while docker inspect reveals the container's configuration (like working
+      directory and entrypoint). Together they diagnose most runtime issues.
