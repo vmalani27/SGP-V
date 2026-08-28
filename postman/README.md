@@ -119,8 +119,9 @@ flow client → backend → orchestrator.
 ## 5. Setup & run
 
 1. **Prerequisites**: the stack is up (`docker compose up --build`), content is
-   published to Floci (`scripts/generate_manifest.py` → upload to `course-content`),
-   and the worker has seeded Firestore (`docker compose logs worker` → `Sync complete`).
+   published to Floci (`scripts/generate_manifest.py` → upload to
+   `my-content-bucket`), and the worker has seeded Firestore
+   (`docker compose logs worker` → `Sync complete`).
 2. **Import**: Postman → Import → `SGP_DockerMastery.postman_collection.json`.
    Optionally import the environment file and select **SGP DockerMastery Local**.
 3. **Firebase auth (needed for folders 2–5)**: set `firebaseApiKey` (the web API

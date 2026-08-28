@@ -8,8 +8,8 @@ The orchestrator never communicates with Firebase or stores persistent user data
 
 When a student starts a lab from the frontend:
 
-1. **Frontend** calls `POST /api/v1/labs/courses/{id}/labs/{labId}/start` on the **backend**
-2. **Backend** reads the lab YAML from content-v2, resolves the environment config (inline or from `environments/{name}.yaml`), and calls `POST /labs` on the orchestrator
+1. **Frontend** calls `POST /api/v1/labs/courses/{id}/labs/{labId}/start` on the **backend**, supplying the lab's environment config (`image`, `apt_packages`, `pre_pull`, `setup`) in the body from its local lab config
+2. **Backend** (which never reads `lab.yaml`) forwards that config to `POST /labs` on the orchestrator
 3. **Orchestrator** creates an isolated Sysbox container using the specified image with `sysbox-runc` runtime
 4. **Orchestrator** installs `apt_packages` and pre-pulls Docker images as specified in the environment config
 
@@ -27,12 +27,14 @@ Sessions are recovered from Docker labels: containers are labelled `com.sgp.user
 
 Validation is **exec-based**. The orchestrator has no knowledge of tasks or expected answers:
 
-1. The **frontend** reads the task definitions from the backend's content API (`GET /api/v1/content/courses/{id}/labs/{labId}/tasks`)
+1. The **frontend** reads the task definitions from its local content
+   (`/api/local-content/labs/{courseId}/{labId}/tasks`), and supplies each
+   task's `task_type` + `validation` spec to the backend
 2. The student completes the task in the terminal
 3. The student clicks "Check"
-4. The **frontend** sends `POST /labs/{session_id}/exec` with the task's validation command
-5. The **orchestrator** runs the command inside the container via `docker exec` and returns the output
-6. The **frontend** compares the output to the task's `expected_output` using the `match_type`
+4. The **frontend** sends `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` with the task's spec
+5. The **backend** runs the validation command in the container via the orchestrator and matches the output (exact / contains / regex / line_count, or `expected_exit_code`)
+6. The **backend** returns `{correct, output?}` — matching happens server-side
 
 This separation means the orchestrator remains generic — it manages containers, terminals, and command execution — while each lab's tasks are defined entirely in YAML.
 

@@ -73,7 +73,9 @@ Check if the orchestrator can reach the Docker daemon.
 
 #### `POST /labs` — Start a lab
 
-The backend calls this endpoint with the environment config extracted from the lab YAML. The frontend does NOT call this directly.
+The backend calls this endpoint with the environment config the **client**
+supplied in its start request (image, apt_packages, pre_pull, setup). The
+backend never reads lab.yaml; the frontend does not call this directly.
 
 **Request:**
 ```json
@@ -159,14 +161,15 @@ The primary endpoint for frontend-driven validation.
 }
 ```
 
-**Frontend validation flow:**
+**Frontend-side validation (through the backend):**
 ```
-1. Frontend reads lab.yaml task
-2. Sends POST /labs/{id}/exec { command: task.validation.command }
-3. Gets back { output: "2" }
-4. Compares output to task.validation.expected_output ("2")
-5. Uses match_type (contains/exact/regex) for comparison
-6. Pass → unlock next task. Fail → show error_message.
+1. Frontend reads the task spec from its local lab config
+2. Sends POST /api/v1/labs/courses/{id}/labs/{labId}/validate with the task's spec
+3. Backend runs { command: task.validation.command } via POST /labs/{id}/exec
+4. Gets back { output: "2" }
+5. Backend compares output to task.validation.expected_output ("2") server-side
+6. Uses match_type (contains/exact/regex) for comparison
+7. Pass → unlock next task. Fail → show error_message.
 ```
 
 ---
