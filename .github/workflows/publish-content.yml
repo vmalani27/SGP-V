@@ -8,12 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
   validate-and-publish:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     environment: dev
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,28 +28,29 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml awscli
 
-      # ── CI gate ──────────────────────────────────────────────
+      # CI gate
       - name: Validate content
         run: python scripts/validate_content.py content-v2/
 
-      # ── Publish (gated on S3_BUCKET secret) ──────────────────
+      # Authenticate to AWS using GitHub OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::586177432842:role/labops-role-dev
+          aws-region: ap-south-1
+
+      # Generate artifact
       - name: Generate manifest + tarball
         if: env.S3_BUCKET != ''
         run: python scripts/generate_manifest.py content-v2/ out/
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
 
+      # Publish
       - name: Publish to S3
         if: env.S3_BUCKET != ''
-        # cp (not sync): always overwrites, so a rebuilt artifact under an
-        # unchanged content-derived version can never be skipped. latest.json
-        # is uploaded last — it is the pointer clients act on.
         run: |
           aws s3 cp out/published/ "s3://${S3_BUCKET}/published/" --recursive
           aws s3 cp out/latest.json "s3://${S3_BUCKET}/latest.json"
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}

@@ -2,13 +2,25 @@
 
 ## What You're Doing and Why
 
-Every lesson so far has built up to this: taking a real (if small) application and packaging it as an image. The image needs the application's source, its dependency manifest, a base image that provides the runtime, its dependencies installed, the port it listens on documented, and a startup command. You will build all of that and then prove the container actually serves requests. Keep the application tiny — a small app shows the full pattern without the noise of a production codebase.
+Every lesson so far has built up to this: taking a real application and packaging it as an image. This lab is about the **containerization**, not the application. A starter application has already been provided to you in `~/hello-app` — your job is to write the Dockerfile, build the image, and prove the container actually serves requests.
+
+By separating "the application" (given) from "the packaging" (your work), the lab stays focused: if your build or run fails, it is almost certainly a Dockerfile problem, not a Python problem.
 
 ## Background
 
-A minimal Python HTTP server needs only the standard library. The Dockerfile follows the dependency-installation pattern: base runtime image, working directory, dependency manifest, `pip install`, application source, documented port, startup command. Because the manifest changes rarely and the source changes constantly, installing dependencies first keeps rebuilds fast — the exact behavior you observed in the layer-cache lab.
+The provided app is a minimal Python HTTP server using only the standard library. It listens on port `8000`, prints `ready` on startup, and answers every GET with HTTP 200 and the body `hello from the app`.
+
+The Dockerfile follows the **dependency-installation pattern**: base runtime image, working directory, dependency manifest, `pip install`, application source, documented port, startup command. Because the manifest changes rarely and the source changes constantly, installing dependencies first keeps rebuilds fast — the exact behavior you observed in the layer-cache lab.
 
 ## Command Reference
+
+### Run the provided app directly (to inspect it)
+
+```bash
+cd ~/hello-app && python app.py
+```
+
+It prints `ready` and stays running. In another terminal fetch `curl -i http://localhost:8000/`.
 
 ### `docker build -t <name> <context-dir>`
 
@@ -24,12 +36,12 @@ Fetches the app's URL and shows the HTTP status line and body.
 
 ## Scenario
 
-You package a small Python HTTP server into an image, run it, and confirm it answers requests — the same shape as containerizing any real application.
+You are given a working application (`~/hello-app`) and asked to ship it as an image. The application is not the problem — the Dockerfile is. You write it, build, run, and confirm the container answers requests.
 
 ## Objective
 
-1. Create `~/hello-app` with `requirements.txt` and `app.py`.
-2. Write a Dockerfile: `FROM python:3.12-alpine`, `WORKDIR /app`, `COPY requirements.txt .`, `RUN pip install -r requirements.txt`, `COPY app.py .`, `EXPOSE 8000`, `CMD ["python", "app.py"]`.
+1. Inspect the provided `~/hello-app/app.py` and `requirements.txt`. Run the app directly with Python and confirm it serves HTTP 200 with `hello from the app` on port 8000.
+2. Write a `Dockerfile`: `FROM python:3.12-alpine`, `WORKDIR /app`, `COPY requirements.txt .`, `RUN pip install -r requirements.txt`, `COPY app.py .`, `EXPOSE 8000`, `CMD ["python", "app.py"]`.
 3. Build the image as `hello-app`.
 4. Run it as `hello-app-c`, publishing port 8000.
 5. Fetch `http://localhost:8000` and confirm HTTP 200 with `hello from the app`.
@@ -37,7 +49,7 @@ You package a small Python HTTP server into an image, run it, and confirm it ans
 
 ## Tasks
 
-- [ ] **create-app** — Create `~/hello-app` with `requirements.txt` and `app.py`.
+- [ ] **inspect-app** — Inspect the provided app and confirm it runs and serves on port 8000.
 - [ ] **write-dockerfile** — Write the application Dockerfile.
 - [ ] **build-app** — Build the image as `hello-app`.
 - [ ] **run-app** — Run it as `hello-app-c`, publishing port 8000.
@@ -46,4 +58,4 @@ You package a small Python HTTP server into an image, run it, and confirm it ans
 
 ## Reflection
 
-You containerized an application end to end: source, dependencies, runtime base image, installed packages, documented port, and startup command. The image you built is exactly what a real deployment would run. And the ordering question you answered is the same one every production Dockerfile answers — rarely-changing steps first, frequently-changing source last, so the expensive dependency install stays cached.
+You containerized an application end to end: a given source and dependency manifest, a base image that provides the runtime, installed dependencies, documented port, and startup command. Because the application was provided, you never had to wonder whether a failure was your code or your Dockerfile — every check in this lab isolates exactly what you were meant to practice. The ordering question you answered is the same one every production Dockerfile answers: rarely-changing steps first, frequently-changing source last, so the expensive dependency install stays cached.
