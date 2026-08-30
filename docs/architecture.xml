@@ -51,7 +51,7 @@
         <mxCell id="fe_catalog" value="Course catalog + curriculum (completion state)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
           <mxGeometry x="20" y="195" width="270" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="fe_terminal" value="xterm.js terminal — connects to backend WS /api/v1/labs/ws/lab (JWT first-message handshake, never in URL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
+        <mxCell id="fe_terminal" value="xterm.js terminal — connects to orchestrator WS /ws/terminal (first-message token handshake, never in URL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
           <mxGeometry x="310" y="60" width="270" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="fe_task_runner" value="Lab task runner (multiple_choice / terminal_action / port_check) + submit flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
@@ -74,10 +74,10 @@
         <mxCell id="be_content" value="Content version handshake — GET /api/v1/content/version (Firestore contentVersion + S3 download_url)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
           <mxGeometry x="20" y="200" width="270" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="be_lifecycle" value="Lab lifecycle proxy → orchestrator (start/stop/resume/restart/destroy/exec) + WS bridge (GET /ws/lab → /ws/terminal)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
+        <mxCell id="be_lifecycle" value="REMOVED — backend no longer ships lab proxy routers (labs.py/demos.py deleted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
           <mxGeometry x="310" y="60" width="270" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="be_validate" value="Task validation (POST /validate — exec in container, server-side match, answers never leave container)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
+        <mxCell id="be_validate" value="REMOVED — no validation proxy; matching runs client-side via orchestrator exec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
           <mxGeometry x="310" y="140" width="270" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="be_course_api" value="Course API (TOC, chapters, lab config + tasks)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
@@ -90,12 +90,12 @@
         </mxCell>
 
         <!-- S3 content store -->
-        <mxCell id="s3_container" value="S3 bucket (Floci — dev) · latest.json + published/{version}/{content.tar.gz, manifest.json}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="s3_container" value="AWS S3 (Dev/Prod Buckets) · Pushed by GitHub Actions CI runner (aws s3 sync) · latest.json + published/{version}/{content.tar.gz, manifest.json}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="60" y="365" width="440" height="55" as="geometry"/>
         </mxCell>
 
         <!-- sgp-orchestrator -->
-        <mxCell id="orchestrator_container" value="sgp-orchestrator — FastAPI · :8001 (zero content knowledge; guest :8000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="vagrant_vm">
+        <mxCell id="orchestrator_container" value="sgp-orchestrator — FastAPI · :8001 systemd service (zero content knowledge; guest :8000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="vagrant_vm">
           <mxGeometry x="560" y="40" width="620" height="260" as="geometry"/>
         </mxCell>
         <mxCell id="orch_docker" value="Docker SDK — container lifecycle + exec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="orchestrator_container">
@@ -172,13 +172,16 @@
         <mxCell id="e_fe_auth" value="Firebase client auth" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="firebase_container">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_fe_backend" value="REST API — content, labs, progress + WS /api/v1/labs/ws/lab" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="backend_container">
+        <mxCell id="e_fe_backend" value="REST API — courses/catalog, progress, content/version (metadata only — no lab/terminal traffic)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="backend_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_fe_orchestrator" value="REST /labs /demos + WS /ws/terminal — direct (token handshake)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="orchestrator_container">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e_backend_firebase" value="Firebase Admin SDK — Firestore (users, enrollments)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="backend_container" target="firebase_container">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_backend_orchestrator" value="lifecycle + validate proxy + WS terminal bridge — host.docker.internal:8001 (→ VM guest :8000)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="backend_container" target="orchestrator_container">
+        <mxCell id="e_backend_orchestrator" value="REMOVED — backend↔orchestrator proxy path (decoupled; frontend talks to it directly)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="backend_container" target="orchestrator_container">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e_worker_s3" value="download latest.json + tarball — verify artifact_sha256 + per-file manifest (S3-only)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="worker_container" target="s3_container">

@@ -11,13 +11,26 @@ Reproduction
 Impact
 - Validation can report false negatives for exercises that change group membership or rely on transient shell state (environment variables, current working directory, exported variables, etc.). This affects Docker labs (DinD) and any lab where the student is instructed to change user/group state.
 
+Status
+- **Plumbing resolved via decoupling:** the orchestrator accepts the exec `user` from
+  the client, and the frontend now forwards `validation.execution_user` directly
+  (the old backend proxy that hardcoded `user: student` is removed —
+  see `docs/TESTING.md`). The remaining sensitivity is an **authoring** concern:
+  commands that depend on a *fresh login* must include `su - student -c '...'`
+  or use a persistent-state probe (`getent group docker`, image/container checks).
+
 Short-term workaround
 - Run validation as `root` when the intent is to check persistent system state (images present, container logs, services active). For example: use `getent group docker | grep -qw student` and/or run `su - student -c 'docker ps'` inside the validation command to simulate a fresh login.
 - Authors can make validation commands explicitly create a fresh student session via `su - student -c '...'` so the exec is not dependent on the interactive shell's state.
 
 Long-term solution
 1. Schema & contract: add an explicit `validation.execution_user` (enum: `student` | `root`) and `validation.expected_exit_code` to the lab YAML schema (done). Authors can express whether validation should run with administrative privileges or with a fresh student login.
-2. Backend/frontend: honor `validation.execution_user` and send the orchestrator an exec request with the appropriate `user` field (e.g. `"user": "root"` for administrative checks). When `execution_user: student` but the check must verify a new login's capabilities, the backend should run `su - student -c '<cmd>'` under root so that supplementary group membership is re-evaluated for a fresh session.
+2. ✅ Resolved via decoupling: the backend proxy is gone — the **frontend** sends
+   `validation.execution_user` straight to the orchestrator's exec `user` field,
+   which honors it; the old hardcoded `user: student` no longer exists. The
+   remaining nuance is content-authoring: to verify a *fresh login's*
+   capabilities, the validation command itself should use `su - student -c '<cmd>'`
+   so supplementary group membership is re-evaluated (see Short-term workaround).
 3. Orchestrator: document and enforce a clear distinction between interactive terminal processes (student WebSocket shell) and validation execs. Provide helper execution modes: `as_root`, `as_student_fresh_login`, and `as_student_reuse_shell` (the latter being the current behavior). Prefer `as_student_fresh_login` for capability checks.
 4. Test harness: add automated tests that cover group-membership changes, env var persistence, and service activation validations to catch regressions.
 

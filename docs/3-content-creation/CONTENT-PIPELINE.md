@@ -14,7 +14,7 @@ the worker (metadata) and the frontend (client-side content bootstrap).
 | Worker | S3-only: download → validate → seed Firestore | webhook-triggered sync (Item D) |
 | Backend | pure Firestore API (auth/catalog/progress) + `GET /api/v1/content/version` — reads **no** content files | unchanged |
 | Frontend | boots content from S3 (handshake → download → sha256 verify → extract) and serves chapters/labs locally | packaged client |
-| Orchestrator | runs inside the Vagrant VM (dev: Ubuntu + Docker + Sysbox; guest :8000 → host :8001), proxies lab lifecycle | packaged client runs it on the student's docker |
+| Orchestrator | runs inside the Vagrant VM (dev: Ubuntu + Docker + Sysbox; guest :8000 → host :8001), lab container lifecycle + exec + terminal WS — the frontend calls it **directly** | packaged client runs it on the student's docker |
 
 ---
 
@@ -46,13 +46,13 @@ S3 bucket ──→  Frontend  (Next.js, same-origin bootstrap)
     │            tarball → verify sha256 → extract to /app/.content → serve locally
     │            (/api/local-content/* — no backend content reads)
     │
-    ├──→  Backend  (metadata API — reads no content files)
+    ├──→  Backend  (metadata API — reads no content files, never calls the orchestrator)
     │         GET /api/v1/content/version — handshake (contentVersion from Firestore)
     │         GET /api/v1/courses*        — catalog + TOC from Firestore `courses`
-    │         GET /api/v1/labs/...        — lab lifecycle proxy → orchestrator
+    │         (no lab / demo / terminal traffic)
     │
-    └──→  Orchestrator  (runs in the Vagrant VM; sees only commands)
-              POST /labs {image,…} · exec · ws — never reads course files
+    └──→  Frontend ──→  Orchestrator  (direct; the VM sees only commands)
+              POST /labs {image,…} · /labs/{id}/exec · WS /ws/terminal — never reads course files
 ```
 
 ### Target distribution (packaged client)
@@ -542,23 +542,17 @@ the frontend's local content dir (`/app/.content`).
 | `/api/local-content/labs/{courseId}/{labId}/instructions` | frontend | lab instructions from the local store |
 | `/api/local-content/labs/{courseId}/{labId}/config` | frontend | lab YAML config, environment resolved |
 | `/api/local-content/labs/{courseId}/{labId}/tasks` | frontend | lab tasks from the local store |
+| `POST /labs` · `/labs/{id}/exec` · `WS /ws/terminal` | **orchestrator** | lab lifecycle + validation exec + terminal — the frontend talks to it **directly** (`next-app/lib/api.ts` `orchestratorFetch`), the backend is not in the path |
 
-**Lab runtime (proxy to orchestrator)** — `backend/app/routers/labs.py`:
+**Lab runtime (frontend → orchestrator, direct)** — no backend involvement:
 
-- `POST .../start` provisions from the **client-supplied** env config
-  `{image, apt_packages, pre_pull, setup}` — the backend never reads `lab.yaml`.
-  The backend watches for an existing live container (labels) and re-applies
-  `setup` on reuse so a stale container never stays broken.
-- `POST .../tasks` (authed) returns the client-supplied task list; for dynamic
-  multiple-choice it runs the validation `command` in the container to build the
-  option list.
-- `POST .../validate` dispatches by `task_type`: `multiple_choice` (compare
-  answer to `expected_answer` or dynamic output — never executes state),
-  `file_check` (`path` contains `contains`), `port_check` (exec + match),
-  default = run `command` and decide from `expected_exit_code` if present, else
-  `match_type` on the output.
-- `WS /api/v1/labs/ws/lab` proxies terminal frames to the orchestrator (JWT as
-  first message).
+- Provisioning sends the **client-supplied** env config `{image, apt_packages, pre_pull, setup}` to the orchestrator's `POST /labs` — the orchestrator never reads `lab.yaml`. Re-entry uses `GET /labs/by_key` (labels) and re-applies `setup` on reuse so a stale container never stays broken.
+- Tasks come from the frontend's own local store (`/api/local-content/labs/{id}/tasks`); nothing calls the backend for them.
+- Validation: the frontend dispatches by `task_type` (`multiple_choice`, `file_check`, `port_check`, default = command + match), runs the `validation.command` via orchestrator `POST /labs/{sessionId}/exec`, and matches `/expected_exit_code` client-side.
+- Terminal: `WS /ws/terminal` from the browser directly to the orchestrator (first-message token handshake).
+- Decoupling note: the backend ships **no** lab/demo routers — `labs.py`/`demos.py`
+  (and `/api/v1/labs*`, `/api/v1/demos*`, `WS /api/v1/labs/ws/lab`) were removed.
+  It serves metadata + progress + the version handshake only.
 
 ---
 
@@ -580,14 +574,14 @@ directory (`/api/local-content/*`, backed by `next-app/lib/content-local.ts`).
 - **intro** — title, a difficulty meter placeholder (time/XP/beginner text are
   intentionally not shown), objectives, instructions, Start Lab.
 - **running** — toolbar (pause/resume/restart/destroy) + task renderer +
-  terminal (xterm.js over the backend WS proxy).
+  terminal (xterm.js over the orchestrator WebSocket — direct).
 
 **Task renderer** (`LabTaskRenderer`) dispatches on `task.type`:
 `multiple_choice` → `MultipleChoiceTask`, `terminal_action` →
-`TerminalActionTask`, `port_check` → `PortCheckTask`. Each calls
-`POST .../validate {task_id, answer}`; correct → success animation + advance,
+`TerminalActionTask`, `port_check` → `PortCheckTask`. Each validates via the
+orchestrator's `exec` (see §7); correct → success animation + advance,
 incorrect → `error_message` + `hint`. All tasks done → Submit Lab modal
-records completion and destroys the container.
+records completion (backend) and destroys the container (orchestrator).
 
 ---
 
@@ -612,6 +606,10 @@ Responsibilities:
 | S3 | bucket | canonical content bytes, **public read** |
 | Client | `frontend` | content bootstrap + serves course UI from local files |
 | Client | `orchestrator` | runs lab containers on the student's docker (via local `docker.sock`) |
+
+As in dev (§7), the client's `frontend` calls the client's `orchestrator`
+directly (`localhost:8001` REST + `ws://localhost:8001/ws/terminal`) — the
+cloud `backend` stays out of the lab path entirely.
 
 **Content bootstrap** (frontend, on startup):
 

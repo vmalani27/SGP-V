@@ -117,9 +117,10 @@ Ordered. Anything outside this list waits.
 1. **Persist per-task results server-side:** `{taskId, passed, attempts,
    timestamp}` per lab attempt. Today progress is binary `"completed"` strings
    with no history — no instructor view is possible without this.
-   *Status: implemented — `taskResults.{moduleId}.{labId}.{taskId}` written
-   best-effort by the backend on every validation
-   (backend/app/routers/labs.py `_record_task_result`).*
+   *Status: NOT currently recorded. The old `labs.py _record_task_result`
+   (`backend/app/routers/labs.py`) was removed with the proxy routers; the
+   frontend-driven validation flow (`next-app/lib/api.ts → api.labs.validate`)
+   only marks the lab complete via the backend's `labsProgress` endpoint.*
 2. **Cohort view v0:** one page querying enrollments for one instructor's
    course. A raw Firestore query behind a login is acceptable for the pilot.
 3. **Minimal instructor identity:** a Firebase custom claim (`role=instructor`)

@@ -5,31 +5,90 @@ interactive labs with real terminal environments.
 
 ## Architecture
 
+### System Overview
+
+```mermaid
+graph TB
+    subgraph HOST["HOST · docker compose"]
+        FE["<b>frontend</b> · Next.js<br/>:3000<br/>Auth · Wizard · xterm.js<br/>Content bootstrap"]
+        BE["<b>backend</b> · FastAPI<br/>:8000<br/>Metadata · Catalog · Enrollment<br/>Progress · Version handshake"]
+        W["<b>worker</b> · Python<br/>:8002<br/>S3 download · Validate<br/>Seed Firestore"]
+    end
+
+    subgraph INFRA["Infrastructure"]
+        FB["Firebase · Firestore<br/>Catalog · TOC · Auth<br/>Progress · Enrollments"]
+        S3["AWS S3<br/>my-content-bucket"]
+        CTV["content-v2/<br/>Source of truth"]
+    end
+
+    subgraph VM["Vagrant VM · Ubuntu 22.04"]
+        ORC["<b>orchestrator</b> · systemd<br/>:8001 ⇐ guest :8000<br/>Docker Engine + Sysbox"]
+        LAB1["sgp-lab-ubuntu<br/>Lab container"]
+        LAB2["sgp-lab-docker<br/>Lab container"]
+        LAB3["sgp-lab-git<br/>Lab container"]
+    end
+
+    FE -->|"API calls"| BE
+    FE -->|"GET /api/v1/content/version<br/>(handshake)"| BE
+    FE -->|"download → sha256 verify<br/>→ extract → serve locally"| S3
+    BE -->|"Read/Write"| FB
+    W -->|"download → verify<br/>→ validate → seed"| S3
+    W -->|"POST /sync<br/>(metadata + contentVersion)"| FB
+    ORC -->|"proxy"| FE
+    FE -.->|"WebSocket terminal"| ORC
+    ORC --> LAB1
+    ORC --> LAB2
+    ORC --> LAB3
+    CTV -->|"publish (CI / scripts)"| S3
 ```
-HOST · docker compose
-   frontend (:3000) ─────────────────────────────► backend (:8000)
-      │                                              │
-      │ GET /api/v1/content/version (handshake)      │ Firebase · Firestore
-      │                                              │   (catalog/TOC, auth, progress,
-      │ download → sha256 verify → extract ──────────┘    enrollments — written by backend/worker)
-      │ → serve chapters/labs locally                 ▼
-      ▼                                 host.docker.internal:8001
-   S3 bucket (my-content-bucket)                      ▼
-      ▲                                     VAGRANT VM · Ubuntu 22.04
-      │ publish (CI / scripts)                  orchestrator (:8001 ⇐ guest :8000)
-      │                                          Docker Engine + Sysbox
-   content-v2/  (source of truth)                 sgp-lab-{ubuntu,docker,git}
-      ▲                                          (lab containers · tmux terminal)
-      │ download → verify
-   worker (:8002) ── validate → seed ──► Firestore (metadata + contentVersion)
+
+### Content Delivery Flow
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant CI as CI / Scripts
+    participant S3 as S3 Bucket
+    participant FE as Frontend<br/>:3000
+    participant BE as Backend<br/>:8000
+    participant Worker as Worker<br/>:8002
+    participant FB as Firestore
+    participant User as User Browser
+
+    Note over Dev,CI: Content Publishing
+    Dev->>CI: Push content-v2/
+    CI->>S3: Build & publish artifact
+    CI->>Worker: Trigger sync (POST /sync)
+    Worker->>S3: Download artifact
+    Worker->>Worker: Verify integrity
+    Worker->>Worker: Validate structure
+    Worker->>FB: Seed metadata + contentVersion
+
+    Note over User,FB: Client Content Bootstrap
+    User->>FE: Open app
+    FE->>BE: GET /api/v1/content/version
+    BE->>FB: Query catalog
+    FB-->>BE: version, download_url, sha256
+    BE-->>FE: {version, download_url, artifact_sha256}
+    FE->>S3: Download artifact
+    FE->>FE: Verify sha256
+    FE->>FE: Extract & serve locally
+
+    Note over User,FE: Lab Execution
+    User->>FE: Start lab
+    FE->>FE: Supply env config + task specs
+    FE->>FE: Validate via exec in container
+    Note right of FE: Answers never reach browser
 ```
+
+### Service Responsibilities
 
 | Service | Port | Responsibility |
 |---------|------|----------------|
 | **frontend** `next-app/` | 3000 | Auth, learning wizard, xterm.js terminal, **content bootstrap** — downloads the published artifact from S3, verifies its sha256, extracts locally, and serves chapters/lab config from local files |
 | **backend** `backend/` | 8000 | Pure metadata + data-location API: Firebase auth, catalog/TOC from Firestore, enrollment/progress, lab lifecycle proxy, version handshake. **Reads no content files** |
 | **worker** `worker/` | 8002 | **S3-only**: downloads the artifact, verifies integrity, validates, seeds Firestore (polling + `POST /sync`) |
-| **orchestrator** `orchestrator/` | 8001 | Docker container lifecycle, exec, WebSocket terminal — runs **inside the Vagrant VM** (guest `:8000` → host `:8001`) |
+| **orchestrator** `orchestrator/` | 8001 | Docker container lifecycle, exec, WebSocket terminal — runs **inside the Vagrant VM as a systemd service** (guest `:8000` → host `:8001`), keeping the VM daemon free for lab containers |
 
 **Content delivery:** `content-v2/` is the source of truth, published to S3 by
 CI/scripts. The worker seeds Firestore metadata; the frontend downloads the bytes
@@ -47,45 +106,70 @@ and serves them locally. The backend never touches course files.
   instead of duplicating after a restart
 - **Guided in-chapter demos** — `:::terminal-demo` blocks → demo container + terminal
 
-## Quick Start
+## Setup (new developer)
+
+Full step-by-step guide: **[`docs/2-development/setup.md`](docs/2-development/setup.md)**
+
+Key points for a fresh clone:
+
+1. **Credentials** — you need a Firebase service-account JSON and the web API key:
+   - Place your dev service account in `environments/dev/firebase/FIREBASE_CREDS_JSON_DEV.json`.
+   - Fill the 6 `NEXT_PUBLIC_FIREBASE_*` values in `environments/dev/frontend/.env.dev`.
+2. **Start Docker Stack** — The local environment includes the Next.js frontend, Python FastAPI backend, and Floci (LocalStack). Run:
+   ```bash
+   docker compose -f docker-compose.local.yml up -d
+   ```
+3. **Deploy Local AWS Resources & Content** — We use an automated script to provision the local S3 bucket, build the Python Lambda Worker packages, publish the Layer, and upload the content to trigger the sync:
+   - On Windows: run `scripts\local\deploy_floci_lambda.bat`
+   - It will automatically seed the content to Floci and trigger the Lambda.
+4. **Start Vagrant VM** — `vagrant up` to boot the VM and orchestrator.
+5. **Open** — http://localhost:3000.
+
+## Environments & Publishing Pipeline
+
+The repository is structured with clear separation between local dev and remote environments:
+- **Local Dev**: Run via `docker-compose.local.yml`. Local scripts live in `scripts/local/`.
+- **Dev**: Pushing to the `dev` branch triggers `.github/workflows/publish-content-dev.yml` to deploy content to the Dev S3 bucket.
+- **Beta**: Pushing a tag like `v1.0.0-beta` triggers `.github/workflows/publish-content-beta.yml` to deploy content to the Beta S3 bucket and environment.
+
+## Quick Start (index)
 
 | Step | See |
 |------|-----|
-| Environment + publish content + start the stack and VM | [`docs/setup.md`](docs/setup.md) |
-| Hot reload, volume mounts, commands, pitfalls | [`docs/development.md`](docs/development.md) |
-| Manual end-to-end test suite | [`docs/TESTING.md`](docs/TESTING.md) |
+| Environment + publish content + start the stack and VM | [`docs/2-development/setup.md`](docs/2-development/setup.md) |
+| Hot reload, volume mounts, commands, pitfalls | [`docs/2-development/development.md`](docs/2-development/development.md) |
+| Manual end-to-end test suite | [`docs/2-development/TESTING.md`](docs/2-development/TESTING.md) |
 | Postman API suite | [`postman/README.md`](postman/README.md) |
-
-The core sequence is: `docker compose up --build`, `vagrant up`, publish to
-`my-content-bucket`, let the worker seed Firestore, then open
-http://localhost:3000.
 
 ## Current Status
 
 **Working** — client content bootstrap (handshake → download → sha256 verify →
 local extract → serve); Firestore-seeded catalog/TOC; enrollment + progress
-(chapters, labs, per-task `taskResults`); lab lifecycle proxy with client-
-supplied config; server-side task validation; tmux WebSocket terminal (JWT first-
-message handshake); label-based session recovery + restart-safe containers;
-guided chapter demos; worker full-reconcile sync. Live content:
-`d139fdc9a662520e`.
+(chapters, `labsProgress`); frontend ↔ orchestrator direct (lab lifecycle,
+validation `exec`, tmux WebSocket terminal) with the backend fully decoupled
+(metadata/progress/version handshake only); label-based session recovery +
+restart-safe containers; guided chapter demos; worker full-reconcile sync. Live
+content: `d139fdc9a662520e`.
 
 **Remaining / open**
 - 16/20 labs are skeleton stubs (tasks for labs 4–10 of both courses)
 - **Commit `scripts/generate_manifest.py`'s raw-tar hash fix + the cp-based
   workflow** — CI still produces checksum-mismatched artifacts until pushed
-  (see `docs/bugs.md`)
+  (see `docs/2-development/bugs.md`)
 - Course immutability enforcement (`structuralHash`) · webhook-triggered sync
   (Item D, designed) · content-integrity sync + new-content badges · group-
   membership false-negative bug · automated test harness
-- Backlog: [`docs/deferred-improvements.md`](docs/deferred-improvements.md)
+- Backlog: [`docs/2-development/deferred-improvements.md`](docs/2-development/deferred-improvements.md)
 
 ## Docs
 
-- [`docs/PHASE-0.md`](docs/PHASE-0.md) — problem definition + frozen decisions (*read before new work*)
-- [`docs/CONTENT-PIPELINE.md`](docs/CONTENT-PIPELINE.md) — content format, validation, publishing, seeding, immutability (§11)
-- [`docs/CONTENT-AUTHORING.md`](docs/CONTENT-AUTHORING.md) — lab/chapter authoring guide
-- [`docs/CLIENT-APP-PLAN.md`](docs/CLIENT-APP-PLAN.md) — historical client-side content delivery plan
+Role-based index (find the doc you need by what you're doing):
+[**`docs/README.md`**](docs/README.md)
+
+- [`docs/1-philosophy/PHASE-0.md`](docs/1-philosophy/PHASE-0.md) — problem definition + frozen decisions (*read before new work*)
+- [`docs/3-content-creation/CONTENT-PIPELINE.md`](docs/3-content-creation/CONTENT-PIPELINE.md) — content format, validation, publishing, seeding, immutability (§11)
+- [`docs/3-content-creation/CONTENT-AUTHORING.md`](docs/3-content-creation/CONTENT-AUTHORING.md) — lab/chapter authoring guide
+- [`docs/archive/CLIENT-APP-PLAN.md`](docs/archive/CLIENT-APP-PLAN.md) — historical client-side content delivery plan
 - [`docs/architecture.xml`](docs/architecture.xml) — architecture diagram (draw.io XML)
-- [`docs/bugs.md`](docs/bugs.md) — resolved root causes + open bug
+- [`docs/2-development/bugs.md`](docs/2-development/bugs.md) — resolved root causes + open bug
 - Service READMEs: [`backend/`](backend/README.md) · [`next-app/`](next-app/README.md) · [`orchestrator/`](orchestrator/README.md) · [`orchestrator/schemas/`](orchestrator/schemas/README.md)

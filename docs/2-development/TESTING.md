@@ -23,26 +23,23 @@ for the fixes and changes landed so far on `dev`. This is the companion to
 ### Baseline setup
 
 ```bash
-# 1. Project root .env (see docs/setup.md)
-FIREBASE_PROJECT_ID=...
-FIREBASE_CREDENTIALS_JSON={"type":"service_account",...}
-CONTENT_PUBLIC_BASE_URL=http://localhost.floci.io:4566/my-content-bucket
-AWS_ENDPOINT_URL=http://localhost.floci.io:4566
-AWS_ACCESS_KEY_ID=test
-AWS_SECRET_ACCESS_KEY=test
+# 0. Local env file — copy environments/local/.env.local.sample →
+#    environments/local/.env.local and fill the Firebase vars (docs/setup.md §3a).
+#    Short-hand for the local stack (floci S3, no AWS creds needed):
+C="docker compose -f docker-compose.local.yml --env-file environments/local/.env.local"
 
-# 2. Validate + publish content to the S3 store (CI does this on push to dev)
+# 1. Validate + publish content to the S3 store (CI does this on push to dev)
 python scripts/validate_content.py content-v2/          # expect: exit 0
 python scripts/generate_manifest.py content-v2/ out/
 export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
 aws --endpoint-url http://localhost.floci.io:4566 s3 mb s3://my-content-bucket   # if it doesn't already exist
 aws --endpoint-url http://localhost.floci.io:4566 s3 sync out/ s3://my-content-bucket/
 
-# 3. Start the stack (host compose + orchestrator VM)
-docker compose up --build -d
+# 2. Start the stack (local host compose + orchestrator VM)
+$C up --build -d
 vagrant up                      # provisions + starts the orchestrator VM (Docker + Sysbox)
 
-# 4. Lab images are built inside the VM by provisioning/build-lab-images.sh
+# 3. Lab images are built inside the VM by provisioning/build-lab-images.sh
 #    (the VM's own Docker runs the lab containers; ~1 rebuild after first vagrant up)
 ```
 
@@ -51,7 +48,7 @@ vagrant up                      # provisions + starts the orchestrator VM (Docke
 curl http://localhost:8000/health                    # {"status":"ok"}
 curl http://localhost:8000/api/v1/content/version    # {version, download_url, artifact_sha256}
 curl http://localhost:8002/status                    # content_source: "s3", published_version set
-docker compose logs worker                           # "Sync complete: 2 synced, 0 skipped, 0 errors"
+$C logs worker                                       # "Sync complete: 2 synced, 0 skipped, 0 errors"
 ```
 
 ---
@@ -69,7 +66,7 @@ so the worker never seeded Firestore (crash loop / empty catalog).
 content and seed Firestore on startup, so the app shows the course catalog.*
 
 **Success criteria**
-- [ ] Worker container is up (no crash loop, no traceback in `docker compose logs worker`)
+- [ ] Worker container is up (no crash loop, no traceback in `docker compose -f docker-compose.local.yml --env-file environments/local/.env.local logs worker`)
 - [ ] `GET /status` → `content_source: "s3"`, `published_version` equals the
       `version` in `out/latest.json`
 - [ ] `GET /status` → `last_result.status: "ok"` with `synced: 2`
@@ -78,9 +75,10 @@ content and seed Firestore on startup, so the app shows the course catalog.*
 
 **Manual test**
 ```bash
-docker compose logs -f worker          # wait for "Sync complete: 2 synced, 0 skipped"
+# C = "docker compose -f docker-compose.local.yml --env-file environments/local/.env.local"  (see top)
+$C logs -f worker                # wait for "Sync complete: 2 synced, 0 skipped"
 curl http://localhost:8002/status
-cat out/latest.json                    # compare version
+cat out/latest.json              # compare version
 # Firestore console → courses collection → both docs exist
 ```
 
@@ -112,12 +110,12 @@ titles, orders, and counts) to be complete and correct wherever I look in the ap
 #   courses/docker-mastery → totalLabs should be 10, modules[].labs populated
 
 # Idempotency
-curl -X POST http://localhost:8002/sync
-curl http://localhost:8002/status                  # last_result.skipped == 2
+scripts\local\deploy_floci_lambda.bat
+docker logs floci                  # last_result.skipped == 2
 
 # Self-healing: delete courses/docker-mastery in the Firestore console, then:
-curl -X POST http://localhost:8002/sync
-curl http://localhost:8002/status                  # last_result.synced == 1 (recreated)
+scripts\local\deploy_floci_lambda.bat
+docker logs floci                  # last_result.synced == 1 (recreated)
 
 # Frontend: http://localhost:3000/courses/docker-mastery
 #   → module accordions list chapters + labs with titles; counts match Firestore
@@ -155,9 +153,9 @@ aws --endpoint-url http://localhost.floci.io:4566 s3 cp out/published/ s3://my-c
 aws --endpoint-url http://localhost.floci.io:4566 s3 cp out/latest.json s3://my-content-bucket/latest.json
 
 # Force a cycle and observe the new version
-curl -X POST http://localhost:8002/sync
-curl http://localhost:8002/status                    # published_version changed
-docker compose exec worker ls /data/content          # index.json present
+scripts\local\deploy_floci_lambda.bat
+docker logs floci                    # published_version changed
+$C exec worker ls /data/content                     # index.json present
 # Firestore console → course doc contentVersion == new version
 ```
 
@@ -196,9 +194,9 @@ python scripts/validate_content.py content-v2/; echo "exit=$?"
 
 # 2. Induce a validation failure: corrupt one lab.yaml (e.g. remove the
 #    environment field), republish, force sync:
-curl -X POST http://localhost:8002/sync
-curl http://localhost:8002/status                    # last_result.status == "validation_failed"
-docker compose logs worker                           # worker still alive, logs validation error
+scripts\local\deploy_floci_lambda.bat
+docker logs floci                    # last_result.status == "validation_failed"
+$C logs worker                                         # worker still alive, logs validation error
 
 # 3. Restore the file, republish, force sync again:
 curl -X POST http://localhost:8002/sync              # status back to "ok"
@@ -238,27 +236,28 @@ state actually holds.*
    `docker run --name alpine-container alpine:latest echo GREETING_FROM_ALPINE` → Check → correct
 7. Submit Lab → container destroyed, next item in the path loads
 
-**Manual test (API, faster)** — use `postman/README.md` Phase 4, or curl:
+**Manual test (API, faster)** — the lab path now lives on the **orchestrator**
+(`localhost:8001`; auth = `Authorization: Bearer $ORCHESTRATOR_SECRET`), not the
+backend:
 ```bash
 # start lab with the client-supplied env config (docker-basic resolves to):
-curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/start \
-  -H "Authorization: Bearer $ID_TOKEN" -H "Content-Type: application/json" \
-  -d '{"image":"sgp-lab-docker:latest","apt_packages":[],"pre_pull":["nginx:alpine","alpine:latest"],"setup":[]}'
-# → {session_id, ws_token, ...}
+curl -s -X POST http://localhost:8001/labs \
+  -H "Authorization: Bearer $ORCHESTRATOR_SECRET" -H "Content-Type: application/json" \
+  -d '{"user_id":"manual","lab_id":"lab-1","image":"sgp-lab-docker:latest","apt_packages":[],"pre_pull":["nginx:alpine","alpine:latest"],"setup":[]}'
+# → {session_id, status, container_name}
 
-# answer-based validate (no exec):
-curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/validate \
-  -H "Authorization: Bearer $ID_TOKEN" -H "Content-Type: application/json" \
-  -d '{"task_id":"access-daemon","answer":"No","task_type":"multiple_choice","validation":{"expected_answer":"No"}}'
-# → {"correct": true}
+# exec a validation command in the container (user honors validation.execution_user):
+curl -s -X POST http://localhost:8001/labs/<session_id>/exec \
+  -H "Authorization: Bearer $ORCHESTRATOR_SECRET" -H "Content-Type: application/json" \
+  -d '{"command":"docker image ls | grep nginx","user":"student"}'
+# → {exit_code, output} — matching happens client-side
 ```
 
-> **Known gap:** `run-simple-container` is authored with `execution_user: root`,
-> and the orchestrator's exec accepts a `user` field — but the backend's
-> `_run_orchestrator_exec` still hardcodes `user: student` and ignores
-> `execution_user`. On a container where the student hasn't done the group fix,
-> this check can false-negative. Tracked in `docs/bugs.md`. That fix is **not**
-> done yet.
+> **Note (resolved):** `run-simple-container` is authored with
+> `execution_user: root`. With the backend proxy routers removed, the frontend
+> forwards `validation.execution_user` as the orchestrator exec `user` field,
+> which the orchestrator honors — the old false-negative (backend hardcoding
+> `user: student`) no longer exists.
 
 ---
 
@@ -286,7 +285,7 @@ working even though the backend no longer serves course files.*
 **Manual test**
 ```bash
 # Fresh local store
-docker compose down -v && docker compose up --build -d
+$C down -v && $C up --build -d
 
 # 1. Version handshake (public, no auth)
 curl http://localhost:8000/api/v1/content/version
@@ -301,7 +300,7 @@ curl -i http://localhost:8000/api/v1/content/courses | head -1    # HTTP/1.1 404
 
 # 4. UI end-to-end: login → open a course → open a chapter (theory) → open lab-1
 #    After loading, the local store is populated:
-docker compose exec frontend sh -c 'ls /app/.content && cat /app/.content/version'
+docker compose exec frontend sh -c 'ls /app/.content && cat /app/.content/version'   # (or: $C exec frontend sh -c 'ls /app/.content && cat /app/.content/version')
 #    → version file + data/ (index.json, courses/, environments/)
 
 # 5. Local serving proves itself: after a content republish (Test 3) the app
@@ -323,7 +322,8 @@ regression check that the backend file routes now 404.
 | Catalog / TOC (Firestore) | `GET /api/v1/courses`, `GET /api/v1/courses/{id}` | No |
 | Local chapter content | `GET /api/local-content/chapters/{courseId}/{chapterId}` | No |
 | Local lab instructions/config/tasks | `GET /api/local-content/labs/{courseId}/{labId}/...` | No |
-| Start lab (client-supplied config) | `POST /api/v1/labs/courses/{id}/labs/{labId}/start` | Yes |
-| Enrich tasks | `POST /api/v1/labs/courses/{id}/labs/{labId}/tasks` | Yes |
-| Validate task (client-supplied spec) | `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` | Yes |
+| Start lab (client-supplied config) | `POST /labs` (orchestrator :8001, Bearer `ORCHESTRATOR_SECRET`) | No |
+| Recover live session | `GET /labs/by_key?user_id=&lab_id=` (orchestrator) | No |
+| Run validation command | `POST /labs/{session_id}/exec` (orchestrator, `user` = `validation.execution_user`) | No |
+| Terminal | `WS /ws/terminal` (orchestrator; token as first message) | No |
 | Worker status / force sync | `GET /status`, `POST /sync` | No |
