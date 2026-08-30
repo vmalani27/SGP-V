@@ -1,21 +1,39 @@
 name: publish-content
 
+# Content pipeline — three stage-segregated jobs:
+#
+#   lint    → validate        (content correctness gate; always runs)
+#   build   → generate-manifest (standalone, deterministic; uploads `out/` artifact)
+#   publish → authenticate + s3 (only when S3 creds are configured; uploads artifact)
+#
+# GitHub Actions has no native stages, so the pipeline stages are expressed as
+# the `needs` chain (validate → generate-manifest → publish) with job names
+# prefixed by their stage.
+
 on:
   push:
     branches: [dev]
     paths:
       - 'content-v2/**'
+      - 'scripts/**'
+      - '.github/workflows/publish-content.yml'
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
+  actions: write
+
+# Serialize runs per branch so a slow publish can never be overwritten by a
+# concurrent run (latest.json is the pointer clients act on).
+concurrency:
+  group: publish-content-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  validate-and-publish:
-    runs-on: ubuntu-latest
-    environment: dev
-
+  # ── STAGE 1 · LINT ────────────────────────────────────────────────
+  validate:
+    name: lint / validate content
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,31 +44,80 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install pyyaml awscli
+        run: pip install pyyaml
 
-      # CI gate
       - name: Validate content
         run: python scripts/validate_content.py content-v2/
 
-      # Authenticate to AWS using GitHub OIDC
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+  # ── STAGE 2 · BUILD ───────────────────────────────────────────────
+  generate-manifest:
+    name: build / generate manifest + tarball
+    runs-on: self-hosted
+    needs: validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          role-to-assume: arn:aws:iam::586177432842:role/labops-role-dev
-          aws-region: ap-south-1
+          python-version: '3.12'
 
-      # Generate artifact
+      # generate_manifest.py is pure stdlib — no dependency install needed.
       - name: Generate manifest + tarball
-        if: env.S3_BUCKET != ''
         run: python scripts/generate_manifest.py content-v2/ out/
-        env:
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
 
-      # Publish
-      - name: Publish to S3
-        if: env.S3_BUCKET != ''
+      - name: Upload publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-artifact
+          path: out/
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── STAGE 3 · PUBLISH ─────────────────────────────────────────────
+  publish:
+    name: publish / authenticate + upload to S3
+    runs-on: self-hosted
+    needs: generate-manifest
+    # The only job privileged with S3 secrets / the `dev` environment
+    # (protection rules, JWT/S3 secrets). Skipped when no bucket is
+    # configured so the lint+build stages still gate forks and PRs.
+    environment: dev
+    if: ${{ secrets.S3_BUCKET != '' }}
+    steps:
+      - name: Download publish artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-artifact
+          path: out/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install AWS CLI
+        run: pip install awscli
+
+      - name: Authenticate with S3 (Floci credentials)
         run: |
-          aws s3 cp out/published/ "s3://${S3_BUCKET}/published/" --recursive
-          aws s3 cp out/latest.json "s3://${S3_BUCKET}/latest.json"
+          aws configure set aws_access_key_id     "$AWS_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          aws configure set region                "$AWS_DEFAULT_REGION"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Publish to S3
+        # cp (not sync): always overwrites, so a rebuilt artifact under an
+        # unchanged content-derived version can never be skipped. latest.json
+        # is uploaded last — it is the pointer clients act on.
+        run: |
+          aws s3 cp out/published/ "s3://${S3_BUCKET}/published/" --recursive --endpoint-url "${AWS_ENDPOINT_URL}"
+          aws s3 cp out/latest.json "s3://${S3_BUCKET}/latest.json" --endpoint-url "${AWS_ENDPOINT_URL}"
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
