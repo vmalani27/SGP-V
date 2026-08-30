@@ -4,6 +4,7 @@ from datetime import datetime
 
 from app.core.firestore_db import db
 from app.utils.firebase_util import verify_firebase_token
+from app.models.course import Course, Enrollment
 
 router = APIRouter(prefix="/api/v1/courses", tags=["courses"])
 
@@ -19,14 +20,14 @@ class UpdateLabProgressRequest(BaseModel):
     status: str = "completed"
 
 
-@router.get("")
-async def list_courses() -> list[dict]:
+@router.get("", response_model=list[Course])
+async def list_courses():
     courses = db.collection("courses").stream()
     return [c.to_dict() for c in courses]
 
 
-@router.get("/{course_id}")
-async def get_course(course_id: str) -> dict:
+@router.get("/{course_id}", response_model=Course)
+async def get_course(course_id: str):
     doc = db.collection("courses").document(course_id).get()
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Course not found")
@@ -70,11 +71,11 @@ async def enroll_in_course(
     return {"status": "enrolled", "courseId": course_id}
 
 
-@router.get("/{course_id}/progress")
+@router.get("/{course_id}/progress", response_model=Enrollment)
 async def get_progress(
     course_id: str,
     firebase_data: dict = Depends(verify_firebase_token),
-) -> dict:
+):
     uid = firebase_data["uid"]
     enrollment_ref = db.collection("enrollments").document(f"{uid}_{course_id}")
     doc = enrollment_ref.get()

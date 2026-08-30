@@ -1,9 +1,9 @@
 # Backend
 
 FastAPI service for Firebase authentication, the Firestore-backed course
-catalog, enrollment/progress tracking, and lab-lifecycle proxying to the
-orchestrator. It is a **pure metadata + data-location API**: it reads no course
-files and serves none.
+catalog, and enrollment/progress tracking. It is a **pure metadata + data-location
+API**, fully decoupled from the orchestrator: it reads no course files, serves
+none, and never talks to the orchestrator.
 
 ## What It Does
 
@@ -15,9 +15,6 @@ files and serves none.
 | Track progress | `PUT /api/v1/courses/{id}/progress` (chapters) + `PUT /api/v1/courses/{id}/labs/{lab_id}/progress` (labs) |
 | Serve catalog + TOC | `GET /api/v1/courses`, `GET /api/v1/courses/{id}` — from **Firestore** (seeded by the worker), not from course files |
 | Content version handshake | `GET /api/v1/content/version` → `{version, download_url, artifact_sha256, changes}` derived from worker-persisted Firestore fields + `CONTENT_PUBLIC_BASE_URL`; no file I/O |
-| Proxy lab lifecycle | `/api/v1/labs/courses/{id}/labs/{labId}/...` — start, stop, resume, destroy, exec, tokens, tasks, validate |
-| Validate task answers | `POST .../validate` — executes the client-supplied validation spec in the container, matches server-side |
-| Guided in-chapter demos | `/api/v1/demos/...` — provision/exec/reset/destroy a demo container from the chapter content |
 
 ## What It Does NOT Do
 
@@ -26,8 +23,11 @@ files and serves none.
   handshake above
 - Read `content-v2/` or any mounted course files — there is no `ContentProvider`
   / `FilesystemProvider` anymore
-- Manage lab containers or terminal sessions — the orchestrator does that
-- Know validation answers — specs flow client → backend → orchestrator; matching
+- Proxy lab/demo lifecycle, terminal sessions, or validation — the frontend
+  calls the orchestrator **directly**; the old `labs.py`/`demos.py` proxy
+  routers are removed
+- Know validation answers — specs flow client → orchestrator; matching is
+  client-side
   happens server-side so answers never reach the browser
 
 ## Content Version Handshake
@@ -164,6 +164,11 @@ handshake; `modules[].{chapters,labs}` + `totalChapters`/`totalLabs` define
 }
 ```
 
+> Per-task `taskResults` are **no longer written** by the backend — the code
+> path that recorded them was removed along with the lab proxy routers. Today
+> the backend only writes `progress` (chapters) and `labsProgress` (labs);
+> `taskResults` may still exist in Firestore from older runs.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -171,11 +176,11 @@ handshake; `modules[].{chapters,labs}` + `totalChapters`/`totalLabs` define
 | `FIREBASE_PROJECT_ID` | — | Firebase project ID |
 | `FIREBASE_CREDENTIALS_JSON` | — | Service account JSON string |
 | `CONTENT_PUBLIC_BASE_URL` | — | Public S3 base URL used to build `download_url` (e.g. `http://localhost.floci.io:4566/my-content-bucket`) |
-| `ORCHESTRATOR_URL` | `http://localhost:8001` | Orchestrator REST base URL (compose sets `http://host.docker.internal:8001`) |
-| `WS_ORCHESTRATOR_URL` | `ws://localhost:8001` | Orchestrator WS base URL (server-side only — never sent to the browser) |
-| `JWT_SECRET` | `dev-only-change-in-production` | WebSocket JWT signing key |
-| `JWT_ALGORITHM` | `HS256` | WebSocket JWT algorithm |
-| `JWT_EXPIRY_MINUTES` | `45` | WebSocket token expiry |
+
+Legacy vars the compose files still inject (`ORCHESTRATOR_URL`,
+`WS_ORCHESTRATOR_URL`, `JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRY_MINUTES`) are
+**ignored** by the backend — it never talks to the orchestrator, and there is no
+WebSocket JWT flow on this service anymore.
 
 ## Local Development
 
