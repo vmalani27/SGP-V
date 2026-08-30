@@ -44,6 +44,11 @@ async def content_version() -> dict:
     for doc in db.collection("courses").stream():
         data = doc.to_dict()
         version = data.get("contentVersion")
+        if not CONTENT_PUBLIC_BASE_URL:
+            raise HTTPException(
+                status_code=500,
+                detail="CONTENT_PUBLIC_BASE_URL is not configured; cannot build the content download URL",
+            )
         if version:
             changes: list[dict] = []
             from_version: str | None = None

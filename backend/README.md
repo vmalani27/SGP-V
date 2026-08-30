@@ -45,51 +45,30 @@ the worker-computed changelog for the version, so the frontend can badge newly
 added/updated chapters and labs. See `next-app/README.md` and
 `docs/CONTENT-PIPELINE.md` for the full bootstrap flow.
 
-## Lab Lifecycle Proxy
+## Lab runtime — not proxied
 
-The backend proxies all lab calls to the orchestrator; the frontend never talks
-to the orchestrator directly and its address is never exposed to the browser.
-State-changing operations require Firebase auth.
+The backend is fully decoupled from the orchestrator. It serves auth, course
+catalog/TOC from Firestore, enrollments/progress, and the content-version
+handshake only; it never talks to the orchestrator and holds no orchestrator
+credentials. Lab lifecycle, validation `exec`, and the terminal are handled by
+the frontend talking to the orchestrator **directly**
+(`next-app/lib/api.ts` → `orchestratorFetch`; terminal
+`ws(s)://<NEXT_PUBLIC_ORCHESTRATOR_URL>/ws/terminal`). The former proxy routers
+`app/routers/labs.py` / `app/routers/demos.py` (and `/api/v1/labs/*`,
+`/api/v1/demos/*`, `WS /api/v1/labs/ws/lab`) have been **removed** from the
+backend.
 
-The terminal WebSocket is proxied too (`WS /api/v1/labs/ws/lab`). The browser
-sends the JWT as its **first message** (`{"type":"auth","token":...}`) — never
-in the URL — and the backend validates it and bridges terminal
-input/output/resize frames to the orchestrator's internal `/ws/terminal`.
+## Task validation (frontend + orchestrator)
 
-Sessions use a read-through cache: the orchestrator is the source of truth
-(containers carry `com.sgp.*` labels, queryable via `GET /labs/by_key`), so
-`start` re-attaches to an existing live container instead of spawning a
-duplicate after a restart.
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/api/v1/labs/courses/{id}/labs/{labId}/active` | Yes | Reconnect to existing session (label-based, survives restarts) |
-| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/start` | Yes | Start lab container — body is the **client-supplied** env config `{image, apt_packages, pre_pull, setup}` |
-| `GET` | `/api/v1/labs/courses/{id}/labs/{labId}/status/{sid}` | No | Session status |
-| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/stop/{sid}` | No | Stop container |
-| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/resume/{sid}` | No | Resume container |
-| `DELETE` | `/api/v1/labs/courses/{id}/labs/{labId}/{sid}` | Yes | Destroy container |
-| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/exec/{sid}` | No | Run command in container |
-| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/tasks` | Yes | Enrich the **client-supplied** task list (dynamic multiple-choice options resolved in-container) |
-| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/validate` | Yes | Validate a task from the **client-supplied** `task_type` + `validation` spec |
-| `POST` | `/api/v1/labs/courses/{id}/labs/{labId}/token/{sid}` | Yes | Refresh WebSocket JWT |
-| `WS` | `/api/v1/labs/ws/lab` | Handshake | Proxied terminal WebSocket (JWT as first message) |
-
-### Task validation
-
-- **Answer-based** (`multiple_choice`): the choice is compared to
-  `validation.expected_answer`, or — for dynamic options — to the output of
-  `validation.command`; nothing is executed, so it stays valid regardless of
-  later container state.
-- **State-based** (`terminal_action`, `port_check`, `file_check`): the backend
-  runs `validation.command` in the container (user resolved from
-  `validation.execution_user`, `sudo`/`root` → `root`, else `student`) and
-  decides from `expected_exit_code` (preferred) or `match_type`
-  (contains/exact/regex/line_count).
-- `{{session}}` and recorded-key substitutions (`validation.record`) are
-  applied to commands before they run.
-- Every check is counted once in `enrollments.taskResults` (sticky `passed`,
-  `attempts` counter).
+Task validation is **not** a backend concern anymore. The frontend reads the
+task spec from its local content, runs `validation.command` via the
+orchestrator (`POST /labs/{sessionId}/exec` — user resolved from
+`validation.execution_user`, `sudo`/`root` → `root`, else `student`), and
+decides client-side from `expected_exit_code` (preferred) or `match_type`
+(contains/exact/regex/line_count). `{{session_id}}` and recorded-key
+substitutions (`validation.record`) are applied before the command runs. The
+backend only persists lab progress (`labsProgress`) when the lab is submitted —
+per-task `taskResults` are not written by the current flow.
 
 ## Other Endpoints
 
@@ -123,9 +102,10 @@ duplicate after a restart.
 
 ### Demos (`/api/v1/demos`)
 
-Provision/exec/reset/destroy a demo container out of the chapter's guided
-terminal demo (`:::terminal-demo` in chapter markdown), plus a proxied WS
-terminal. See `next-app/lib/demo-directives.ts`.
+**Removed.** The backend no longer proxies demo containers. Guided
+`:::terminal-demo` directives are served by orchestrator `/demos/*` endpoints
+called directly from the frontend (`next-app/lib/demo-directives.ts` +
+`api.demos.*`).
 
 ## Data Models (Firestore Collections)
 
@@ -214,7 +194,7 @@ In the compose stack the source is mounted (`./backend:/app`) so Uvicorn
 backend/
 ├── app/
 │   ├── main.py                 # FastAPI entry point
-│   ├── config.py               # Env vars: ORCHESTRATOR_URL, CONTENT_PUBLIC_BASE_URL, JWT_*
+│   ├── config.py               # Env vars: CONTENT_PUBLIC_BASE_URL
 │   ├── core/
 │   │   ├── firebase_config.py  # Admin SDK initialization
 │   │   ├── firestore_db.py     # Firestore client
@@ -224,9 +204,7 @@ backend/
 │   ├── routers/
 │   │   ├── users.py            # User sync, profile, enrollments
 │   │   ├── courses.py          # Catalog/TOC from Firestore, enroll, progress
-│   │   ├── content.py          # GET /api/v1/content/version (handshake only)
-│   │   ├── labs.py             # Lab lifecycle proxy + task validation
-│   │   └── demos.py            # Guided in-chapter demo containers
+│   │   └── content.py          # GET /api/v1/content/version (handshake only)
 │   └── utils/
 │       └── firebase_util.py    # Token verification dependency
 ├── Dockerfile
