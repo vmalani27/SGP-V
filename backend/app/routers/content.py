@@ -7,12 +7,52 @@ downloaded by the client from S3. This router exposes the version handshake
 the client uses to bootstrap and integrity-check its local content store.
 """
 
+import urllib.parse
+
+import boto3
+from botocore.config import Config
 from fastapi import APIRouter, HTTPException
 
 from app.config import CONTENT_PUBLIC_BASE_URL
 from app.core.firestore_db import db
 
 router = APIRouter(prefix="/api/v1/content", tags=["content"])
+
+
+def get_presigned_download_url(base_url: str, version: str) -> str:
+    """Generate a presigned S3 URL for content.tar.gz.
+
+    Parses the bucket name and region from virtual-hosted style S3 URLs,
+    e.g., https://bucket-name.s3.region-name.amazonaws.com.
+    """
+    try:
+        parsed = urllib.parse.urlparse(base_url)
+        hostname = parsed.hostname or ""
+        parts = hostname.split(".")
+        if not parts:
+            return f"{base_url}/published/{version}/content.tar.gz"
+
+        bucket = parts[0]
+        region = "ap-south-1"  # fallback default
+        if len(parts) > 2 and parts[1] == "s3" and parts[2] != "amazonaws":
+            region = parts[2]
+
+        s3_client = boto3.client(
+            "s3",
+            config=Config(signature_version="s3v4"),
+            region_name=region,
+        )
+
+        key = f"published/{version}/content.tar.gz"
+        presigned_url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=3600,  # 1 hour expiration
+        )
+        return presigned_url
+    except Exception:
+        # Fallback to the static public URL if boto3 credentials are not configured
+        return f"{base_url}/published/{version}/content.tar.gz"
 
 
 def _serialize_timestamp(value) -> str | None:
@@ -64,7 +104,7 @@ async def content_version() -> dict:
                     updated_at = _serialize_timestamp(changes_data.get("updatedAt"))
             return {
                 "version": version,
-                "download_url": f"{CONTENT_PUBLIC_BASE_URL}/published/{version}/content.tar.gz",
+                "download_url": get_presigned_download_url(CONTENT_PUBLIC_BASE_URL, version),
                 "artifact_sha256": data.get("artifact_sha256", ""),
                 "from_version": from_version,
                 "changes": changes,

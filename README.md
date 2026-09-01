@@ -8,39 +8,70 @@ interactive labs with real terminal environments.
 ### System Overview
 
 ```mermaid
-graph TB
-    subgraph HOST["HOST · docker compose"]
-        FE["<b>frontend</b> · Next.js<br/>:3000<br/>Auth · Wizard · xterm.js<br/>Content bootstrap"]
-        BE["<b>backend</b> · FastAPI<br/>:8000<br/>Metadata · Catalog · Enrollment<br/>Progress · Version handshake"]
-        W["<b>worker</b> · Python<br/>:8002<br/>S3 download · Validate<br/>Seed Firestore"]
+flowchart TB
+    %% Definitions
+    Student([Student Browser])
+    Developer([Content Developer])
+    
+    subgraph GitHub [GitHub Actions CI/CD Pipeline]
+        Validator[Content Validator]
+        Packager[Tarball Generator]
+    end
+    
+    subgraph Cloud [Cloud Backend Infrastructure - Dev/Beta/Prod]
+        S3[(AWS S3 Content Bucket)]
+        LambdaWorker[Lambda Worker / Seeder]
+        LambdaAPI[Lambda Backend API]
+        Firestore[(Firestore DB)]
+    end
+    
+    subgraph Vagrant [Local Vagrant VM Sandbox]
+        Frontend[Next.js Frontend\n:Port 3000]
+        Orchestrator[FastAPI Orchestrator]
+        Sysbox[(Docker Engine + Sysbox)]
+        
+        subgraph Labs [Isolated Lab Containers]
+            Linux[Ubuntu Lab]
+            Git[Git Lab]
+            DinD[Docker-in-Docker]
+        end
     end
 
-    subgraph INFRA["Infrastructure"]
-        FB["Firebase · Firestore<br/>Catalog · TOC · Auth<br/>Progress · Enrollments"]
-        S3["AWS S3<br/>my-content-bucket"]
-        CTV["content-v2/<br/>Source of truth"]
-    end
+    %% Pipeline Flow
+    Developer -- "Git Push (content-v2/)" --> Validator
+    Validator --> Packager
+    Packager -- "1. Upload content.tar.gz" --> S3
+    Packager -- "2. Sync Webhook Trigger" --> LambdaWorker
+    LambdaWorker -- "3. Read manifest.json" --> S3
+    LambdaWorker -- "4. Seed Metadata" --> Firestore
 
-    subgraph VM["Vagrant VM · Ubuntu 22.04"]
-        ORC["<b>orchestrator</b> · systemd<br/>:8001 ⇐ guest :8000<br/>Docker Engine + Sysbox"]
-        LAB1["sgp-lab-ubuntu<br/>Lab container"]
-        LAB2["sgp-lab-docker<br/>Lab container"]
-        LAB3["sgp-lab-git<br/>Lab container"]
-    end
+    %% App Integration Flow
+    Student -- "accesses" --> Frontend
+    Frontend -- "A. API: Fetch Course Metadata" --> LambdaAPI
+    Frontend -- "B. API: Sync Progress Data" --> LambdaAPI
+    LambdaAPI <--> Firestore
+    
+    Frontend -- "C. Direct Bootstrap: Download Tarball" --> S3
+    
+    %% Local Orchestration Flow
+    Frontend -- "D. REST / WebSocket" --> Orchestrator
+    Orchestrator -- "Manage Runtimes" --> Sysbox
+    Sysbox --> Linux
+    Sysbox --> Git
+    Sysbox --> DinD
 
-    FE -->|"API calls"| BE
-    FE -->|"GET /api/v1/content/version<br/>(handshake)"| BE
-    FE -->|"download → sha256 verify<br/>→ extract → serve locally"| S3
-    BE -->|"Read/Write"| FB
-    W -->|"download → verify<br/>→ validate → seed"| S3
-    W -->|"POST /sync<br/>(metadata + contentVersion)"| FB
-    ORC -->|"proxy"| FE
-    FE -.->|"WebSocket terminal"| ORC
-    ORC --> LAB1
-    ORC --> LAB2
-    ORC --> LAB3
-    CTV -->|"publish (CI / scripts)"| S3
+    %% Styling
+    classDef gitops fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef cloud fill:#ffe0b2,stroke:#f57c00,stroke-width:2px;
+    classDef vm fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef container fill:#fafafa,stroke:#757575,stroke-width:1px;
+    
+    class GitHub,Validator,Packager gitops;
+    class Cloud,S3,LambdaWorker,LambdaAPI,Firestore cloud;
+    class Vagrant,Frontend,Orchestrator,Sysbox vm;
+    class Linux,Git,DinD container;
 ```
+
 
 ### Content Delivery Flow
 
@@ -102,7 +133,7 @@ and serves them locally. The backend never touches course files.
   never reach the browser
 - **Task validation** — answer-based (`multiple_choice`) vs state-based
   (`terminal_action`/`port_check`/`file_check`, exit-code preferred over output match)
-- **Session recovery** — containers carry `com.sgp.*` labels; `start` re-attaches
+- **Session recovery** — containers carry `com.labops.*` labels; `start` re-attaches
   instead of duplicating after a restart
 - **Guided in-chapter demos** — `:::terminal-demo` blocks → demo container + terminal
 
@@ -112,9 +143,17 @@ Full step-by-step guide: **[`docs/2-development/setup.md`](docs/2-development/se
 
 Key points for a fresh clone:
 
-1. **Credentials** — you need a Firebase service-account JSON and the web API key:
+1. **Credentials** — you need a Firebase service-account JSON, the web API key,
+   and (for the real-AWS dev/beta stacks) **AWS IAM credentials**:
    - Place your dev service account in `environments/dev/firebase/FIREBASE_CREDS_JSON_DEV.json`.
    - Fill the 6 `NEXT_PUBLIC_FIREBASE_*` values in `environments/dev/frontend/.env.dev`.
+   - Fill `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and
+     `CONTENT_PUBLIC_BASE_URL` in `environments/dev/.env.dev`. The backend uses
+     these to **sign presigned S3 download URLs** on
+     `/api/v1/content/version`, so without them the content bootstrap fails with
+     a `403 Forbidden` on the S3 download. The IAM principal needs `s3:GetObject`
+     on the bucket's `published/*` (see
+     [`docs/aws-s3-private-downloads.md`](docs/aws-s3-private-downloads.md)).
 2. **Start Docker Stack** — The local environment includes the Next.js frontend, Python FastAPI backend, and Floci (LocalStack). Run:
    ```bash
    docker compose -f docker-compose.local.yml up -d
