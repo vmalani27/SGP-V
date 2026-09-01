@@ -13,7 +13,8 @@
 # or by having the student grant it themselves (docker-fundamentals lab-1).
 # ──────────────────────────────────────────────────────────────
 
-FROM labops-ubuntu:latest
+ARG BASE_IMAGE=labops-ubuntu:latest
+FROM ${BASE_IMAGE}
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \

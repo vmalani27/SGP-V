@@ -220,34 +220,29 @@ jobs:
           echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      # 1. Base Image: labops-ubuntu
+      # 1. Base Image: labops-ubuntu (built and pushed directly to GHCR)
       - name: Build & Push Lab Image (lab-ubuntu)
         uses: docker/build-push-action@v6
         with:
           context: ./orchestrator/lab-images
           file: ./orchestrator/lab-images/Dockerfile.ubuntu
-          load: true
+          push: true
           tags: |
-            labops-ubuntu:latest
             ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.branch }}
             ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
             ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:latest
           cache-from: type=gha,scope=lab-ubuntu
           cache-to: type=gha,mode=max,scope=lab-ubuntu
 
-      - name: Push lab-ubuntu to GHCR
-        run: |
-          docker push ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.branch }}
-          docker push ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
-          docker push ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:latest
-
-      # 2. DinD Image: labops-docker
+      # 2. DinD Image: labops-docker (inherits from the pushed lab-ubuntu base image)
       - name: Build & Push Lab Image (lab-docker)
         uses: docker/build-push-action@v6
         with:
           context: ./orchestrator/lab-images
           file: ./orchestrator/lab-images/Dockerfile.docker
           push: true
+          build-args: |
+            BASE_IMAGE=ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
           tags: |
             ghcr.io/${{ env.REPO_LOWER }}/lab-docker:${{ steps.tags.outputs.branch }}
             ghcr.io/${{ env.REPO_LOWER }}/lab-docker:${{ steps.tags.outputs.sha }}
@@ -262,6 +257,8 @@ jobs:
           context: ./orchestrator/lab-images
           file: ./orchestrator/lab-images/Dockerfile.docker-fundamentals
           push: true
+          build-args: |
+            BASE_IMAGE=ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
           tags: |
             ghcr.io/${{ env.REPO_LOWER }}/lab-docker-fundamentals:${{ steps.tags.outputs.branch }}
             ghcr.io/${{ env.REPO_LOWER }}/lab-docker-fundamentals:${{ steps.tags.outputs.sha }}
