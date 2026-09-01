@@ -1,0 +1,75 @@
+x-frontend-target: ${FRONTEND_TARGET:-dev}
+x-firebase-creds:
+  FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+  FIREBASE_CREDENTIALS_JSON: ${FIREBASE_CREDENTIALS_JSON:-}
+services:
+  floci:
+    image: floci/floci:latest
+    container_name: floci
+    ports:
+    - 4566:4566
+    environment:
+      FLOCI_STORAGE_MODE: hybrid
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+    volumes:
+    - floci-data:/app/data
+    - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+  backend:
+    build:
+      context: ./backend
+    container_name: labops-backend
+    ports:
+    - 8000:8000
+    volumes:
+    - ./backend:/app
+    - ./environments/dev/firebase/FIREBASE_CREDS_JSON_DEV.json:/app/app/core/credentials.json:ro
+    environment:
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-sgp-v-526af}
+      FIREBASE_CREDENTIALS_JSON: ${FIREBASE_CREDENTIALS_JSON:-}
+      CONTENT_PUBLIC_BASE_URL: ${CONTENT_PUBLIC_BASE_URL:-http://localhost.floci.io:4566/my-content-bucket}
+      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://host.docker.internal:8001}
+      WS_ORCHESTRATOR_URL: ${WS_ORCHESTRATOR_URL:-ws://host.docker.internal:8001}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-in-production}
+    extra_hosts:
+    - host.docker.internal:host-gateway
+    restart: unless-stopped
+    command:
+    - uvicorn
+    - app.main:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    - --reload
+  frontend:
+    build:
+      context: ./next-app
+      target: ${FRONTEND_TARGET:-dev}
+    container_name: labops-frontend
+    ports:
+    - 3000:3000
+    volumes:
+    - ./next-app:/app
+    - frontend_node_modules:/app/node_modules
+    - frontend_next:/app/.next
+    - frontend_content:/app/.content
+    extra_hosts:
+    - localhost.floci.io:host-gateway
+    env_file:
+    - ./environments/dev/frontend/.env.dev
+    environment:
+    - NODE_ENV=development
+    - CHOKIDAR_USEPOLLING=true
+    - NEXT_TELEMETRY_DISABLED=1
+    - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+    - BACKEND_API_URL=http://backend:8000
+    - CONTENT_LOCAL_DIR=/app/.content
+    depends_on:
+    - backend
+    restart: unless-stopped
+volumes:
+  frontend_node_modules: null
+  frontend_next: null
+  frontend_content: null
+  floci-data: null

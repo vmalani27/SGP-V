@@ -197,7 +197,7 @@ The body is YAML:
 ```yaml
 :::terminal-demo
 id: container-lifecycle          # REQUIRED — labels the demo container
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 state:                            # optional live state chip in the header
@@ -340,7 +340,7 @@ Reflection.
 
 ```yaml
 # docker-basic.yaml
-base_image: "sgp-lab-docker:latest"
+base_image: "labops-docker:latest"
 pre_pull:
   - nginx:alpine
   - alpine:latest
@@ -348,7 +348,7 @@ pre_pull:
 
 ```yaml
 # linux-basic.yaml
-base_image: sgp-lab-ubuntu:latest
+base_image: labops-ubuntu:latest
 apt_packages:
   - git
 ```

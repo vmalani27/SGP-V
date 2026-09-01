@@ -243,7 +243,7 @@ backend:
 # start lab with the client-supplied env config (docker-basic resolves to):
 curl -s -X POST http://localhost:8001/labs \
   -H "Authorization: Bearer $ORCHESTRATOR_SECRET" -H "Content-Type: application/json" \
-  -d '{"user_id":"manual","lab_id":"lab-1","image":"sgp-lab-docker:latest","apt_packages":[],"pre_pull":["nginx:alpine","alpine:latest"],"setup":[]}'
+  -d '{"user_id":"manual","lab_id":"lab-1","image":"labops-docker:latest","apt_packages":[],"pre_pull":["nginx:alpine","alpine:latest"],"setup":[]}'
 # → {session_id, status, container_name}
 
 # exec a validation command in the container (user honors validation.execution_user):

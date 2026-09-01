@@ -1,0 +1,38 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  # Sync the testing folder into the VM so the test runner script is accessible
+  config.vm.synced_folder ".", "/opt/sgp/compatibility-testing"
+
+  # Dynamically set box name and packages from environment variables
+  box_name           = ENV['TEST_BOX'] || "generic/ubuntu2204"
+  docker_version     = ENV['TEST_DOCKER_VERSION'] || "5:27.5.1-1~ubuntu.22.04~jammy"
+  containerd_version = ENV['TEST_CONTAINERD_VERSION'] || "1.7.29-1~ubuntu.22.04~jammy"
+  sysbox_version     = ENV['TEST_SYSBOX_VERSION'] || "0.7.0"
+
+  config.vm.box = box_name
+
+  # Port forwarding configurations (minimal footprint, only SSH is critical)
+  config.vm.network "forwarded_port", guest: 22, host: 2222, id: "ssh", auto_correct: true
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.cpus = 4
+    vb.memory = 3072
+    vb.customize ["modifyvm", :id, "--nested-hw-virt", "on"]
+  end
+
+  config.vm.provider "vmware_desktop" do |v|
+    v.linked_clone = false
+    v.vmx["numvcpus"] = "4"
+    v.vmx["memsize"] = "3072"
+    v.vmx["vhv.enable"] = "TRUE"
+    v.vmx["vpmc.enable"] = "TRUE"
+    v.gui = false
+  end
+
+  # Provision using dynamically specified package versions
+  config.vm.provision "shell",
+    path: "provision.sh",
+    args: [docker_version, containerd_version, sysbox_version]
+end

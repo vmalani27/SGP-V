@@ -1,18 +1,6 @@
 import type { Metadata } from 'next';
-import { IBM_Plex_Sans, Space_Grotesk } from 'next/font/google';
 import { AuthProvider } from '@/lib/auth-context';
 import './globals.css';
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ['latin'],
-  variable: '--font-space-grotesk',
-});
-
-const ibmPlexSans = IBM_Plex_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-ibm-plex-sans',
-});
 
 export const metadata: Metadata = {
   title: 'DevOps Learning Platform',
@@ -26,8 +14,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      </head>
       <body
-        className={`${spaceGrotesk.variable} ${ibmPlexSans.variable} bg-bg text-text antialiased`}
+        className="bg-bg text-text antialiased"
       >
         <AuthProvider>{children}</AuthProvider>
       </body>

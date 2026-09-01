@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LabOps — Real DevOps Infrastructure. Zero Cloud Bills.</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    code, pre, .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .glow-radial {
+      background: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.14), transparent 70%);
+    }
+    .grid-bg {
+      background-size: 32px 32px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+    .terminal-glow {
+      box-shadow: 0 0 50px -10px rgba(59, 130, 246, 0.2), 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+    }
+    .active-os-tab {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border-color: rgba(96, 165, 250, 0.4);
+    }
+  </style>
+</head>
+<body class="bg-[#090d16] text-slate-200 antialiased selection:bg-blue-500/30 selection:text-blue-200">
+
+  <!-- Background Gradients -->
+  <div class="fixed inset-0 glow-radial pointer-events-none z-0"></div>
+  <div class="fixed inset-0 grid-bg pointer-events-none z-0"></div>
+
+  <!-- Navigation -->
+  <header class="relative z-10 border-b border-slate-800/80 backdrop-blur-md bg-[#090d16]/75 sticky top-0">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </div>
+        <span class="font-extrabold text-lg text-white tracking-tight">LabOps</span>
+        <span class="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">CLI Beta</span>
+      </div>
+      <nav class="flex items-center gap-6">
+        <a href="#values" class="hidden sm:inline text-sm font-medium text-slate-400 hover:text-white transition">Value</a>
+        <a href="#how-it-works" class="hidden sm:inline text-sm font-medium text-slate-400 hover:text-white transition">How it Works</a>
+        <a href="#requirements" class="hidden sm:inline text-sm font-medium text-slate-400 hover:text-white transition">Requirements</a>
+        <a href="#download" class="text-xs sm:text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition shadow-sm shadow-blue-600/30">Download CLI</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="relative z-10 pt-20 pb-16 px-6">
+    <div class="max-w-4xl mx-auto text-center space-y-6">
+      
+      <!-- Pill Badge -->
+      <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-slate-900/90 border border-slate-800 text-xs text-slate-300 backdrop-blur shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        Zero Host Docker Required • Isolated Local Sandboxes
+      </div>
+
+      <!-- Headline -->
+      <h1 class="text-4xl sm:text-6xl font-extrabold text-white tracking-tight leading-[1.12]">
+        Real DevOps Infrastructure.<br>
+        <span class="bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-400 bg-clip-text text-transparent">Zero Cloud Bills.</span>
+      </h1>
+
+      <!-- Sub-headline -->
+      <p class="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        Practice real-world Linux, Docker-in-Docker, and CI/CD pipelines right on your laptop. Get instant root access in completely isolated sandboxes without the risk of breaking your machine.
+      </p>
+
+      <!-- Primary Call to Action & Quick Install -->
+      <div class="pt-4 max-w-xl mx-auto space-y-4">
+        
+        <div class="flex flex-wrap items-center justify-center gap-3">
+          <a href="#download" class="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition shadow-lg shadow-blue-600/25 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            Download LabOps CLI (macOS, Windows, Linux)
+          </a>
+        </div>
+
+        <!-- Quick Install Terminal Snippet -->
+        <div class="rounded-xl bg-slate-950/90 border border-slate-800 p-3.5 flex items-center justify-between gap-3 text-left">
+          <div class="flex items-center gap-3 overflow-x-auto mono text-xs sm:text-sm text-slate-300">
+            <span class="text-blue-400 select-none">$</span>
+            <span id="quick-snippet" class="whitespace-nowrap">curl -sSL https://labops.dev/install.sh | bash</span>
+          </div>
+          <button onclick="copySnippet()" class="shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white transition text-xs flex items-center gap-1.5 border border-slate-700/60">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            <span id="copy-snippet-text">Copy</span>
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Core Value Propositions -->
+  <section id="values" class="relative z-10 py-20 px-6 border-t border-slate-800/80 bg-slate-900/20">
+    <div class="max-w-6xl mx-auto space-y-12">
+      
+      <div class="text-center space-y-3 max-w-2xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Built for Real DevOps Practice</h2>
+        <p class="text-sm text-slate-400">Everything you need to master modern infrastructure workflows locally.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Value 1 -->
+        <div class="rounded-2xl border border-slate-800/90 bg-slate-950/70 p-7 space-y-3 hover:border-slate-700 transition">
+          <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 mb-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white">True System Environments, Not Mock Shells</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Most online platforms run heavily restricted shells. LabOps gives you dedicated environments where you can run actual system daemons, launch nested containers, and write system-level scripts just like in production.
+          </p>
+        </div>
+
+        <!-- Value 2 -->
+        <div class="rounded-2xl border border-slate-800/90 bg-slate-950/70 p-7 space-y-3 hover:border-slate-700 transition">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white">Instant, One-Command Setup</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Forget spending hours configuring virtual machines, setting up network bridges, or resolving dependency hell. The single <code class="text-indigo-300 bg-indigo-500/10 px-1.5 py-0.5 rounded text-xs">labops</code> binary handles hardware validation, environment provisioning, and runtime checks automatically.
+          </p>
+        </div>
+
+        <!-- Value 3 -->
+        <div class="rounded-2xl border border-slate-800/90 bg-slate-950/70 p-7 space-y-3 hover:border-slate-700 transition">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white">Private, Safe, and Offline-Ready</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Every lab runs entirely on your local workstation inside a secure sandbox. Experiment freely with root privileges, test destructive commands safely, and build hands-on intuition without burning cloud credits or needing an active server connection.
+          </p>
+        </div>
+
+        <!-- Value 4 -->
+        <div class="rounded-2xl border border-slate-800/90 bg-slate-950/70 p-7 space-y-3 hover:border-slate-700 transition">
+          <div class="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mb-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white">Interactive Automated Grading</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Follow guided, structured curricula with real-time feedback. LabOps validates your tasks in the background as you work directly in the terminal, confirming your configurations match industry standards.
+          </p>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works" class="relative z-10 py-20 px-6 border-t border-slate-800/80">
+    <div class="max-w-5xl mx-auto space-y-12">
+      
+      <div class="text-center space-y-2">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">How It Works</h2>
+        <p class="text-sm text-slate-400">Get up and running in 3 intuitive steps.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <!-- Step 1 -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-950/80 p-6 space-y-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-mono font-bold px-2.5 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">STEP 1</span>
+              <span class="text-xs text-slate-500">Install</span>
+            </div>
+            <h3 class="text-lg font-bold text-white font-mono">labops setup</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              One command verifies your hardware virtualization and installs all required sandboxing components.
+            </p>
+          </div>
+          <div class="p-3 rounded-lg bg-slate-900/90 border border-slate-800/80 mono text-[11px] text-slate-300">
+            $ labops setup<br>
+            <span class="text-emerald-400">[✓] Base images configured</span>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-950/80 p-6 space-y-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-mono font-bold px-2.5 py-1 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">STEP 2</span>
+              <span class="text-xs text-slate-500">Launch</span>
+            </div>
+            <h3 class="text-lg font-bold text-white font-mono">labops start</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Boots your local secure runtime and opens the interactive lab dashboard in your browser.
+            </p>
+          </div>
+          <div class="p-3 rounded-lg bg-slate-900/90 border border-slate-800/80 mono text-[11px] text-slate-300">
+            $ labops start<br>
+            <span class="text-blue-400">Opening http://localhost:3000</span>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-950/80 p-6 space-y-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-mono font-bold px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">STEP 3</span>
+              <span class="text-xs text-slate-500">Practice</span>
+            </div>
+            <h3 class="text-lg font-bold text-white">Open Terminal</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Complete hands-on tasks in real-time, get instant pass/fail validation, and progress through tracks.
+            </p>
+          </div>
+          <div class="p-3 rounded-lg bg-slate-900/90 border border-slate-800/80 mono text-[11px] text-slate-300">
+            student@lab:~$ docker ps<br>
+            <span class="text-emerald-400">Task 1 Verified [PASS]</span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Download Matrix -->
+  <section id="download" class="relative z-10 py-20 px-6 border-t border-slate-800/80 bg-slate-900/20">
+    <div class="max-w-5xl mx-auto space-y-12">
+      
+      <div class="text-center space-y-2 max-w-xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Download Matrix</h2>
+        <p class="text-sm text-slate-400">Get the native standalone binary for your architecture.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <!-- macOS -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-950/80 p-6 space-y-5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">🍎</span>
+              <div>
+                <h3 class="font-bold text-white">macOS</h3>
+                <p class="text-xs text-slate-400">macOS 12.0+</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-2 text-xs text-slate-400">
+            <p>• Apple Silicon (<code class="text-slate-300">arm64</code>)</p>
+            <p>• Intel (<code class="text-slate-300">x86_64</code>)</p>
+          </div>
+
+          <div class="pt-2 space-y-2">
+            <a href="/bin/labops-darwin-amd64" download="labops-mac" class="w-full block py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold text-center transition shadow-sm">
+              Download Standalone Binary
+            </a>
+            <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 mono text-[11px] text-slate-300 flex items-center justify-between">
+              <span>brew install labops</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Windows -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-950/80 p-6 space-y-5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">🪟</span>
+              <div>
+                <h3 class="font-bold text-white">Windows</h3>
+                <p class="text-xs text-slate-400">Windows 10 / 11 (64-bit)</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-2 text-xs text-slate-400">
+            <p>• PowerShell Installer</p>
+            <p>• Standalone <code class="text-slate-300">labops.exe</code></p>
+          </div>
+
+          <div class="pt-2 space-y-2">
+            <a href="/bin/labops.exe" download="labops.exe" class="w-full block py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold text-center transition shadow-sm">
+              Download labops.exe
+            </a>
+            <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 mono text-[11px] text-slate-300 flex items-center justify-between">
+              <span>winget install labops</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Linux -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-950/80 p-6 space-y-5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">🐧</span>
+              <div>
+                <h3 class="font-bold text-white">Linux</h3>
+                <p class="text-xs text-slate-400">Kernel 5.4+ (64-bit)</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-2 text-xs text-slate-400">
+            <p>• Debian / Ubuntu (<code class="text-slate-300">.deb</code>)</p>
+            <p>• Red Hat / Fedora (<code class="text-slate-300">.rpm</code>)</p>
+          </div>
+
+          <div class="pt-2 space-y-2">
+            <a href="/bin/labops-linux-amd64" download="labops" class="w-full block py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold text-center transition shadow-sm">
+              Download Standalone Binary
+            </a>
+            <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 mono text-[11px] text-slate-300 flex items-center justify-between">
+              <span>apt install labops</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- System Requirements & Prerequisites -->
+  <section id="requirements" class="relative z-10 py-20 px-6 border-t border-slate-800/80">
+    <div class="max-w-5xl mx-auto space-y-12">
+      
+      <div class="text-center space-y-2 max-w-xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">System Requirements &amp; Prerequisites</h2>
+        <p class="text-sm text-slate-400">Make sure your workstation meets the baseline specs before getting started.</p>
+      </div>
+
+      <!-- Spec Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-5 space-y-2">
+          <div class="text-xs font-mono text-blue-400 font-semibold uppercase tracking-wider">OPERATING SYSTEM</div>
+          <p class="text-sm font-bold text-white">macOS 12+, Windows 10/11, or Linux</p>
+          <p class="text-xs text-slate-400">Hardware virtualization (VT-x / AMD-V) must be enabled in your system BIOS/UEFI.</p>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-5 space-y-2">
+          <div class="text-xs font-mono text-blue-400 font-semibold uppercase tracking-wider">SYSTEM MEMORY</div>
+          <p class="text-sm font-bold text-white">4 GB RAM (8 GB Recommended)</p>
+          <p class="text-xs text-slate-400">LabOps reserves a 3 GB sandbox slice, leaving the rest free for your browser and editor.</p>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-5 space-y-2">
+          <div class="text-xs font-mono text-blue-400 font-semibold uppercase tracking-wider">STORAGE SPACE</div>
+          <p class="text-sm font-bold text-white">15 GB Free Disk Space</p>
+          <p class="text-xs text-slate-400">Needed to download Ubuntu base images and store pre-pulled container layers.</p>
+        </div>
+
+      </div>
+
+      <!-- Required Software Alert Box -->
+      <div class="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-6 sm:p-8 space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold shrink-0">
+            ⚠️
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">Required Prerequisites on Your Machine</h3>
+            <p class="text-xs text-slate-400">Because LabOps runs hardware-level isolated sandboxes without host Docker, you must have the hypervisor and driver installed:</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+          
+          <div class="rounded-xl bg-slate-950/90 border border-slate-800 p-4 space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-white">1. Hypervisor Backend</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">Required</span>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Install <strong class="text-slate-200">Oracle VirtualBox (7.0+)</strong> or <strong class="text-slate-200">VMware Workstation / Player / Fusion</strong>.
+            </p>
+            <div class="pt-1 text-[11px] font-mono text-blue-400">
+              winget install Oracle.VirtualBox
+            </div>
+          </div>
+
+          <div class="rounded-xl bg-slate-950/90 border border-slate-800 p-4 space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-white">2. HashiCorp Vagrant</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">Required</span>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Used by the LabOps CLI to coordinate and spin up the sandbox runtime automatically.
+            </p>
+            <div class="pt-1 text-[11px] font-mono text-blue-400">
+              winget install HashiCorp.Vagrant
+            </div>
+          </div>
+
+        </div>
+
+        <p class="text-xs text-slate-400 pt-1">
+          💡 <strong>Tip:</strong> Running <code class="text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded mono">labops doctor</code> will automatically scan for these dependencies and print the exact one-click install commands for your platform if missing.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="relative z-10 border-t border-slate-800/80 py-12 px-6 text-center text-xs text-slate-500">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-slate-300">LabOps Platform</span>
+        <span>•</span>
+        <span>Real DevOps Infrastructure. Zero Cloud Bills.</span>
+      </div>
+      <div>Built with Go, Vagrant, Docker, and Sysbox.</div>
+    </div>
+  </footer>
+
+  <script>
+    function copySnippet() {
+      const text = document.getElementById('quick-snippet').innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const copyText = document.getElementById('copy-snippet-text');
+        copyText.innerText = "Copied!";
+        setTimeout(() => {
+          copyText.innerText = "Copy";
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>

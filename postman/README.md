@@ -33,21 +33,27 @@ Files:
 
 ```
  Browser
-   │  /api/v1/* (auth + catalog + labs + progress)      /api/local-content/* (same-origin)
+   │  /api/v1/* (auth + catalog + progress)            /api/local-content/* (same-origin)
    ▼                                                       ▼
 [next-app frontend] ──serves extracted content──► /app/.content  ◄──downloads+verifies──► [Floci S3]
    │
-   │ /api/v1/content/version · /api/v1/courses · /api/v1/labs/* · /api/v1/users/* · /api/v1/courses/*/progress
+   │ /api/v1/content/version · /api/v1/courses · /api/v1/users/* · /api/v1/courses/*/progress
+   │                          (backed by Firestore)
    ▼
-[backend] ──proxies labs──► [orchestrator] ──► Docker containers
+[backend]  (metadata/progress only — no lab traffic)
+   │
+   │ REST /labs /demos + WS /ws/terminal (direct)
+   ▼
+[orchestrator] ──► Docker containers
    ▲
    │
 [Firestore] ◄──seeds── [worker] ◄──downloads/validates── [Floci S3]
 ```
 
-Key rule: **the backend reads no content files.** Content metadata lives in
-Firestore; content bytes live in the client's local store; lab behaviour specs
-flow client → backend → orchestrator.
+Key rule: **the backend reads no content files and never talks to the
+orchestrator.** Course metadata lives in Firestore; content bytes live in the
+client's local store; lab lifecycle/validation/terminal run frontend →
+orchestrator directly.
 
 ---
 
@@ -55,7 +61,7 @@ flow client → backend → orchestrator.
 
 ### Phase 0 — Bootstrap (A1, A2)
 1. `GET /api/v1/content/version` → `{version, download_url, artifact_sha256}`
-   - Backend reads `contentVersion`/`artifact_sha256` from any Firestore course doc (worker-persisted) and derives `download_url = {CONTENT_PUBLIC_BASE_URL}/published/{version}/content.tar.gz`. No file I/O.
+   - Backend reads `contentVersion`/`artifact_sha256` from any Firestore course doc (worker-persisted) and returns a **presigned S3 URL** (`download_url`, 1-hour expiry) for `published/{version}/content.tar.gz`, signed with its AWS creds against the bucket's regional endpoint (the S3 bucket can stay private). No file I/O.
 2. Frontend compares against its local version marker; on change it downloads
    the tarball, verifies `sha256(gunzip(tarball)).slice(0,16) === artifact_sha256`
    (raw tar bytes — the gzip stream is not byte-stable across zlib versions),
@@ -80,21 +86,32 @@ flow client → backend → orchestrator.
 - `GET /api/local-content/chapters/docker-mastery/chapter-1` (local markdown)
 - `PUT /api/v1/courses/docker-mastery/progress` `{moduleId, chapterId, status}` → mark complete.
 
-### Phase 4 — Lab lifecycle (A4, A5, A6)
-1. `GET .../labs/lab-1/active` — read-through session check (orchestrator by labels).
-2. `POST .../labs/lab-1/start` — body = env config resolved client-side:
+### Phase 4 — Lab lifecycle (A4, A5, A6) — orchestrator direct
+> The backend proxy endpoints here (folders/lab requests in the backend
+> collection) were **removed**. Lab lifecycle runs against the orchestrator
+> (`http://localhost:8001`, `Authorization: Bearer $ORCHESTRATOR_SECRET`);
+> `orchestrator/postman_collection.json` covers it.
+1. `GET /labs/by_key?user_id=...&lab_id=lab-1` — recover a live session (by Docker labels).
+2. `POST /labs` — body = `{user_id, lab_id, image, apt_packages, pre_pull, setup}` resolved client-side:
    ```json
-   {"image":"sgp-lab-docker:latest","apt_packages":[],"pre_pull":["nginx:alpine","alpine:latest"],"setup":[]}
+   {"user_id":"student-1","lab_id":"lab-1","image":"labops-docker:latest","apt_packages":[],"pre_pull":["nginx:alpine","alpine:latest"],"setup":[]}
    ```
-   → `{session_id, lab_id, container_name, status, ws_token, ws_url}`.
-3. `GET .../labs/lab-1/status/{sessionId}` — container status.
-4. `POST .../labs/lab-1/tasks` — body = client's local task list `{tasks:[...]}`; backend returns it (enriching dynamic multiple-choice options via in-container commands).
-5. `POST .../labs/lab-1/validate` — body carries the task's spec:
+   → `{session_id, status, container_name, user_id, lab_id}`.
+3. `GET /labs/{sessionId}` — container status.
+4. Task *enrichment* no longer exists — the frontend reads task specs directly
+   from its local content (`GET /api/local-content/labs/{courseId}/{labId}/tasks`).
+5. `POST /labs/{sessionId}/exec` — body carries the task's validation command:
    ```json
-   {"task_id":"access-daemon","answer":"No","task_type":"multiple_choice","validation":{"expected_answer":"No"},"error_message":"...","hint":"..."}
+   {"command":"<task.validation.command>","user":"student"}
    ```
-   → `{correct, output?, error?, hint?}`. The backend runs `validation.command` in the container (terminal_action/file_check/port_check) or compares the answer (multiple_choice) — always against the **client-supplied** spec.
-6. `POST .../stop/{sessionId}`, `POST .../resume/{sessionId}`, `POST .../token/{sessionId}`, `DELETE .../{sessionId}` — lifecycle + teardown.
+   → `{exit_code, output}` — the frontend matches client-side
+   (`expected_exit_code`, or `expected_output` with
+   contains/exact/regex/line_count). `multiple_choice`/answer tasks are matched
+   against `validation.expected_answer` in the client with no container call.
+6. `POST /labs/{sessionId}/stop`, `POST /labs/{sessionId}/resume`,
+   `DELETE /labs/{sessionId}` — lifecycle + teardown.
+7. Terminal — browser opens `WS ws://<ORCHESTRATOR_URL>/ws/terminal` (no backend
+   token endpoint); the shared secret is sent as the first message.
 
 ### Phase 5 — Completion (A7)
 - `PUT /api/v1/courses/docker-mastery/labs/lab-1/progress` `{moduleId, status}` → mark lab complete.
@@ -109,19 +126,20 @@ flow client → backend → orchestrator.
 | A1 version handshake / integrity | `0.1` |
 | A2 client-side content delivery | `0.2`–`0.5`, `3.1`; regression: `0.6` (backend must 404) |
 | A3 Firestore catalog / TOC | `1.1`, `1.2` |
-| A4 client-driven provisioning | `4.2` (config-built body), negative `4.12` (missing image → 422) |
-| A5 client-driven validation | `4.4` (client task list), `4.5`–`4.8` (client validation specs) |
-| A6 lab lifecycle | `4.1`–`4.14` |
+| A4 client-driven provisioning | ⚠️ removed from backend — `orchestrator/postman_collection.json` (`Start Lab`) |
+| A5 client-driven validation | ⚠️ removed from backend — orchestrator collection (`Exec`) + client-side matching |
+| A6 lab lifecycle | ⚠️ removed from backend — orchestrator collection (`Lab Lifecycle` folder) |
 | A7 progress & completion | `3.2`, `5.1`, `5.2` |
 
 ---
 
 ## 5. Setup & run
 
-1. **Prerequisites**: the stack is up (`docker compose up --build`), content is
-   published to Floci (`scripts/generate_manifest.py` → upload to
+1. **Prerequisites**: the stack is up
+   (`docker compose -f docker-compose.local.yml --env-file environments/local/.env.local up --build -d`),
+   content is published to Floci (`scripts/generate_manifest.py` → upload to
    `my-content-bucket`), and the worker has seeded Firestore
-   (`docker compose logs worker` → `Sync complete`).
+   (same command with `logs worker` → `Sync complete`).
 2. **Import**: Postman → Import → `SGP_DockerMastery.postman_collection.json`.
    Optionally import the environment file and select **SGP DockerMastery Local**.
 3. **Firebase auth (needed for folders 2–5)**: set `firebaseApiKey` (the web API
@@ -130,13 +148,14 @@ flow client → backend → orchestrator.
 4. **Run**: Collection Runner → select the collection → run. Folders execute in
    order and pass `version`, `sessionId`, `labConfigRaw`, etc. between requests.
 5. **Expected result**: ~30 requests, all green. Folders 0–1 pass without Firebase
-   config; 2+ return 401 until credentials are set.
+   config; 2+ return 401 until credentials are set. **Folders 4–5 (labs) are
+   STALE — the backend proxy endpoints 404 now; run lab lifecycle/validation
+   against `orchestrator/postman_collection.json` (orchestrator direct) instead.**
 
-> ⚠️ **Warning**: request `4.2` provisions a **real Docker container** on the host
-> (via the orchestrator's docker.sock) and `4.13` destroys it. If a run fails
-> mid-way, clean up with:
-> `docker ps --filter label=sgp-lab --format '{{.ID}}' | xargs -r docker rm -f`
-> or rerun `4.1` → `4.13` (active shows the leftover session id).
+> ⚠️ **Warning**: provisioning requests in
+> `orchestrator/postman_collection.json` create a **real Docker container** on the
+> host (via the orchestrator's docker.sock); a stale container can be cleaned up with:
+> `docker ps --filter label=labops-lab --format '{{.ID}}' | xargs -r docker rm -f`
 
 ---
 
@@ -145,8 +164,6 @@ flow client → backend → orchestrator.
 - The sha256 probe in `0.1` asserts the `download_url` is reachable and logs the
   hash comparison; exact binary hashing in the Postman sandbox is unreliable, so
   authoritative integrity verification remains the frontend's `ensureContent()`.
-- `4.8` (fix-group) asserts the response contract, not `correct=true` — on a fresh
-  container the student hasn't completed the task, so the real outcome is `false`.
-- `port_check` and `file_check` task types are supported by the backend contract but
-  not present in `lab-1`; they can be exercised with a synthetic validation spec in
-  `4.5` the same way the exec probe is.
+- `port_check` and `file_check` task types are exercised by the orchestrator
+  `exec` contract but not present in `lab-1`; they can be tested with a synthetic
+  validation spec via `POST /labs/{sessionId}/exec`.

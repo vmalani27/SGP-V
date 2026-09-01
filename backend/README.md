@@ -39,11 +39,14 @@ GET /api/v1/content/version
 ```
 
 returns `{version, download_url, artifact_sha256, from_version, changes, updatedAt}`.
-`download_url` is `{CONTENT_PUBLIC_BASE_URL}/published/{version}/content.tar.gz`
-(the frontend fetches and verifies it against `artifact_sha256`); `changes` is
-the worker-computed changelog for the version, so the frontend can badge newly
-added/updated chapters and labs. See `next-app/README.md` and
-`docs/CONTENT-PIPELINE.md` for the full bootstrap flow.
+`download_url` is an **S3 presigned URL** for
+`published/{version}/content.tar.gz`, signed with the backend's AWS credentials
+(`generate_presigned_url`, 1-hour expiry) against the bucket's **regional
+endpoint** — not the static `{CONTENT_PUBLIC_BASE_URL}` URL. This lets the S3
+bucket stay private. The frontend fetches the presigned URL and verifies it
+against `artifact_sha256`; `changes` is the worker-computed changelog for the
+version, so the frontend can badge newly added/updated chapters and labs. See
+`next-app/README.md` and `docs/CONTENT-PIPELINE.md` for the full bootstrap flow.
 
 ## Lab runtime — not proxied
 
@@ -175,7 +178,15 @@ handshake; `modules[].{chapters,labs}` + `totalChapters`/`totalLabs` define
 |----------|---------|-------------|
 | `FIREBASE_PROJECT_ID` | — | Firebase project ID |
 | `FIREBASE_CREDENTIALS_JSON` | — | Service account JSON string |
-| `CONTENT_PUBLIC_BASE_URL` | — | Public S3 base URL used to build `download_url` (e.g. `http://localhost.floci.io:4566/my-content-bucket`) |
+| `CONTENT_PUBLIC_BASE_URL` | — | Public/virtual-hosted S3 base URL parsed for the bucket name + region (e.g. `https://content-dev-...-ap-south-1-an.s3.ap-south-1.amazonaws.com`) |
+| `AWS_ACCESS_KEY_ID` | — | IAM access key used to sign presigned S3 download URLs |
+| `AWS_SECRET_ACCESS_KEY` | — | IAM secret key used to sign presigned S3 download URLs |
+| `AWS_DEFAULT_REGION` | `ap-south-1` | Region fallback for signing (region is also parsed from `CONTENT_PUBLIC_BASE_URL`) |
+
+> The backend signs presigned S3 URLs on `/api/v1/content/version` using the
+> `AWS_*` credentials and `CONTENT_PUBLIC_BASE_URL`. If creds are missing it
+> falls back to the static public URL (which yields `403` on a private bucket);
+> the IAM principal needs `s3:GetObject` on `published/*`.
 
 Legacy vars the compose files still inject (`ORCHESTRATOR_URL`,
 `WS_ORCHESTRATOR_URL`, `JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRY_MINUTES`) are

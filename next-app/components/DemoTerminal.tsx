@@ -56,30 +56,39 @@ export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
     };
   }, []);
 
-  const ensure = useCallback(async () => {
-    setPhase('starting');
-    setError(null);
-    try {
-      const res = await api.demos.ensure(spec.id, {
-        image: spec.image,
-        pre_pull: spec.pre_pull,
-      });
-      if (!mounted.current) return;
-      setSession({
-        wsUrl: res.ws_url,
-        wsToken: res.ws_token,
-        name: res.name,
-      });
-      setPhase('ready');
-    } catch (e) {
-      if (!mounted.current) return;
-      setPhase('error');
-      setError(e instanceof Error ? e.message : 'Failed to start demo environment');
-    }
-  }, [spec.id, spec.image, spec.pre_pull]);
+  const ensure = useCallback(
+    async (signal?: AbortSignal) => {
+      setPhase('starting');
+      setError(null);
+      try {
+        const res = await api.demos.ensure(
+          spec.id,
+          { image: spec.image, pre_pull: spec.pre_pull },
+          { signal }
+        );
+        if (!mounted.current) return;
+        setSession({
+          wsUrl: res.ws_url,
+          wsToken: res.ws_token,
+          name: res.name,
+        });
+        setPhase('ready');
+      } catch (e) {
+        // A remount/cleanup cancels the in-flight request; don't flip to an
+        // error state for a request we deliberately aborted.
+        if (!mounted.current) return;
+        if (signal?.aborted) return;
+        setPhase('error');
+        setError(e instanceof Error ? e.message : 'Failed to start demo environment');
+      }
+    },
+    [spec.id, spec.image, spec.pre_pull]
+  );
 
   useEffect(() => {
-    ensure();
+    const controller = new AbortController();
+    ensure(controller.signal);
+    return () => controller.abort();
   }, [ensure, resetKey]);
 
   // Live container-state chip: poll the optional `state.command` so the chip
@@ -349,7 +358,7 @@ export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
             Starting a disposable demo environment…
           </p>
           <p className="text-xs text-gray-500">
-            {spec.image || 'sgp-lab-docker:latest'}
+            {spec.image || 'labops-docker:latest'}
           </p>
         </div>
       ) : phase === 'error' ? (
@@ -359,7 +368,7 @@ export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
           </p>
           {error && <p className="text-xs text-gray-400">{error}</p>}
           <button
-            onClick={ensure}
+            onClick={() => ensure()}
             className="mt-2 rounded-lg bg-accent px-4 py-1.5 text-xs font-semibold text-bg transition hover:bg-accent/90"
           >
             Try again

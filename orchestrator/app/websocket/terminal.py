@@ -34,7 +34,7 @@ import aiodocker
 import jwt
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.config import JWT_ALGORITHM, JWT_SECRET
+from app.config import JWT_ALGORITHM, JWT_LEEWAY_SECONDS, JWT_SECRET
 from app.api.labs import sessions
 
 logger = logging.getLogger(__name__)
@@ -51,18 +51,7 @@ _IDLE_TIMEOUT_SECONDS = 60
 _SEND_TIMEOUT_SECONDS = 10
 
 
-def _verify_token(token: str) -> dict | None:
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        logger.warning("WebSocket token expired")
-        return None
-    except jwt.InvalidTokenError as e:
-        logger.warning(f"Invalid WebSocket token: {e}")
-        return None
-
-
-async def _receive_token(websocket: WebSocket) -> str | None:
+async def _receive_handshake(websocket: WebSocket) -> dict | None:
     """Read the auth handshake as the first client message."""
     try:
         message = await websocket.receive()
@@ -87,8 +76,12 @@ async def _receive_token(websocket: WebSocket) -> str | None:
     if not isinstance(data, dict):
         return None
 
-    token = data.get("token")
-    return token if isinstance(token, str) and token else None
+    return data
+
+
+def _verify_secret(data: dict) -> bool:
+    from app.config import ORCHESTRATOR_SECRET
+    return data.get("token") == ORCHESTRATOR_SECRET
 
 
 async def _kill_attach_client(docker: aiodocker.Docker, container, pidfile: str) -> None:
@@ -149,14 +142,13 @@ def _resolve_container_name(claims: dict) -> tuple[str, str] | None:
         user_id = claims.get("user_id")
         if not demo_id:
             return None
-        containers = DockerService().get_labs_by_labels({
+        demo = DockerService().get_running_lab_by_labels({
             LABEL_USER_ID: user_id or "",
             LABEL_DEMO_ID: demo_id,
         })
-        if not containers:
+        if not demo:
             return None
-        containers.sort(key=lambda c: c.get("created", ""), reverse=True)
-        return containers[0]["name"], "demo"
+        return demo["name"], "demo"
 
     session_id = claims.get("session_id")
     session = sessions.get(session_id)
@@ -169,18 +161,27 @@ def _resolve_container_name(claims: dict) -> tuple[str, str] | None:
 async def terminal(websocket: WebSocket):
     await websocket.accept()
 
-    # --- JWT handshake (first message, never in the URL) ---
-    token = await _receive_token(websocket)
-    if not token:
+    # --- Handshake (first message, never in the URL) ---
+    handshake = await _receive_handshake(websocket)
+    if not handshake or not handshake.get("token"):
         await websocket.close(code=4001, reason="Missing auth token")
         return
 
-    claims = _verify_token(token)
-    if not claims:
-        await websocket.close(code=4001, reason="Invalid or expired token")
+    # In local-first, the frontend wraps the claims into the stringified `wsToken`
+    token_val = handshake.get("token")
+    if isinstance(token_val, str):
+        try:
+            claims = json.loads(token_val)
+        except (json.JSONDecodeError, TypeError):
+            claims = {"token": token_val}
+    else:
+        claims = handshake
+
+    if not _verify_secret(claims):
+        await websocket.close(code=4001, reason="Invalid ORCHESTRATOR_SECRET")
         return
 
-    # Resolve the container from the token claims — no container name in the URL.
+    # Resolve the container from the claims — no container name in the URL.
     resolved = _resolve_container_name(claims)
     if not resolved:
         await websocket.close(code=4003, reason="Session mismatch")

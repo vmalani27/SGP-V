@@ -37,10 +37,15 @@ def get_presigned_download_url(base_url: str, version: str) -> str:
         if len(parts) > 2 and parts[1] == "s3" and parts[2] != "amazonaws":
             region = parts[2]
 
+        # Sign against the regional endpoint (not the global s3.amazonaws.com).
+        # S3 returns a 307 TemporaryRedirect for region-specific buckets signed
+        # against the global endpoint, which breaks the signature on redirect.
+        endpoint_url = f"https://s3.{region}.amazonaws.com"
         s3_client = boto3.client(
             "s3",
-            config=Config(signature_version="s3v4"),
             region_name=region,
+            endpoint_url=endpoint_url,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
         )
 
         key = f"published/{version}/content.tar.gz"

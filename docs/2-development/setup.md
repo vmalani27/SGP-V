@@ -15,6 +15,7 @@ Compose stack, and the Vagrant orchestrator VM.
 | 3 | AWS CLI | For publishing content to Floci (`aws`) |
 | 4 | Python 3 + `pyyaml` | For the content validation/publish scripts |
 | 5 | A **Firebase project** with Auth + Firestore enabled | Service-account JSON + Web API key (see §2) |
+| 6 | **AWS IAM credentials** (dev/beta stacks) | Required by `docker-compose.dev.yml` / `docker-compose.beta.yml` to generate S3 presigned download URLs (see §3). The local Floci stack needs only dummy creds. |
 
 > **Sysbox** is required only inside the orchestrator VM (auto-provisioned by
 > `vagrant up`), not on the host. See `orchestrator/README.md`.
@@ -105,8 +106,36 @@ AWS_REGION=us-east-1
 ```
 
 The **dev/beta** env files instead carry the real S3 bucket + IAM creds and a
-real `CONTENT_PUBLIC_BASE_URL` — switch to them (and their compose files) only
-when you leave local development.
+real `CONTENT_PUBLIC_BASE_URL`:
+
+```bash
+# ── Firebase ─────────────────────────────────────────────────────────────
+FIREBASE_PROJECT_ID=sgp-v-526af
+FIREBASE_CREDENTIALS_JSON=
+# ── Content delivery (real AWS S3) ────────────────────────────────────────
+CONTENT_PUBLIC_BASE_URL=https://content-dev-XXXXXX-ap-south-1-an.s3.ap-south-1.amazonaws.com
+# ── S3 / IAM (worker publish + backend presigned URLs) ────────────────────
+S3_BUCKET=content-dev-XXXXXX-ap-south-1-an
+AWS_ENDPOINT_URL=            # must stay EMPTY for real AWS
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=ap-south-1
+```
+
+- The **worker** uses these to publish the content tarball and read it back.
+- The **backend** uses them to **sign presigned download URLs** on
+  `/api/v1/content/version` — with no/invalid creds the client's S3 download
+  returns `403 Forbidden` and content bootstrap fails. The IAM principal must
+  have `s3:GetObject` on the bucket's `published/*` (see
+  [`docs/aws-s3-private-downloads.md`](../aws-s3-private-downloads.md)).
+- These files are **gitignored** — never commit real AWS keys.
+
+> **AWS credentials are required for the dev/beta stacks**, not just prod: the
+> backend signs presigned S3 URLs for the content tarball on every
+> `/api/v1/content/version` call and falls back to the public URL only when
+> creds are absent. `docker-compose.dev.yml` injects these via its `env_file`
+> (`environments/dev/.env.dev`) — keep `FIREBASE_PROJECT_ID`,
+> `CONTENT_PUBLIC_BASE_URL`, and the `AWS_*` keys populated there.
 
 ### 3b. Service `.env` files (native runs only)
 
@@ -159,10 +188,10 @@ docker compose -f docker-compose.local.yml up -d
 vagrant up
 ```
 
-The orchestrator runs in the VM as the **`sgp-orchestrator` systemd service** (host process, not a container — the VM's Docker daemon is reserved for lab containers). Its env is seeded by `provisioning/install-orchestrator.sh` to `/opt/sgp/orchestrator.env`. Verify it came up:
+The orchestrator runs in the VM as the **`labops-orchestrator` systemd service** (host process, not a container — the VM's Docker daemon is reserved for lab containers). Its env is seeded by `provisioning/install-orchestrator.sh` to `/opt/sgp/orchestrator.env`. Verify it came up:
 
 ```powershell
-vagrant ssh -c 'systemctl status sgp-orchestrator'
+vagrant ssh -c 'systemctl status labops-orchestrator'
 curl http://localhost:8001/health   # {"status":"ok","docker":"connected",...}
 ```
 
@@ -183,7 +212,7 @@ The stack mounts source directly (`./backend:/app`, `./next-app:/app`) so edits 
 
 - **frontend**: Next.js dev server + `CHOKIDAR_USEPOLLING=true` → edit → save.
 - **backend**: FastAPI + uvicorn `--reload`.
-- **orchestrator**: `sgp-orchestrator` systemd service in the Vagrant VM.
+- **orchestrator**: `labops-orchestrator` systemd service in the Vagrant VM.
 - **content**: If you edit courses in `content-v2/`, just re-run `scripts\local\deploy_floci_lambda.bat` to sync them locally.
 
 ---

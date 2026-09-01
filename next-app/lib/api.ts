@@ -2,6 +2,8 @@ import { auth } from './firebase';
 import type { LabTask, TaskListResponse, TaskProgressData, ValidateResponse } from './task-types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8001';
+const ORCHESTRATOR_SECRET = process.env.NEXT_PUBLIC_ORCHESTRATOR_SECRET || 'local-dev-super-secret';
 
 async function getIdToken(): Promise<string | null> {
   if (!auth) return null;
@@ -12,6 +14,13 @@ async function getIdToken(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function getUserId(): Promise<string> {
+  if (auth && auth.currentUser) {
+    return auth.currentUser.uid;
+  }
+  return "guest";
 }
 
 export async function apiFetch<T = unknown>(
@@ -42,8 +51,29 @@ export async function apiFetch<T = unknown>(
   return res.json() as Promise<T>;
 }
 
-// Local content is served by this Next.js app from the extracted content dir —
-// same origin, no auth (it is the learner's own downloaded course content).
+export async function orchestratorFetch<T = unknown>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${ORCHESTRATOR_SECRET}`,
+    ...(options.headers as Record<string, string>),
+  };
+
+  const res = await fetch(`${ORCHESTRATOR_URL}${path}`, {
+    ...options,
+    headers,
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Orchestrator API ${res.status}: ${body}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
 async function localFetch<T = unknown>(path: string): Promise<T> {
   const res = await fetch(path, { cache: 'no-store' });
   if (!res.ok) {
@@ -52,8 +82,6 @@ async function localFetch<T = unknown>(path: string): Promise<T> {
   }
   return res.json() as Promise<T>;
 }
-
-// --- Typed API helpers ---
 
 export interface CourseMeta {
   id: string;
@@ -151,18 +179,26 @@ export const api = {
       ),
   },
   labs: {
-    active: (courseId: string, labId: string) =>
-      apiFetch<{
-        session_id: string;
-        lab_id: string;
-        container_name: string;
-        status: string;
-        ws_token: string;
-        ws_url: string;
-        expires_at?: string | null;
-        remaining_seconds?: number | null;
-      } | null>(`/api/v1/labs/courses/${courseId}/labs/${labId}/active`),
-    start: (
+    active: async (courseId: string, labId: string) => {
+      const userId = await getUserId();
+      try {
+        const session = await orchestratorFetch<{
+          session_id: string;
+          lab_id: string;
+          container_name: string;
+          status: string;
+        }>(`/labs/by_key?user_id=${userId}&lab_id=${labId}`);
+        
+        return {
+          ...session,
+          ws_token: JSON.stringify({ token: ORCHESTRATOR_SECRET, session_id: session.session_id, kind: "lab" }),
+          ws_url: `${ORCHESTRATOR_URL.replace('http', 'ws')}/ws/terminal`,
+        };
+      } catch (e) {
+        return null;
+      }
+    },
+    start: async (
       courseId: string,
       labId: string,
       envConfig: {
@@ -171,102 +207,266 @@ export const api = {
         pre_pull?: string[];
         setup?: unknown[];
       },
-    ) =>
-      apiFetch<{
+    ) => {
+      const userId = await getUserId();
+      const session = await orchestratorFetch<{
         session_id: string;
         lab_id: string;
         container_name: string;
         status: string;
-        ws_token: string;
-        ws_url: string;
-        expires_at?: string | null;
-        remaining_seconds?: number | null;
-      }>(`/api/v1/labs/courses/${courseId}/labs/${labId}/start`, {
+      }>(`/labs`, {
         method: 'POST',
-        body: JSON.stringify(envConfig),
-      }),
+        body: JSON.stringify({
+          user_id: userId,
+          lab_id: labId,
+          image: envConfig.image || "labops-docker:latest",
+          apt_packages: envConfig.apt_packages,
+          pre_pull: envConfig.pre_pull,
+          setup: envConfig.setup
+        }),
+      });
+      return {
+        ...session,
+        ws_token: JSON.stringify({ token: ORCHESTRATOR_SECRET, session_id: session.session_id, kind: "lab" }),
+        ws_url: `${ORCHESTRATOR_URL.replace('http', 'ws')}/ws/terminal`,
+      };
+    },
     status: (courseId: string, labId: string, sessionId: string) =>
-      apiFetch<{ session_id: string; status: string; container_name: string }>(
-        `/api/v1/labs/courses/${courseId}/labs/${labId}/status/${sessionId}`
+      orchestratorFetch<{ session_id: string; status: string; container_name: string }>(
+        `/labs/${sessionId}`
       ),
     stop: (courseId: string, labId: string, sessionId: string) =>
-      apiFetch<{ detail: string }>(
-        `/api/v1/labs/courses/${courseId}/labs/${labId}/stop/${sessionId}`,
+      orchestratorFetch<{ detail: string }>(
+        `/labs/${sessionId}/stop`,
         { method: 'POST' }
       ),
     resume: (courseId: string, labId: string, sessionId: string) =>
-      apiFetch<{ detail: string }>(
-        `/api/v1/labs/courses/${courseId}/labs/${labId}/resume/${sessionId}`,
+      orchestratorFetch<{ detail: string }>(
+        `/labs/${sessionId}/resume`,
         { method: 'POST' }
       ),
     destroy: (courseId: string, labId: string, sessionId: string) =>
-      apiFetch<{ detail: string }>(
-        `/api/v1/labs/courses/${courseId}/labs/${labId}/${sessionId}`,
+      orchestratorFetch<{ detail: string }>(
+        `/labs/${sessionId}`,
         { method: 'DELETE' }
       ),
     token: (courseId: string, labId: string, sessionId: string) =>
-      apiFetch<{ ws_token: string; ws_url: string }>(
-        `/api/v1/labs/courses/${courseId}/labs/${labId}/token/${sessionId}`,
-        { method: 'POST' }
-      ),
-    tasks: (courseId: string, labId: string, tasks: unknown[]) =>
-      apiFetch<TaskListResponse>(
-        `/api/v1/labs/courses/${courseId}/labs/${labId}/tasks`,
-        { method: 'POST', body: JSON.stringify({ tasks }) }
-      ),
-    validate: (
+      Promise.resolve({
+        ws_token: JSON.stringify({ token: ORCHESTRATOR_SECRET, session_id: sessionId, kind: "lab" }),
+        ws_url: `${ORCHESTRATOR_URL.replace('http', 'ws')}/ws/terminal`
+      }),
+    tasks: async (courseId: string, labId: string, tasks: unknown[]) => {
+      return localFetch<TaskListResponse>(`/api/local-content/labs/${courseId}/${labId}/tasks`);
+    },
+    validate: async (
       courseId: string,
       labId: string,
       taskId: string,
       answer: string | undefined,
       task: LabTask,
-    ) =>
-      apiFetch<ValidateResponse>(
-        `/api/v1/labs/courses/${courseId}/labs/${labId}/validate`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            task_id: taskId,
-            answer,
-            task_type: task.type,
-            validation: task.validation,
-            error_message: task.error_message,
-            hint: task.hint,
-          }),
+    ): Promise<ValidateResponse> => {
+      const active = await api.labs.active(courseId, labId);
+      if (!active) throw new Error("Lab is not running");
+      const sessionId = active.session_id;
+
+      const validation = (task.validation as Record<string, any>) || {};
+      const memKey = `task_memory_${courseId}_${labId}`;
+      let memory: Record<string, string> = {};
+      try {
+        if (typeof window !== "undefined") {
+          memory = JSON.parse(localStorage.getItem(memKey) || "{}");
         }
-      ),
-  },
+      } catch (e) {}
+
+      const substituteSession = (cmd: string) => cmd.replace(/{{session_id}}/g, sessionId);
+      const substituteRecorded = (cmd: string) => {
+        return cmd.replace(/{{recorded:([A-Za-z0-9_]+)}}/g, (_, key) => {
+          if (!(key in memory)) {
+            throw new Error(`Recorded value '${key}' is not set yet. Complete the task that records it first.`);
+          }
+          return memory[key];
+        });
+      };
+
+      const runCommand = async (cmd: string, user: string = "student") => {
+        let finalCmd = substituteSession(cmd);
+        finalCmd = substituteRecorded(finalCmd);
+        const res = await orchestratorFetch<{ exit_code: number; output: string }>(`/labs/${sessionId}/exec`, {
+          method: 'POST',
+          body: JSON.stringify({ command: finalCmd, user })
+        });
+        return res;
+      };
+
+      const recordAfterSuccess = async (user: string = "student") => {
+        const rec = validation.record;
+        if (!rec || !rec.key || !rec.command || typeof rec.command !== 'string') return;
+        try {
+          let recCmd = substituteSession(rec.command);
+          recCmd = substituteRecorded(recCmd);
+          const res = await orchestratorFetch<{ exit_code: number; output: string }>(`/labs/${sessionId}/exec`, {
+            method: 'POST',
+            body: JSON.stringify({ command: recCmd, user })
+          });
+          memory[rec.key] = res.output.trim();
+          if (typeof window !== "undefined") {
+            localStorage.setItem(memKey, JSON.stringify(memory));
+          }
+        } catch (e) {
+          // ignore recording failure if missing keys
+        }
+      };
+
+      const matchOutput = (output: string) => {
+        const matchType = validation.match_type || "contains";
+        const expected = String(validation.expected_output || "");
+        const out = output.trim();
+        
+        if (matchType === "exact") return out === expected.trim();
+        if (matchType === "regex") {
+          try {
+            return new RegExp(expected).test(out);
+          } catch (e) { return false; }
+        }
+        if (matchType === "line_count") {
+          return out.split('\n').length === parseInt(expected, 10);
+        }
+        return out.includes(expected);
+      };
+
+      const firstLine = (text: string) => {
+        const lines = text.trim().split('\n');
+        return lines.length > 0 ? lines[0].trim() : "";
+      };
+
+      const execUser = validation.user || "student";
+      let correct = false;
+      let outputStr = "";
+      
+      try {
+        if (task.type === 'multiple_choice') {
+          const expected = validation.expected_answer !== undefined ? validation.expected_answer : validation.expected_output;
+          if (expected !== undefined) {
+            correct = (answer || "").trim() === String(expected).trim();
+          } else {
+            const cmd = validation.command;
+            if (!cmd) throw new Error("Dynamic multiple_choice without a validation command is not supported");
+            const res = await runCommand(cmd, execUser);
+            outputStr = res.output;
+            correct = (answer || "").trim() === firstLine(outputStr);
+          }
+        } 
+        else if (task.type === 'file_check') {
+          const path = validation.path;
+          const contains = validation.contains;
+          if (!path || contains === undefined) throw new Error("file_check requires validation.path and validation.contains");
+          const res = await runCommand(`cat ${path} 2>/dev/null`, execUser);
+          outputStr = res.output;
+          correct = outputStr.includes(contains);
+        }
+        else if (task.type === 'port_check') {
+          const cmd = validation.command;
+          if (!cmd) throw new Error("port_check validation is not supported yet (missing command)");
+          const res = await runCommand(cmd, execUser);
+          outputStr = res.output;
+          correct = matchOutput(outputStr);
+        }
+        else if (validation.command) {
+          const cmd = validation.command;
+          const res = await runCommand(cmd, execUser);
+          outputStr = res.output;
+          if (validation.expected_exit_code !== undefined) {
+            correct = res.exit_code === parseInt(validation.expected_exit_code, 10);
+          } else {
+            correct = matchOutput(outputStr);
+          }
+        }
+        else if (task.type === 'script') {
+          const res = await runCommand('/bin/bash /usr/local/checks/validator.sh', 'root');
+          try {
+            const jsonRes = JSON.parse(res.output);
+            const taskResult = jsonRes.results?.find((r: any) => r.id === taskId);
+            correct = taskResult ? taskResult.status === 'pass' : false;
+            outputStr = taskResult?.output || 'No output';
+          } catch {
+            correct = false;
+            outputStr = 'Validation failed';
+          }
+        }
+        else if (task.type === 'match') {
+          correct = (answer === task.validation);
+          outputStr = correct ? 'Match' : 'Incorrect answer';
+        }
+        else {
+          throw new Error(`Unknown task type and no validation.command provided: ${task.type}`);
+        }
+
+        if (correct) {
+          await recordAfterSuccess(execUser);
+        }
+
+        const debugInfo = `(Debug - cmd: ${validation.command} | out: '${outputStr}' | exp: '${validation.expected_output}' | type: '${validation.match_type}')`;
+
+        return {
+          correct: correct,
+          output: outputStr,
+          error: correct ? undefined : ((task.error_message ? task.error_message + " " : "") + debugInfo),
+          hint: task.hint || undefined,
+        };
+      } catch (err: any) {
+        return {
+          correct: false,
+          output: err.message,
+          error: err.message,
+          hint: task.hint,
+        };
+      }
+    },
+},
   demos: {
-    ensure: (demoId: string, spec: { image?: string; pre_pull?: string[] }) =>
-      apiFetch<{
+    ensure: async (demoId: string, spec: { image?: string; pre_pull?: string[] }, opts: { signal?: AbortSignal } = {}) => {
+      const userId = await getUserId();
+      const res = await orchestratorFetch<{
         name: string;
         status: string;
-        reused: boolean;
-        ws_token: string;
-        ws_url: string;
+        reused?: boolean;
       }>(
-        `/api/v1/demos/${demoId}/ensure`,
+        `/demos`,
         {
           method: 'POST',
+          signal: opts.signal,
           body: JSON.stringify({
+            user_id: userId,
             demo_id: demoId,
-            image: spec.image || 'sgp-lab-docker:latest',
-            pre_pull: spec.pre_pull || [],
+            image: spec.image || 'labops-docker:latest',
           }),
         }
-      ),
-    exec: (demoId: string, command: string) =>
-      apiFetch<{ exit_code: number; output: string }>(
-        `/api/v1/demos/${demoId}/exec`,
-        { method: 'POST', body: JSON.stringify({ command }) }
-      ),
-    reset: (demoId: string) =>
-      apiFetch<{ status: string }>(`/api/v1/demos/${demoId}/reset`, {
+      );
+      return {
+        ...res,
+        reused: res.reused || false,
+        ws_token: JSON.stringify({ token: ORCHESTRATOR_SECRET, demo_id: demoId, user_id: userId, kind: "demo" }),
+        ws_url: `${ORCHESTRATOR_URL.replace('http', 'ws')}/ws/terminal`,
+      };
+    },
+    exec: async (demoId: string, command: string) => {
+      const userId = await getUserId();
+      return orchestratorFetch<{ exit_code: number; output: string }>(
+        `/demos/${demoId}/exec`,
+        { method: 'POST', body: JSON.stringify({ user_id: userId, command }) }
+      );
+    },
+    reset: async (demoId: string) => {
+      const userId = await getUserId();
+      return orchestratorFetch<{ status: string }>(`/demos/${demoId}/reset?user_id=${userId}`, {
         method: 'POST',
-      }),
-    destroy: (demoId: string) =>
-      apiFetch<{ status: string }>(`/api/v1/demos/${demoId}`, {
+      });
+    },
+    destroy: async (demoId: string) => {
+      const userId = await getUserId();
+      return orchestratorFetch<{ status: string }>(`/demos/${demoId}?user_id=${userId}`, {
         method: 'DELETE',
-      }),
+      });
+    },
   },
 };

@@ -6,69 +6,77 @@ This is the auto-generated, clean architectural diagram for the entire SGP-V (La
 flowchart TB
     %% Definitions
     Student([Student Browser])
-    Author([Content Author])
+    Developer([Content Developer])
     
-    subgraph Cloud [Cloud Infrastructure]
-        GitHub[GitHub Actions CI/CD]
+    subgraph GitHub [GitHub Actions CI/CD Pipeline]
+        Validator[Content Validator]
+        Packager[Tarball Generator]
+    end
+    
+    subgraph Cloud [Cloud Backend Infrastructure - Dev/Beta/Prod]
         S3[(AWS S3 Content Bucket)]
-        Firebase[(Firebase / Firestore)]
+        LambdaWorker[Lambda Worker / Seeder]
+        LambdaAPI[Lambda Backend API]
+        Firestore[(Firestore DB)]
     end
     
-    subgraph Host [Host Machine / docker-compose]
-        Frontend[Next.js Frontend\n:3000]
-        Backend[FastAPI Backend\n:8000]
-        Worker[Python Worker\n:8002]
-    end
-    
-    subgraph VM [Vagrant VM / Orchestrator]
-        Orchestrator[FastAPI Orchestrator\n:8001]
-        Docker[(Docker Engine + Sysbox)]
+    subgraph Vagrant [Local Vagrant VM Sandbox]
+        Frontend[Next.js Frontend\n:Port 3000]
+        Orchestrator[FastAPI Orchestrator]
+        Sysbox[(Docker Engine + Sysbox)]
         
-        subgraph Containers [Ephemeral Lab Containers]
+        subgraph Labs [Isolated Lab Containers]
             Linux[Ubuntu Lab]
             Git[Git Lab]
-            DinD[Docker-in-Docker Lab]
+            DinD[Docker-in-Docker]
         end
     end
 
-    %% Content Pipeline Edges
-    Author -- "Git Push (content-v2/)" --> GitHub
-    GitHub -- "Validate & Upload" --> S3
-    GitHub -- "Webhook Trigger" --> Worker
-    Worker -- "Download manifest.json" --> S3
-    Worker -- "Seed Metadata (Courses)" --> Firebase
+    %% Pipeline Flow
+    Developer -- "Git Push (content-v2/)" --> Validator
+    Validator --> Packager
+    Packager -- "1. Upload content.tar.gz" --> S3
+    Packager -- "2. Sync Webhook Trigger" --> LambdaWorker
+    LambdaWorker -- "3. Read manifest.json" --> S3
+    LambdaWorker -- "4. Seed Metadata" --> Firestore
 
-    %% Student App Edges
-    Student -- "HTTPS (UI)" --> Frontend
-    Frontend -- "Auth / Profile" --> Firebase
-    Frontend -- "Content Bootstrap (tar.gz)" --> S3
-    Frontend -- "REST API (JSON)" --> Backend
-    Frontend -- "REST (Lab/Demo Lifecycle + Validation Exec)" --> Orchestrator
-    Frontend -- "WebSocket (Terminal)" --> Orchestrator
-    Backend -- "Enrollments & Progress" --> Firebase
+    %% App Integration Flow
+    Student -- "accesses" --> Frontend
+    Frontend -- "A. API: Fetch Course Metadata" --> LambdaAPI
+    Frontend -- "B. API: Sync Progress Data" --> LambdaAPI
+    LambdaAPI <--> Firestore
     
-    %% Orchestration Edges
-    Orchestrator -- "docker.sock" --> Docker
-    Docker --> Linux
-    Docker --> Git
-    Docker --> DinD
+    Frontend -- "C. Direct Bootstrap: Download Tarball" --> S3
     
+    %% Local Orchestration Flow
+    Frontend -- "D. REST / WebSocket" --> Orchestrator
+    Orchestrator -- "Manage Runtimes" --> Sysbox
+    Sysbox --> Linux
+    Sysbox --> Git
+    Sysbox --> DinD
+
     %% Styling
-    classDef cloud fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef host fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px;
-    classDef vm fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
-    classDef container fill:#fff3e0,stroke:#f57c00,stroke-width:1px;
+    classDef gitops fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef cloud fill:#ffe0b2,stroke:#f57c00,stroke-width:2px;
+    classDef vm fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef container fill:#fafafa,stroke:#757575,stroke-width:1px;
     
-    class Cloud cloud;
-    class Host host;
-    class VM vm;
+    class GitHub,Validator,Packager gitops;
+    class Cloud,S3,LambdaWorker,LambdaAPI,Firestore cloud;
+    class Vagrant,Frontend,Orchestrator,Sysbox vm;
     class Linux,Git,DinD container;
 ```
 
 ### Components Breakdown:
 
-1. **GitHub Actions + AWS S3:** The single source of truth for course content. Assets are packed into tarballs and synced directly to S3.
-2. **Next.js Frontend:** Bootstraps course content directly from S3 (bypassing the backend for static assets), ensuring lightning-fast client-side routing.
-3. **Python Worker:** Dedicated solely to seeding Firestore with structural course metadata (so the backend has an index for enrollment validation).
-4. **FastAPI Backend:** Handles user state only—authentication, enrollments/progress, and the content-version handshake (`GET /api/v1/content/version` → S3 download URL). It serves **no** content bytes and makes **no** calls to the orchestrator.
-5. **Orchestrator (Vagrant VM):** A tightly locked-down VM running Sysbox. The frontend talks to it **directly**—REST for lab/demo lifecycle and validation `exec`, WebSocket (`/ws/terminal`) for low-latency terminal rendering. It spawns per-student containers on the VM's Docker Engine.
+1. **GitHub Actions CI/CD Pipeline:** Contains the validator and package generator. Checks YAML/Markdown formats, produces `content.tar.gz` and `manifest.json`, and uploads them to AWS S3.
+2. **Cloud Backend & Infrastructure (AWS + Firestore):**
+   - **AWS S3 Bucket**: Serves as the storage bucket for content tarballs.
+   - **Lambda Worker**: A serverless function triggered via webhook to parse the new `manifest.json` and seed Firestore.
+   - **Lambda Backend API**: Serves metadata to the frontend via API calls, handles user state / progression syncing, and does not serve content bytes or speak to the orchestrator.
+   - **Firestore DB**: Holds course metadata index and user progress.
+3. **Local Vagrant VM Sandbox (Student Machine):**
+   - Runs a lightweight Vagrant VM. The **Next.js Frontend** is exposed (on Port 3000) to the student.
+   - The **FastAPI Orchestrator** is internal to the VM and orchestrates the **Docker Engine + Sysbox** runtime to spin up secure, unprivileged system containers (Ubuntu, Git, Docker-in-Docker) for hands-on tasks.
+   - Once the content tarball is bootstrapped from S3, the application runs entirely locally, only syncing progression back to the cloud database.
+

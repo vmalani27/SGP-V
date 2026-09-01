@@ -13,17 +13,25 @@ LAB_IMAGES_DIR="$ORCHESTRATOR_DIR/lab-images"
 echo "==> Building lab container images..."
 
 # Build base Ubuntu image
-echo "  -> Building sgp-lab-ubuntu:latest..."
-docker build -t sgp-lab-ubuntu:latest \
+echo "  -> Building labops-ubuntu:latest..."
+docker build -t labops-ubuntu:latest \
   -f "$LAB_IMAGES_DIR/Dockerfile.ubuntu" \
   "$LAB_IMAGES_DIR"
 
-# Build Docker-in-Docker image (depends on sgp-lab-ubuntu)
-echo "  -> Building sgp-lab-docker:latest..."
-docker build -t sgp-lab-docker:latest \
-  -f "$LAB_IMAGES_DIR/Dockerfile.docker" \
+# Pre-pull and save images for Docker Fundamentals module
+echo "  -> Pre-pulling internal images for Docker Fundamentals..."
+mkdir -p "$LAB_IMAGES_DIR/preloads"
+docker pull alpine:latest
+docker save alpine:latest -o "$LAB_IMAGES_DIR/preloads/alpine.tar"
+docker pull nginx:alpine
+docker save nginx:alpine -o "$LAB_IMAGES_DIR/preloads/nginx.tar"
+
+# Build Docker Fundamentals module image
+echo "  -> Building labops-docker-fundamentals:latest..."
+docker build -t labops-docker-fundamentals:latest \
+  -f "$LAB_IMAGES_DIR/Dockerfile.docker-fundamentals" \
   "$LAB_IMAGES_DIR"
 
 echo "==> Lab images built successfully."
-echo "    - sgp-lab-ubuntu:latest"
-echo "    - sgp-lab-docker:latest"
+echo "    - labops-ubuntu:latest"
+echo "    - labops-docker-fundamentals:latest"

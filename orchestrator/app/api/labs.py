@@ -1,4 +1,8 @@
 import json
+import threading
+import logging
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -18,6 +22,24 @@ SCHEMA_HELP = {
 router = APIRouter(prefix="/labs", tags=["labs"])
 
 sessions: dict[str, LabSession] = {}
+
+# Per-(user_id, lab_id) mutexes so a burst of concurrent lab starts collapses
+# into one Sysbox container spawn. Without this, concurrent requests all pass
+# the by_key -> "no live container" check before the first container registers
+# its labels and each triggers a redundant `docker run`. Mirrors the demo
+# create lock in api/demos.py.
+_start_locks: dict[str, threading.Lock] = {}
+_start_locks_guard = threading.Lock()
+
+
+def _start_lock_for(user_id: str, lab_id: str) -> threading.Lock:
+    key = f"{user_id}:{lab_id}"
+    with _start_locks_guard:
+        lock = _start_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _start_locks[key] = lock
+        return lock
 
 
 class StartLabRequest(BaseModel):
@@ -71,55 +93,85 @@ class ExecRequest(BaseModel):
 def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_docker_service)):
     lab_number = lab_id_to_number(req.lab_id)
 
-    session = LabSession(lab_type="custom", lab_id=req.lab_id, user_id=req.user_id)
-    session.container_name = f"{LAB_PREFIX}-{session.session_id}"
-
     labels = {
         LABEL_USER_ID: req.user_id,
         LABEL_COURSE_ID: req.course_id,
         LABEL_LAB_ID: req.lab_id,
     }
 
-    try:
-        info = docker_svc.start_lab(req.image, session.container_name, labels=labels)
-        session.container_id = info["id"]
-        session.status = LabStatus.RUNNING
-    except (RuntimeError, ValueError) as e:
-        session.status = LabStatus.ERROR
-        sessions[session.session_id] = session
-        return JSONResponse(status_code=500, content={
-            "detail": str(e),
-            **SCHEMA_HELP,
+    from app.config import MAX_CONCURRENT_LABS
+    from app.utils.locks import global_provisioning_lock
+
+    with global_provisioning_lock:
+        # Re-check after acquiring the lock
+        existing = docker_svc.get_running_lab_by_labels({
+            LABEL_USER_ID: req.user_id,
+            LABEL_LAB_ID: req.lab_id,
         })
-
-    try:
-        if req.pre_pull or req.setup:
-            docker_svc.wait_for_docker(session.container_name)
-
-        if req.pre_pull:
-            docker_svc.pre_pull_images(session.container_name, req.pre_pull)
-
-        for setup_cmd in req.setup:
-            exit_code, output = docker_svc.exec_command(
-                session.container_name,
-                ["/bin/bash", "-c", setup_cmd["command"]],
-                user="root",
-            )
-            if exit_code != 0:
-                raise RuntimeError(
-                    f"Setup command failed (exit {exit_code}): {setup_cmd['command']}: {output}"
+        if existing:
+            session = _session_from_container(existing)
+            if session:
+                sessions[session.session_id] = session
+                logger.info(
+                    f"Lab '{req.lab_id}' reused existing container "
+                    f"'{session.container_name}'"
                 )
-        docker_svc.activate_lab(session.container_name, lab_number)
-    except RuntimeError as e:
-        session.status = LabStatus.ERROR
-        sessions[session.session_id] = session
-        return JSONResponse(status_code=500, content={
-            "detail": str(e),
-            **SCHEMA_HELP,
-        })
+                return session
 
-    sessions[session.session_id] = session
-    return session
+        # Auto-teardown old labs to conserve memory
+        all_running = docker_svc.list_labs()
+        if len(all_running) >= MAX_CONCURRENT_LABS:
+            logger.info(f"Global limit reached ({len(all_running)} >= {MAX_CONCURRENT_LABS}). Tearing down old labs.")
+            for c in all_running:
+                try:
+                    docker_svc.destroy_lab(c["name"])
+                except Exception as e:
+                    logger.error(f"Failed to auto-destroy old lab {c['name']}: {e}")
+
+        session = LabSession(lab_type="custom", lab_id=req.lab_id, user_id=req.user_id)
+        session.container_name = f"{LAB_PREFIX}-{session.session_id}"
+
+        try:
+            logger.info(f"Issuing synchronous docker run command for {session.container_name}... (this may block depending on host performance)")
+            info = docker_svc.start_lab(req.image, session.container_name, labels=labels)
+            session.container_id = info["id"]
+            session.status = LabStatus.RUNNING
+        except (RuntimeError, ValueError) as e:
+            session.status = LabStatus.ERROR
+            sessions[session.session_id] = session
+            return JSONResponse(status_code=500, content={
+                "detail": str(e),
+                **SCHEMA_HELP,
+            })
+
+        try:
+            if req.pre_pull or req.setup:
+                docker_svc.wait_for_docker(session.container_name)
+
+            if req.pre_pull:
+                docker_svc.pre_pull_images(session.container_name, req.pre_pull)
+
+            for setup_cmd in req.setup:
+                exit_code, output = docker_svc.exec_command(
+                    session.container_name,
+                    ["/bin/bash", "-c", setup_cmd["command"]],
+                    user="root",
+                )
+                if exit_code != 0:
+                    raise RuntimeError(
+                        f"Setup command failed (exit {exit_code}): {setup_cmd['command']}: {output}"
+                    )
+            docker_svc.activate_lab(session.container_name, lab_number)
+        except RuntimeError as e:
+            session.status = LabStatus.ERROR
+            sessions[session.session_id] = session
+            return JSONResponse(status_code=500, content={
+                "detail": str(e),
+                **SCHEMA_HELP,
+            })
+
+        sessions[session.session_id] = session
+        return session
 
 
 @router.get("")
@@ -354,11 +406,13 @@ def exec_command(
             **SCHEMA_HELP,
         })
 
+    logger.info(f"Executing command for {session_id} as {request.user}: {request.command}")
     exit_code, output = docker_svc.exec_command(
         session.container_name,
         ["/bin/bash", "-c", request.command],
         user=request.user,
     )
+    logger.info(f"Command exit: {exit_code}, Output length: {len(output)}")
 
     return {
         "command": request.command,

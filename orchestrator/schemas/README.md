@@ -94,7 +94,7 @@ Environment files live in `content-v2/environments/`:
 
 ```yaml
 # environments/docker-basic.yaml
-base_image: "sgp-lab-docker:latest"
+base_image: "labops-docker:latest"
 pre_pull:
   - nginx:alpine
   - alpine:latest
@@ -102,7 +102,7 @@ pre_pull:
 
 ```yaml
 # environments/linux-basic.yaml
-base_image: sgp-lab-ubuntu:latest
+base_image: labops-ubuntu:latest
 apt_packages:
   - git
 ```
@@ -111,9 +111,9 @@ Available base images (build from `orchestrator/lab-images/`):
 
 | Image | What's included |
 |-------|----------------|
-| `sgp-lab-ubuntu:latest` | Ubuntu 22.04 + systemd + student user + sudo |
-| `sgp-lab-docker:latest` | Same + Docker daemon (for DinD courses) |
-| `sgp-lab-git:latest` | Same + git pre-installed |
+| `labops-ubuntu:latest` | Ubuntu 22.04 + systemd + student user + sudo |
+| `labops-docker:latest` | Same + Docker daemon (for DinD courses) |
+| `labops-git:latest` | Same + git pre-installed |
 
 ### 3. Tasks
 
@@ -173,13 +173,12 @@ When you add a new task to an existing lab:
 3. **Choose the right `type`** — `terminal_action` for command-line tasks, `multiple_choice` for quizzes, `file_check` for file creation/modification, `port_check` for exposed ports.
 4. **Write a validation command** — it runs inside the container. Keep it simple. Prefer `command` + `expected_output` over `script`.
 5. **Write a hint** — ask a question, don't give the answer.
-6. **No code changes needed** — the backend and frontend already handle all task types generically. The frontend reads the YAML directly and adapts to whatever `type` and `validation` fields you define.
+6. **No code changes needed** — the frontend already handles all task types generically (with the orchestrator running the validation commands). It reads the YAML directly and adapts to whatever `type` and `validation` fields you define.
 
 The only time code changes would be needed is if you add a **new task type** (a new value for the `type` enum). In that case, you'd need to update:
 - The JSON Schema (`lab-schema.json`) — add the new type to the `enum`
 - The worker validator (`worker/app/validator.py`) — per-type `validation` requirements
-- The frontend — add a new UI component for the new type
-- The backend validator (`backend/app/routers/labs.py`) — the check flow
+- The frontend — add a new UI component for the new type, and its check logic in `next-app/lib/api.ts` (`api.labs.validate`)
 
 ## Hints
 

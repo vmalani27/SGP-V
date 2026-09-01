@@ -40,7 +40,7 @@ These are standard stateless microservices and can be deployed to any modern con
 
 ## 4. Security Considerations
 
-1. **Orchestrator Network:** The Sysbox containers (`sgp-lab-*`) spawned by the orchestrator should be placed on an isolated Docker bridge network without routing access to your internal cloud VPC metadata endpoints (e.g., AWS IMDS `169.254.169.254`), preventing student containers from stealing cloud IAM roles.
+1. **Orchestrator Network:** The Sysbox containers (`labops-lab-*`) spawned by the orchestrator should be placed on an isolated Docker bridge network without routing access to your internal cloud VPC metadata endpoints (e.g., AWS IMDS `169.254.169.254`), preventing student containers from stealing cloud IAM roles.
 2. **Orchestrator secret / terminal tokens:** dev uses a static shared
    `ORCHESTRATOR_SECRET` that the browser holds (`NEXT_PUBLIC_ORCHESTRATOR_SECRET`)
    — acceptable locally, but in production replace the static secret with

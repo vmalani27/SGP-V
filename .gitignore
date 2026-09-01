@@ -19,9 +19,22 @@ credentials.json
 service-account*.json
 *.pem
 *.key
+*accessKeys*
+*.csv
 
 # Per-environment sealed config + firebase service-account keys
 environments/*/firebase/
 environments/**/FIREBASE_CREDS_*.json
 environments/
+
+# Build artifacts & compiled binaries
+*.zip
+worker/*.zip
+cli/labops.exe
+cli/labops-darwin-amd64
+cli/labops-linux-amd64
+*.tar
+!orchestrator/lab-images/preloads/*.tar
+*.tar.gz
+
 

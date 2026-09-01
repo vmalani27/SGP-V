@@ -58,23 +58,23 @@ export default function OnboardingPage() {
     <main className="min-h-screen bg-bg text-text">
       <Navbar />
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center justify-center px-4">
-        <div className="w-full rounded-2xl border border-line bg-panel p-8 shadow-2xl shadow-black/50">
+        <div className="w-full rounded-sm border border-line bg-panel/30 p-8">
           <div className="mb-8 flex items-center justify-center">
             <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-accent" />
+              <div className="h-2 w-2 rounded-sm bg-accent" />
               <div className="h-0.5 w-8 bg-line" />
-              <div className="h-2 w-2 rounded-full bg-line" />
+              <div className="h-2 w-2 rounded-sm bg-line" />
             </div>
           </div>
 
           <div className="mb-8 text-center">
-            <h1 className="hero-font text-2xl font-bold">Welcome to LabOps</h1>
+            <h1 className="hero-font text-2xl font-bold tracking-tight text-text">Welcome to LabOps</h1>
             <p className="mt-2 text-sm text-muted">Let&apos;s get to know you.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-muted">
+              <label htmlFor="name" className="block font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
                 Your name
               </label>
               <input
@@ -82,14 +82,14 @@ export default function OnboardingPage() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="mt-1.5 block w-full rounded-lg border border-line bg-bg px-4 py-2.5 text-sm text-text placeholder-muted transition focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
+                className="mt-2 block w-full rounded-sm border border-line bg-bg px-4 py-2.5 text-sm text-text placeholder-muted transition focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                 placeholder="John Doe"
                 autoFocus
               />
             </div>
 
             {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <div className="rounded-sm border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
                 {error}
               </div>
             )}
@@ -97,7 +97,7 @@ export default function OnboardingPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-bg transition hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:ring-offset-2 focus:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 w-full rounded-md bg-accent px-4 py-2 text-sm font-semibold text-bg transition hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:ring-offset-2 focus:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? 'Saving...' : 'Continue'}
             </button>

@@ -3,8 +3,9 @@
 The UI layer for LabOps. Handles authentication, course browsing, the chapter
 and lab players, and the lab terminal experience. It **bootstraps course
 content itself** — it downloads the published artifact from S3, verifies it, and
-serves chapters/lab config from a local directory. Backend APIs provide
-metadata, auth, and lab proxying.
+serves chapters/lab config from a local directory. The backend API provides
+metadata, auth, and progress; labs/demos and the terminal talk to the
+orchestrator **directly** (no backend in the loop).
 
 ## What It Does
 
@@ -16,17 +17,18 @@ metadata, auth, and lab proxying.
 | Catalog + TOC | From the backend's Firestore API (`GET /api/v1/courses`, `/api/v1/courses/{id}`) |
 | Chapter viewer | Slides (markdown split on `##`), theory, optional inline `:::terminal-demo` demos, completion |
 | Lab viewer | Intro → provision → running with task runner, xterm.js terminal, and toolbar (pause/resume/restart/destroy) |
-| Task runner | Renders `multiple_choice`, `terminal_action`, `port_check` tasks; validates via backend |
-| Terminal | WebSocket to the backend proxy (`WS /api/v1/labs/ws/lab`), JWT sent as first message; backend bridges to the orchestrator |
-| Guided demos | `:::terminal-demo` directives in chapter markdown → backend `/api/v1/demos/*` container + terminal |
+| Task runner | Renders `multiple_choice`, `terminal_action`, `port_check` tasks; validation commands run in the container via the orchestrator (`POST /labs/{id}/exec`), matching is client-side |
+| Terminal | WebSocket directly to the orchestrator (`ws(s)://<ORCHESTRATOR_URL>/ws/terminal`), ORCHESTRATOR_SECRET token sent as the first message |
+| Guided demos | `:::terminal-demo` directives in chapter markdown → orchestrator `/demos/*` API + terminal |
 | Progress tracking | Calls the backend to mark chapters and labs complete |
 
 ## What It Does NOT Do
 
 - Read the backend's files — the backend serves no content
-- Manage containers — sends commands to the orchestrator via the backend proxy
+- Manage containers — calls the orchestrator directly (REST `/labs/*`, `/demos/*` + WS `/ws/terminal`); the backend is never in the lab path
 - Verify auth tokens — the backend does that with the Admin SDK
 - Track progress — the backend owns Firestore
+- Share the orchestrator secret with the backend — the orchestrator is addressed with its own URL + secret (`NEXT_PUBLIC_*`)
 
 ## Data Source
 
@@ -39,7 +41,7 @@ content-v2 → CI → S3 (published artifact: latest.json + published/<ver>/cont
         └─ no  → no-op
 Chapters / lab instructions / config / tasks: /api/local-content/* (local disk)
 Catalog / TOC: backend /api/v1/courses*
-Lab lifecycle: backend /api/v1/labs/... (proxy → orchestrator)
+Lab lifecycle / demos / terminal: orchestrator direct (NEXT_PUBLIC_ORCHESTRATOR_URL)
 ```
 
 ### Content bootstrap (`lib/content-local.ts`)
@@ -47,26 +49,36 @@ Lab lifecycle: backend /api/v1/labs/... (proxy → orchestrator)
 Runs on the Next.js server. On the first content request it calls
 `GET /api/v1/content/version`, compares `version` against the local version
 marker (`{CONTENT_LOCAL_DIR}/version`), and if changed downloads
-`published/{version}/content.tar.gz`, verifies `sha256(gunzip(tarball))` against
-`artifact_sha256`, extracts into the content dir, and writes the marker. It also
-records the changelog payload so the UI can badge newly added/updated content.
-Subsequent requests are a no-op. `lib/content-server.ts` (`getCourseCatalog`,
-`getCourse`) reads catalog/TOC from the backend instead.
+`published/{version}/content.tar.gz` via the backend-provided **presigned S3
+URL** (`download_url`, 1-hour expiry), verifies
+`sha256(gunzip(tarball))` against `artifact_sha256`, extracts into the content
+dir, and writes the marker. It also records the changelog payload so the UI can
+badge newly added/updated content. Subsequent requests are a no-op.
+`lib/content-server.ts` (`getCourseCatalog`, `getCourse`) reads catalog/TOC
+from the backend instead.
+
+> The content bootstrap **depends on backend AWS credentials**: the backend
+> signs the S3 `download_url` with its own IAM creds, so the S3 bucket can stay
+> private. If those creds are missing/invalid the download 403s and
+> `/api/local-content/*` returns `500`.
 
 ## Validation Flow
 
-Server-validated (the backend runs the command in the container; matching is
-server-side, so answers never reach the browser):
+Client-driven, but the commands run **inside the lab container via the
+orchestrator** (`next-app/lib/api.ts` → `orchestratorFetch`). Matching happens
+client-side; the container never sees the expected answers in the clear:
 
 1. Frontend reads lab tasks from its local content (`/api/local-content/labs/{id}/tasks`).
 2. Renders the current task (multiple_choice / terminal_action / port_check).
 3. Student answers (pick an option, type a command, or follow the terminal flow).
-4. Frontend sends `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` with the
-   task's **spec** (task_type, validation, error_message, hint) from its local config.
-5. Backend runs `validation.command` via the orchestrator and matches
-   (exact/contains/regex/line_count, or `expected_exit_code` when present).
+4. Frontend sends the validation `command` to the orchestrator
+   `POST /labs/{sessionId}/exec` (substituting `{{session_id}}` and any
+   recorded `{{recorded:*}}` values from localStorage).
+5. Orchestrator runs the command as the configured user and returns
+   `{exit_code, output}`; the frontend matches (exact/contains/regex/line_count,
+   or `expected_exit_code` when present).
 6. Correct → success animation → advance. Incorrect → `error_message` + hint → retry.
-7. All tasks complete → Submit Lab modal → record completion + destroy container → return to course.
+7. All tasks complete → Submit Lab modal → record completion via the backend → destroy container → return to course.
 
 ## Pages
 
@@ -133,6 +145,10 @@ NEXT_PUBLIC_FIREBASE_APP_ID=
 # API endpoints
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000   # browser → backend
 BACKEND_API_URL=http://backend:8000              # server → backend (compose)
+
+# Orchestrator (browser talks to it directly — labs/demos + terminal)
+NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8001        # browser → orchestrator
+NEXT_PUBLIC_ORCHESTRATOR_SECRET=local-dev-super-secret    # must match the orchestrator's secret
 
 # Content store (server-side)
 CONTENT_LOCAL_DIR=/app/.content                  # local artifact dir + version marker

@@ -28,8 +28,9 @@ Guides for building, running, and troubleshooting the platform locally.
 
 | Doc | What it covers |
 |-----|----------------|
-| [Setup Guide](2-development/setup.md) | Prerequisites, Firebase credentials, Floci S3, publishing, starting the stack + VM |
+| [Setup Guide](2-development/setup.md) | Prerequisites, Firebase credentials, **AWS IAM credentials** (dev/beta), Floci S3, publishing, starting the stack + VM |
 | [Development Guide](2-development/development.md) | Hot reload, volume mounts, commands, orchestrator VM lifecycle, pitfalls |
+| [AWS S3 Private Downloads](aws-s3-private-downloads.md) | Presigned-URL content download, IAM policy + env var setup for private S3 buckets |
 | [Manual Testing](2-development/TESTING.md) | End-to-end manual test suite (worker, sync, validation, content bootstrap) |
 | [Known Issues & Fixes](2-development/bugs.md) | Resolved root causes + the open group-membership validation bug |
 | [Deferred Improvements](2-development/deferred-improvements.md) | Backlog — Items A (done), B (superseded), C (exploratory VM), D (webhook sync, designed) |
@@ -81,7 +82,7 @@ SGP-V/
 ├── postman/             # Postman test suites
 ├── .github/workflows/   # CI/CD
 ├── docker-compose.local.yml  # Local stack: floci + worker + backend + frontend
-├── docker-compose.dev.yml    # Dev stack: worker + backend + frontend (real AWS S3)
+├── docker-compose.dev.yml    # Dev stack: worker + backend + frontend + orchestrator (real AWS S3)
 ├── docker-compose.beta.yml   # Beta stack: worker + backend + frontend (real AWS S3)
 ├── environments/             # Per-env sealed config (gitignored: *.env.*, firebase keys)
 ├── Vagrantfile          # Orchestrator VM

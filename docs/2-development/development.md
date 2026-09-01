@@ -32,7 +32,7 @@ with no rebuild:
 |---------|-------|------------------|
 | frontend | `./next-app:/app` | Next.js dev server + `CHOKIDAR_USEPOLLING=true` |
 | backend | `./backend:/app` | uvicorn `--reload` |
-| orchestrator | `sgp-orchestrator` systemd service in the Vagrant VM | uvicorn `--reload` on the synced folder (see §4) |
+| orchestrator | `labops-orchestrator` systemd service in the Vagrant VM | uvicorn `--reload` on the synced folder (see §4) |
 
 Volume notes:
 - `frontend_next:/app/.next` and `frontend_content:/app/.content` are named
@@ -82,7 +82,7 @@ See [`docs/TESTING.md`](TESTING.md) for the full manual suite and
 
 ## 4. Orchestrator (Vagrant VM)
 
-The orchestrator runs inside the Ubuntu VM as the **`sgp-orchestrator` systemd
+The orchestrator runs inside the Ubuntu VM as the **`labops-orchestrator` systemd
 service** — a host process, **not** a container, so the VM's Docker daemon is
 freed for lab containers only. It is a **dumb container executor** — it never
 reads `lab.yaml`; the frontend drives the learning flow and sends commands to
@@ -98,18 +98,18 @@ vagrant destroy   # teardown (loses VM state)
 Operate the orchestrator with systemd (via `vagrant ssh`):
 
 ```bash
-systemctl status sgp-orchestrator       # is it up? why did it restart?
-journalctl -fu sgp-orchestrator         # live logs
-sudo systemctl restart sgp-orchestrator # apply config/env changes
+systemctl status labops-orchestrator       # is it up? why did it restart?
+journalctl -fu labops-orchestrator         # live logs
+sudo systemctl restart labops-orchestrator # apply config/env changes
 ```
 
 Provisioning (`provisioning/install-orchestrator.sh`) seeds:
 - deps → `/opt/sgp/venv-orchestrator` (kept **outside** the synced folder so it
   never syncs back to the host),
 - env → `/opt/sgp/orchestrator.env` (the systemd unit's `EnvironmentFile`),
-- unit → `/etc/systemd/system/sgp-orchestrator.service`.
+- unit → `/etc/systemd/system/labops-orchestrator.service`.
 
-Lab containers (`sgp-lab-{ubuntu,docker,git}`) are managed by Sysbox inside
+Lab containers (`labops-lab-{ubuntu,docker,git}`) are managed by Sysbox inside
 the VM. The frontend talks to the orchestrator at `host.docker.internal:8001`
 from compose (host port 8001 ← VM guest 8000); the backend never talks to the
 orchestrator.
@@ -148,6 +148,13 @@ Flow for a content change:
   for the local stack), not the per-service `.env` files. Keep
   `FIREBASE_PROJECT_ID` consistent between that env file and any service `.env`
   you run natively.
+- **Content bootstrap `403 Forbidden` on dev/beta** — the backend signs
+  presigned S3 download URLs using the AWS creds in the compose stack's
+  `env_file` (`environments/dev/.env.dev` / `environments/beta/.env.beta`). If
+  those `AWS_*` keys are missing/blank or the IAM principal lacks `s3:GetObject`
+  on the bucket's `published/*`, the `/api/local-content/*` routes return `500`.
+  Fill the AWS vars in the env file and ensure the IAM policy allows `GetObject`;
+  also `docker compose down -v` to clear the failed local content volume.
 - **Empty catalog** — `credentials.json` missing at
   `backend/app/core/credentials.json`, `FIREBASE_PROJECT_ID` unset, or
   `my-content-bucket` empty. See `docs/setup.md` §5–6.

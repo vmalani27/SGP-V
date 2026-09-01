@@ -1,0 +1,196 @@
+name: build-and-publish-images
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - beta
+    paths:
+      - 'backend/**'
+      - 'orchestrator/**'
+      - 'next-app/**'
+      - '.github/workflows/build-images.yml'
+  workflow_dispatch:
+    inputs:
+      force_build_all:
+        description: 'Force build all images regardless of path changes'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── DETECT CHANGES ──────────────────────────────────────────────
+  changes:
+    name: Detect Changed Components
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend == 'true' || github.event.inputs.force_build_all == 'true' }}
+      orchestrator: ${{ steps.filter.outputs.orchestrator == 'true' || github.event.inputs.force_build_all == 'true' }}
+      frontend: ${{ steps.filter.outputs.frontend == 'true' || github.event.inputs.force_build_all == 'true' }}
+      lab_images: ${{ steps.filter.outputs.lab_images == 'true' || github.event.inputs.force_build_all == 'true' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Path Filters
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            orchestrator:
+              - 'orchestrator/app/**'
+              - 'orchestrator/Dockerfile'
+              - 'orchestrator/requirements.txt'
+            frontend:
+              - 'next-app/**'
+            lab_images:
+              - 'orchestrator/lab-images/**'
+
+  # ── BUILD CORE SERVICES (Backend, Orchestrator, Frontend) ───────
+  build-services:
+    name: Build & Push Service (${{ matrix.service.name }})
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            image_name: backend
+            enabled: ${{ needs.changes.outputs.backend == 'true' }}
+          - name: orchestrator
+            context: ./orchestrator
+            dockerfile: ./orchestrator/Dockerfile
+            image_name: orchestrator
+            enabled: ${{ needs.changes.outputs.orchestrator == 'true' }}
+          - name: frontend
+            context: ./next-app
+            dockerfile: ./next-app/Dockerfile
+            image_name: frontend
+            enabled: ${{ needs.changes.outputs.frontend == 'true' }}
+    if: matrix.service.enabled
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}/${{ matrix.service.image_name }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Service Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── BUILD LAB RUNTIME IMAGES (Ubuntu, Docker, Docker-Fundamentals) ──
+  build-lab-images:
+    name: Build & Push Lab Runtime Images
+    needs: changes
+    if: needs.changes.outputs.lab_images == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine Tags
+        id: tags
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+
+      # 1. Base Image: labops-ubuntu
+      - name: Build & Push Lab Image (lab-ubuntu)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./orchestrator/lab-images
+          file: ./orchestrator/lab-images/Dockerfile.ubuntu
+          load: true # Load into local daemon so downstream docker/docker-fundamentals images can inherit from it
+          tags: |
+            labops-ubuntu:latest
+            ghcr.io/${{ github.repository }}/lab-ubuntu:${{ steps.tags.outputs.branch }}
+            ghcr.io/${{ github.repository }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
+            ghcr.io/${{ github.repository }}/lab-ubuntu:latest
+          cache-from: type=gha,scope=lab-ubuntu
+          cache-to: type=gha,mode=max,scope=lab-ubuntu
+
+      - name: Push lab-ubuntu to GHCR
+        run: |
+          docker push ghcr.io/${{ github.repository }}/lab-ubuntu:${{ steps.tags.outputs.branch }}
+          docker push ghcr.io/${{ github.repository }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
+          docker push ghcr.io/${{ github.repository }}/lab-ubuntu:latest
+
+      # 2. DinD Image: labops-docker
+      - name: Build & Push Lab Image (lab-docker)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./orchestrator/lab-images
+          file: ./orchestrator/lab-images/Dockerfile.docker
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/lab-docker:${{ steps.tags.outputs.branch }}
+            ghcr.io/${{ github.repository }}/lab-docker:${{ steps.tags.outputs.sha }}
+            ghcr.io/${{ github.repository }}/lab-docker:latest
+          cache-from: type=gha,scope=lab-docker
+          cache-to: type=gha,mode=max,scope=lab-docker
+
+      # 3. Preloaded Fundamentals Image: labops-docker-fundamentals
+      - name: Build & Push Lab Image (lab-docker-fundamentals)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./orchestrator/lab-images
+          file: ./orchestrator/lab-images/Dockerfile.docker-fundamentals
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/lab-docker-fundamentals:${{ steps.tags.outputs.branch }}
+            ghcr.io/${{ github.repository }}/lab-docker-fundamentals:${{ steps.tags.outputs.sha }}
+            ghcr.io/${{ github.repository }}/lab-docker-fundamentals:latest
+          cache-from: type=gha,scope=lab-docker-fundamentals
+          cache-to: type=gha,mode=max,scope=lab-docker-fundamentals

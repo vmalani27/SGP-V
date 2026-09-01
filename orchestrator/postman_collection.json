@@ -1,54 +1,65 @@
 {
   "info": {
-    "name": "LabOps API",
-    "description": "Test suite for LabOps. Backend proxy endpoints (primary) and orchestrator internal endpoints (debugging).",
+    "name": "SGP Orchestrator (LabOps) API",
+    "description": "Test suite for the LabOps orchestrator direct API — the endpoints the frontend calls today (lab lifecycle, validation exec, inspect). The backend is NOT involved in lab traffic (its /api/v1/labs* and /api/v1/demos* proxy routers were removed).\n\nAUTH: all lab/demo/schema routes require `Authorization: Bearer <ORCHESTRATOR_SECRET>` (collection-level auth uses {{orchestratorSecret}}, default `local-dev-super-secret`). Health is public. The terminal WebSocket auth is a first-message token (`{\"type\":\"auth\",\"token\":<secret>}` on ws://localhost:8001/ws/terminal) — not covered by Postman requests.\n\n⚠️ These requests provision real Docker containers on the orchestrator host (docker.sock). Clean up stale containers with: docker ps --filter label=labops-lab --format '{{.ID}}' | xargs -r docker rm -f",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{orchestratorSecret}}",
+        "type": "string"
+      }
+    ]
   },
   "variable": [
     {
-      "key": "backendUrl",
-      "value": "http://localhost:8000"
-    },
-    {
       "key": "orchestratorUrl",
       "value": "http://localhost:8001"
+    },
+    {
+      "key": "orchestratorSecret",
+      "value": "local-dev-super-secret"
     },
     {
       "key": "sessionId",
       "value": ""
     },
     {
-      "key": "courseId",
-      "value": "docker-mastery"
+      "key": "gitSessionId",
+      "value": ""
     }
   ],
   "item": [
     {
       "name": "Health",
+      "description": "Health endpoints are public (no secret required).",
       "item": [
-        {
-          "name": "GET /health (backend)",
-          "request": {
-            "method": "GET",
-            "url": "{{backendUrl}}/health",
-            "description": "Backend health check"
-          },
-          "response": []
-        },
         {
           "name": "GET /health (orchestrator)",
           "request": {
             "method": "GET",
             "url": "{{orchestratorUrl}}/health",
-            "description": "Orchestrator health check (internal)"
+            "description": "Orchestrator health check — the frontend's lab path target"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /health (backend)",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:8000/health",
+            "description": "Backend health check (metadata/progress service)"
           },
           "response": []
         }
       ]
     },
     {
-      "name": "Lab Lifecycle (via backend)",
-      "description": "Start, manage, and destroy lab containers through the backend proxy. The backend reads the lab YAML and forwards the config to the orchestrator.",
+      "name": "Lab Lifecycle (direct)",
+      "description": "Start, manage, and destroy lab containers. These are the endpoints the frontend calls directly — the backend is not involved.",
       "item": [
         {
           "name": "Start Docker Lab",
@@ -76,9 +87,15 @@
           ],
           "request": {
             "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/start",
-            "header": [],
-            "description": "Start a Docker lab — backend reads YAML, sends image to orchestrator"
+            "url": "{{orchestratorUrl}}/labs",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"user_id\": \"postman\", \"lab_id\": \"lab-1\", \"image\": \"labops-docker:latest\", \"apt_packages\": [], \"pre_pull\": [\"nginx:alpine\", \"alpine:latest\"], \"setup\": []}"
+            },
+            "description": "Start a Docker lab. The client supplies the env config (image, apt_packages, pre_pull, setup) — the orchestrator never reads lab.yaml."
           },
           "response": []
         },
@@ -101,53 +118,38 @@
           ],
           "request": {
             "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/git-fundamentals/labs/lab-1/start",
-            "header": [],
-            "description": "Start a Git lab"
+            "url": "{{orchestratorUrl}}/labs",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"user_id\": \"postman\", \"lab_id\": \"lab-1\", \"image\": \"labops-ubuntu:latest\", \"apt_packages\": [], \"pre_pull\": [], \"setup\": []}"
+            },
+            "description": "Start a Git/Ubuntu lab with a minimal env config."
           },
           "response": []
         },
         {
-          "name": "Start Lab — Lab not found",
+          "name": "Recover session — /labs/by_key",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Returns 404', () => {",
-                  "    pm.expect(pm.response.code).to.eql(404);",
+                  "var json = pm.response.json();",
+                  "pm.test('Recovers a live session from Docker labels', () => {",
+                  "    pm.expect(json).to.have.property('session_id');",
+                  "    pm.expect(json.status).to.eql('running');",
                   "});"
                 ]
               }
             }
           ],
           "request": {
-            "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-999/start",
-            "header": [],
-            "description": "Should return 404 for non-existent lab"
-          },
-          "response": []
-        },
-        {
-          "name": "Start Lab — Course not found",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Returns 404', () => {",
-                  "    pm.expect(pm.response.code).to.eql(404);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/nonexistent/labs/lab-1/start",
-            "header": [],
-            "description": "Should return 404 for non-existent course"
+            "method": "GET",
+            "url": "{{orchestratorUrl}}/labs/by_key?user_id=postman&lab_id=lab-1",
+            "description": "Recover the live container for a user+lab by Docker labels, or 404. This replaces the removed backend 'active' check."
           },
           "response": []
         },
@@ -170,9 +172,8 @@
           ],
           "request": {
             "method": "GET",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/status/{{sessionId}}",
-            "header": [],
-            "description": "Get session status from orchestrator via backend"
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}",
+            "description": "Get session status directly from the orchestrator."
           },
           "response": []
         },
@@ -193,9 +194,9 @@
           ],
           "request": {
             "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/stop/{{sessionId}}",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/stop",
             "header": [],
-            "description": "Stop a lab container"
+            "description": "Stop (pause) a lab container."
           },
           "response": []
         },
@@ -216,9 +217,9 @@
           ],
           "request": {
             "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/resume/{{sessionId}}",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/resume",
             "header": [],
-            "description": "Resume a stopped lab container"
+            "description": "Resume a stopped lab container."
           },
           "response": []
         },
@@ -239,17 +240,17 @@
           ],
           "request": {
             "method": "DELETE",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/{{sessionId}}",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}",
             "header": [],
-            "description": "Destroy a lab container"
+            "description": "Destroy (force-remove) a lab container."
           },
           "response": []
         }
       ]
     },
     {
-      "name": "Command Execution (via backend)",
-      "description": "Run commands inside lab containers through the backend proxy.",
+      "name": "Command Execution (direct)",
+      "description": "Run commands inside lab containers. This is the frontend's validation exec — the client picks the command + user (from task.validation).",
       "item": [
         {
           "name": "Exec — whoami",
@@ -271,7 +272,7 @@
           ],
           "request": {
             "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/exec/{{sessionId}}",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/exec",
             "header": [
               { "key": "Content-Type", "value": "application/json" }
             ],
@@ -300,7 +301,7 @@
           ],
           "request": {
             "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/exec/{{sessionId}}",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/exec",
             "header": [
               { "key": "Content-Type", "value": "application/json" }
             ],
@@ -329,7 +330,7 @@
           ],
           "request": {
             "method": "POST",
-            "url": "{{backendUrl}}/api/v1/labs/courses/{{courseId}}/labs/lab-1/exec/{{sessionId}}",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/exec",
             "header": [
               { "key": "Content-Type", "value": "application/json" }
             ],
@@ -337,65 +338,23 @@
               "mode": "raw",
               "raw": "{\"command\": \"whoami\", \"user\": \"root\"}"
             },
-            "description": "Run command as root"
+            "description": "Run command as root (honors validation.execution_user)"
           },
           "response": []
         }
       ]
     },
     {
-      "name": "Orchestrator (Internal)",
-      "description": "Direct orchestrator endpoints for debugging. Frontend should NOT call these — use the backend proxy instead.",
+      "name": "Testing & Debug",
+      "description": "Additional orchestrator endpoints useful when debugging the lab stack.",
       "item": [
-        {
-          "name": "Start Lab (internal)",
-          "request": {
-            "method": "POST",
-            "url": "{{orchestratorUrl}}/labs",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"lab_id\": \"lab-1\", \"image\": \"sgp-lab-docker:latest\"}"
-            },
-            "description": "Direct orchestrator start — for debugging only"
-          },
-          "response": []
-        },
         {
           "name": "List Labs",
           "request": {
             "method": "GET",
             "url": "{{orchestratorUrl}}/labs",
             "header": [],
-            "description": "List all lab containers managed by orchestrator"
-          },
-          "response": []
-        },
-        {
-          "name": "Exec (internal)",
-          "request": {
-            "method": "POST",
-            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/exec",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"command\": \"whoami\", \"user\": \"student\"}"
-            },
-            "description": "Direct exec — for debugging only"
-          },
-          "response": []
-        },
-        {
-          "name": "Validate (legacy)",
-          "request": {
-            "method": "POST",
-            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/validate",
-            "header": [],
-            "description": "Run legacy validator.sh"
+            "description": "List all lab containers managed by the orchestrator (running and stopped)."
           },
           "response": []
         },
@@ -411,7 +370,17 @@
               "mode": "raw",
               "raw": "{\"path\": \"/etc/passwd\", \"check\": \"exists\"}"
             },
-            "description": "Check if file exists"
+            "description": "Check if a file exists / read it (file_check-style probes run by the frontend)."
+          },
+          "response": []
+        },
+        {
+          "name": "Validate (legacy)",
+          "request": {
+            "method": "POST",
+            "url": "{{orchestratorUrl}}/labs/{{sessionId}}/validate",
+            "header": [],
+            "description": "Legacy validator — the frontend no longer calls this; validation is client-side via exec."
           },
           "response": []
         },

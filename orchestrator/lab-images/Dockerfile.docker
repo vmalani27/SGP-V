@@ -1,11 +1,11 @@
 # ──────────────────────────────────────────────────────────────
-# sgp-lab-docker — Docker-in-Docker lab image
+# labops-docker — Docker-in-Docker lab image
 # ──────────────────────────────────────────────────────────────
 # Ubuntu 22.04 with systemd + Docker daemon pre-installed.
 # Used by: docker-mastery
 #
 # Build:
-#   docker build -t sgp-lab-docker:latest -f Dockerfile.docker .
+#   docker build -t labops-docker:latest -f Dockerfile.docker .
 #
 # The Docker daemon starts automatically via systemd.
 # The student user is intentionally NOT in the docker group — labs grant
@@ -13,7 +13,7 @@
 # or by having the student grant it themselves (docker-fundamentals lab-1).
 # ──────────────────────────────────────────────────────────────
 
-FROM sgp-lab-ubuntu:latest
+FROM labops-ubuntu:latest
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \

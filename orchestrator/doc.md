@@ -2,16 +2,15 @@
 
 The orchestrator is a FastAPI-based service that acts as the container control plane. It manages the complete lifecycle of lab environments, exposes a unified REST and WebSocket interface, and communicates with the host Docker Engine through the Docker SDK.
 
-The orchestrator never communicates with Firebase or stores persistent user data. Its sole purpose is to manage containers. The backend handles auth, content serving, and progress tracking. The frontend drives the learning flow.
+The orchestrator never communicates with Firebase or stores persistent user data. Its sole purpose is to manage containers. The backend handles auth, metadata/progress, and the content-version handshake. The frontend calls the orchestrator **directly** and drives the learning flow.
 
 ## Lab Lifecycle Management
 
 When a student starts a lab from the frontend:
 
-1. **Frontend** calls `POST /api/v1/labs/courses/{id}/labs/{labId}/start` on the **backend**, supplying the lab's environment config (`image`, `apt_packages`, `pre_pull`, `setup`) in the body from its local lab config
-2. **Backend** (which never reads `lab.yaml`) forwards that config to `POST /labs` on the orchestrator
-3. **Orchestrator** creates an isolated Sysbox container using the specified image with `sysbox-runc` runtime
-4. **Orchestrator** installs `apt_packages` and pre-pulls Docker images as specified in the environment config
+1. **Frontend** calls `POST /labs` on the **orchestrator** directly, supplying the lab's environment config (`image`, `apt_packages`, `pre_pull`, `setup`) in the body from its local lab config
+2. **Orchestrator** creates an isolated Sysbox container using the specified image with `sysbox-runc` runtime
+3. **Orchestrator** installs `apt_packages` and pre-pulls Docker images as specified in the environment config
 
 Lifecycle operations: `POST /labs/{id}/stop` (pause), `POST /labs/{id}/resume` (restart), `DELETE /labs/{id}` (force remove). Labs are ephemeral — all container resources are cleaned up on destroy.
 
@@ -19,9 +18,9 @@ A background checker destroys labs after 40 minutes (configurable via `LAB_TIMEO
 
 ## Terminal Management
 
-The orchestrator provides an interactive Linux terminal via WebSocket at `WS /ws/terminal`. The JWT is sent as the **first message** (`{"type":"auth","token":...}`) — never in the URL. The browser does not connect here directly; the backend proxies it from `/api/v1/labs/ws/lab`. It uses aiodocker's async exec streaming to bridge stdin/stdout between the backend proxy and the container's bash shell. The student gets a bash session as the `student` user.
+The orchestrator provides an interactive Linux terminal via WebSocket at `WS /ws/terminal`. The auth token is sent as the **first message** (`{"type":"auth","token":...}`) — never in the URL. The browser connects here **directly** (the frontend builds `ws://<ORCHESTRATOR_URL>/ws/terminal`); there is no backend proxy in the path. It uses aiodocker's async exec streaming to bridge stdin/stdout between the WebSocket and the container's bash shell. The student gets a bash session as the `student` user.
 
-Sessions are recovered from Docker labels: containers are labelled `com.sgp.user_id`, `com.sgp.course_id` and `com.sgp.lab_id` at creation, and `GET /labs/by_key?user_id=&lab_id=` returns the live session after a restart.
+Sessions are recovered from Docker labels: containers are labelled `com.labops.user_id`, `com.labops.course_id` and `com.labops.lab_id` at creation, and `GET /labs/by_key?user_id=&lab_id=` returns the live session after a restart.
 
 ## Validation System
 
@@ -29,12 +28,16 @@ Validation is **exec-based**. The orchestrator has no knowledge of tasks or expe
 
 1. The **frontend** reads the task definitions from its local content
    (`/api/local-content/labs/{courseId}/{labId}/tasks`), and supplies each
-   task's `task_type` + `validation` spec to the backend
+   task's `task_type` + `validation` spec
 2. The student completes the task in the terminal
 3. The student clicks "Check"
-4. The **frontend** sends `POST /api/v1/labs/courses/{id}/labs/{labId}/validate` with the task's spec
-5. The **backend** runs the validation command in the container via the orchestrator and matches the output (exact / contains / regex / line_count, or `expected_exit_code`)
-6. The **backend** returns `{correct, output?}` — matching happens server-side
+4. The **frontend** sends the validation command to
+   `POST /labs/{session_id}/exec` with the task's spec (`user` from
+   `validation.execution_user`; `{{session_id}}`/`{{recorded:*}}` substituted client-side)
+5. The **orchestrator** runs the command in the container and returns `{exit_code, output}`
+6. The **frontend** matches (`expected_exit_code`, or
+   exact/contains/regex/line_count) and returns `{correct, output?}` — matching
+   happens client-side
 
 This separation means the orchestrator remains generic — it manages containers, terminals, and command execution — while each lab's tasks are defined entirely in YAML.
 
@@ -66,6 +69,6 @@ All endpoints live under `http://localhost:8001`:
 | `POST` | `/labs/{id}/exec` | Run command in container |
 | `POST` | `/labs/{id}/validate` | Legacy: run validator.sh |
 | `POST` | `/labs/{id}/inspect` | Check file state |
-| `WS` | `/ws/terminal` | WebSocket terminal (JWT first-message handshake) |
+| `WS` | `/ws/terminal` | WebSocket terminal (shared-secret token first-message handshake) |
 | `GET` | `/schemas/yaml` | Lab YAML JSON Schema |
 | `GET` | `/schemas/sample` | Sample lab YAML |

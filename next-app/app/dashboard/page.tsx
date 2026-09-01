@@ -60,11 +60,11 @@ export default function DashboardPage() {
   };
 
   return (
-    <main className="min-h-screen bg-bg">
+    <main className="min-h-screen bg-bg text-text">
       <Navbar />
 
       <div className="mx-auto max-w-5xl px-6 py-10 pt-20">
-        <h1 className="hero-font text-3xl font-bold">
+        <h1 className="hero-font text-2xl font-bold tracking-tight text-text md:text-3xl">
           Welcome back, {user?.displayName?.replace(/\b\w/g, c => c.toUpperCase()) || 'Developer'}
         </h1>
         <p className="mt-1 text-sm text-muted">
@@ -73,38 +73,42 @@ export default function DashboardPage() {
 
         {enrolledList.length > 0 && (
           <section className="mt-12">
-            <h2 className="hero-font text-xl font-semibold">My Courses</h2>
+            <h2 className="hero-font text-xl font-bold text-text">My Courses</h2>
             <div className="mt-4 grid gap-6 md:grid-cols-2">
               {enrolledList.map((course) => (
                 <div
                   key={course.id}
-                  className="rounded-xl border border-line bg-panel p-6 transition hover:border-accent/30"
+                  className="flex flex-col rounded-sm border border-line bg-panel/30 p-6 transition hover:border-accent/50 hover:bg-panel/50"
                 >
                   <div className="flex items-start justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-accent/10 text-accent">
                       {course.id === 'git-fundamentals' ? <GitIcon /> : <DockerIcon />}
                     </div>
-                    <span className="rounded-md bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                    <span className="rounded-sm border border-line bg-bg px-2 py-0.5 font-mono text-[11px] tabular-nums text-muted">
                       {getProgress(course.id)}%
                     </span>
                   </div>
-                  <h3 className="hero-font mt-4 text-lg font-bold">{course.title}</h3>
+                  <h3 className="hero-font mt-4 text-lg font-bold text-text">{course.title}</h3>
                   <p className="mt-1 text-sm text-muted">{course.description}</p>
                   <div className="mt-4 flex items-center gap-4 text-xs text-muted">
-                    <span className="capitalize">{course.level}</span>
+                    <span className="rounded-sm border border-line px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+                      {course.level}
+                    </span>
                   </div>
-                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-line">
-                    <div
-                      className="h-full rounded-full bg-accent transition-all"
-                      style={{ width: `${getProgress(course.id)}%` }}
-                    />
+                  <div className="mt-4 flex flex-col justify-end flex-1">
+                    <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-line">
+                      <div
+                        className="h-full rounded-full bg-text/70 transition-all"
+                        style={{ width: `${getProgress(course.id)}%` }}
+                      />
+                    </div>
+                    <Link
+                      href={`/courses/${course.id}`}
+                      className="mt-6 inline-flex w-fit shrink-0 items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-bg transition hover:bg-accent/90"
+                    >
+                      Continue
+                    </Link>
                   </div>
-                  <Link
-                    href={`/courses/${course.id}`}
-                    className="mt-4 inline-block rounded-lg border border-accent/30 px-4 py-1.5 text-sm text-accent transition hover:bg-accent/10"
-                  >
-                    Continue
-                  </Link>
                 </div>
               ))}
             </div>
@@ -113,27 +117,31 @@ export default function DashboardPage() {
 
         {availableList.length > 0 && (
           <section className="mt-12">
-            <h2 className="hero-font text-xl font-semibold">Browse Courses</h2>
+            <h2 className="hero-font text-xl font-bold text-text">Browse Courses</h2>
             <div className="mt-4 grid gap-6 md:grid-cols-2">
               {availableList.map((course) => (
                 <div
                   key={course.id}
-                  className="rounded-xl border border-line bg-panel p-6 transition hover:border-accent/30"
+                  className="flex flex-col rounded-sm border border-line bg-panel/30 p-6 transition hover:border-accent/50 hover:bg-panel/50"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-accent/10 text-accent">
                     {course.id === 'git-fundamentals' ? <GitIcon /> : <DockerIcon />}
                   </div>
-                  <h3 className="hero-font mt-4 text-lg font-bold">{course.title}</h3>
+                  <h3 className="hero-font mt-4 text-lg font-bold text-text">{course.title}</h3>
                   <p className="mt-1 text-sm text-muted">{course.description}</p>
                   <div className="mt-4 flex items-center gap-4 text-xs text-muted">
-                    <span className="capitalize">{course.level}</span>
+                    <span className="rounded-sm border border-line px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+                      {course.level}
+                    </span>
                   </div>
-                  <button
-                    onClick={() => handleEnroll(course.id)}
-                    className="mt-4 rounded-lg border border-accent/30 px-4 py-1.5 text-sm text-accent transition hover:bg-accent/10"
-                  >
-                    Enroll Now
-                  </button>
+                  <div className="mt-4 flex flex-col justify-end flex-1">
+                    <button
+                      onClick={() => handleEnroll(course.id)}
+                      className="mt-6 inline-flex w-fit items-center gap-2 rounded-md border border-line bg-panel/50 px-4 py-2 text-sm font-semibold text-text transition hover:border-accent hover:text-accent"
+                    >
+                      Enroll Now
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

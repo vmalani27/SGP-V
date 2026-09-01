@@ -4,11 +4,33 @@ import time
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
 
-from app.config import DOCKER_HOST, LAB_PREFIX
+from app.config import CONTAINER_RUNTIME_MODE, DOCKER_HOST, LAB_PREFIX
 
 logger = logging.getLogger(__name__)
 
-RUNTIME = "sysbox-runc"
+
+def get_runtime_options() -> dict:
+    """Dynamically applies security and runtime settings based on CONTAINER_RUNTIME_MODE.
+
+    Modes:
+    - 'standard' / 'privileged' / 'dev': Standard runc with full privileges for Docker Desktop on Windows/macOS.
+    - 'sysbox' (default): Secure student/production mode using sysbox-runc.
+    """
+    if CONTAINER_RUNTIME_MODE in ("standard", "privileged", "dev"):
+        logger.warning(
+            "CONTAINER_RUNTIME_MODE is set to '%s'. Launching container with standard runc (privileged=True). "
+            "This mode is intended only for local development on Docker Desktop.",
+            CONTAINER_RUNTIME_MODE,
+        )
+        return {
+            "privileged": True,
+        }
+
+    # Production / Secure Student Mode (default)
+    return {
+        "runtime": "sysbox-runc",
+        "privileged": False,
+    }
 
 
 def lab_id_to_number(lab_id: str) -> int:
@@ -31,7 +53,14 @@ class DockerService:
         return cls._instance
 
     def _init_client(self):
-        self.client = docker.DockerClient(base_url=DOCKER_HOST)
+        # Use a generous per-request timeout: provisioning a Sysbox lab/demo
+        # container boots systemd + a nested dockerd, and the Docker API
+        # `start` call itself can block for well over the 60s SDK default on a
+        # small VM. A short timeout turns slow-but-correct provisioning into a
+        # spurious read-timeout, and since the mutex holds during provisioning,
+        # the created container still finishes later — leaving callers behind.
+        self.client = docker.DockerClient(base_url=DOCKER_HOST, timeout=300)
+        self.client.api.timeout = 300
 
     def start_lab(self, image: str, name: str, labels: dict[str, str] | None = None) -> dict:
         try:
@@ -42,21 +71,26 @@ class DockerService:
                 "Lab images must be pre-built before the orchestrator starts."
             )
 
+        runtime_opts = get_runtime_options()
+
         try:
             container = self.client.containers.run(
                 image=image,
                 name=name,
                 hostname=name,
-                runtime=RUNTIME,
                 detach=True,
                 labels=labels or {},
+                **runtime_opts,
             )
-            logger.info(f"Started container '{name}' ({container.short_id}) with image '{image}'")
+            logger.info(
+                f"Started container '{name}' ({container.short_id}) with image '{image}' "
+                f"(mode: {CONTAINER_RUNTIME_MODE}, opts: {runtime_opts})"
+            )
             return self._container_info(container)
         except APIError as e:
             raise RuntimeError(f"Failed to start container: {e}")
 
-    def wait_for_docker(self, name: str, timeout: int = 90) -> None:
+    def wait_for_docker(self, name: str, timeout: int = 300) -> None:
         """Wait until the inner Docker daemon inside the container responds.
 
         The base image boots dockerd via systemd, so there is a short race
@@ -143,6 +177,26 @@ class DockerService:
         containers = self.client.containers.list(all=True, filters=filters)
         return [self._container_info(c) for c in containers]
 
+    def get_running_lab_by_labels(self, labels: dict[str, str]) -> dict | None:
+        """Return the newest RUNNING container matching ALL given labels, or None.
+
+        Containers list with ``all=True`` includes stopped/exited/created ones,
+        so a crash-orphaned or half-provisioned container would otherwise be
+        handed back as "the live" container. Only a container whose Docker
+        status is exactly ``running`` can receive exec / terminal attachment;
+        anything else must be treated as absent so the caller creates a fresh
+        one (or 404s) instead of re-attaching to a dead container.
+        """
+        running = [
+            c
+            for c in self.get_labs_by_labels(labels)
+            if c.get("status") == "running"
+        ]
+        if not running:
+            return None
+        running.sort(key=lambda c: c.get("created", ""), reverse=True)
+        return running[0]
+
     def get_lab(self, name: str) -> dict:
         container = self._get_container(name)
         return self._container_info(container)
@@ -182,9 +236,24 @@ class DockerService:
 
     def exec_command(self, name: str, cmd: list[str], user: str | None = None) -> tuple[int, str]:
         container = self._get_container(name)
+        # The container may have exited between the label lookup and this exec
+        # (or an aborted create). Docker refuses `exec` on a non-running
+        # container with a 409; surface that as a clear error instead of letting
+        # the raw APIError escape as an unhandled 500 traceback.
+        try:
+            container.reload()
+            if container.status != "running":
+                raise RuntimeError(
+                    f"Cannot exec into container '{name}': it is in state "
+                    f"'{container.status}', not 'running'"
+                )
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.debug(f"Failed to inspect container '{name}' before exec: {e}")
         if user and user != "root" and cmd[:2] == ["/bin/bash", "-c"]:
             # docker exec -u <user> does NOT recompute supplementary groups for
-            # the spawned process (verified on sgp-lab-docker: student is in the
+            # the spawned process (verified on labops-docker: student is in the
             # docker group via /etc/group, yet `docker exec -u student` yields no
             # docker access). Drop privileges via sudo from root instead, which
             # runs initgroups() and picks up the current /etc/group — the same

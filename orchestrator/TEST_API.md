@@ -2,19 +2,23 @@
 
 ## Architecture
 
-The frontend calls the **backend** (`localhost:8000`), which proxies to the **orchestrator** (`localhost:8001`). The frontend never talks to the orchestrator directly.
+The frontend calls the **orchestrator directly** (`localhost:8001`) — lab lifecycle, validation exec, and the terminal WebSocket. The **backend** (`localhost:8000`) handles only Firebase auth, course metadata/progress, and the content-version handshake; it ships no lab proxy routers (the old `/api/v1/labs*`, `/api/v1/demos*`, `WS /api/v1/labs/ws/lab` were removed). It never sees lab traffic.
 
 ```
-Frontend → Backend (8000) → Orchestrator (8001) → Docker
+Frontend → Orchestrator (8001) → Docker
+Backend  (8000) — metadata / progress / version handshake only
 ```
 
 The **client** supplies the lab's environment config (`{image, apt_packages,
-pre_pull, setup}`) in the start request body from its local lab config — the
-backend never reads `lab.yaml`. This lets the backend track user ID, session
-duration, and lab attempts. The terminal WebSocket is also proxied: the browser
-connects to the backend (`/api/v1/labs/ws/lab`) and the backend bridges frames
-to the orchestrator's internal `/ws/terminal`. The orchestrator address is
-never exposed to the browser.
+pre_pull, setup}`) plus `user_id`/`lab_id` in the start request body from its
+local lab config — the orchestrator never reads `lab.yaml`. The terminal
+WebSocket is also direct: the browser connects to
+`ws://<ORCHESTRATOR_URL>/ws/terminal` and sends the shared secret as its first
+message. All REST calls below use `Authorization: Bearer $ORCHESTRATOR_SECRET`.
+
+> The 404-style "Lab not found / Course not found" checks used to live on the
+> removed backend proxy (which resolved `lab.yaml`). The orchestrator has no
+> content knowledge and accepts any `lab_id`.
 
 ---
 
@@ -25,26 +29,31 @@ never exposed to the browser.
 curl http://localhost:8000/health
 ```
 
-### Orchestrator (internal)
+### Orchestrator (host :8001 → VM guest :8000)
 ```bash
 curl http://localhost:8001/health
 ```
 
 ---
 
-## 2. Backend Proxy — Start Lab
+## 2. Orchestrator — Start Lab
 
 The client sends the environment config in the body (from its local lab config —
-`docker-basic` resolves to the image + pre-pull list below). Start requires a
-Firebase bearer token. Without a live container for the user+lab, the backend
-provisions fresh; with one, it re-attaches and re-applies `setup`.
+`docker-basic` resolves to the image + pre-pull list below). Without a live
+container for the user+lab, the orchestrator provisions fresh; with one (found
+by Docker labels), it re-attaches and re-applies `setup`.
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/start \
-  -H "Authorization: Bearer <idToken>" \
+ORCH="http://localhost:8001"
+SECRET="local-dev-super-secret"
+
+curl -s -X POST $ORCH/labs \
+  -H "Authorization: Bearer $SECRET" \
   -H "Content-Type: application/json" \
   -d '{
-    "image": "sgp-lab-docker:latest",
+    "user_id": "test-user",
+    "lab_id": "lab-1",
+    "image": "labops-docker:latest",
     "apt_packages": [],
     "pre_pull": ["nginx:alpine", "alpine:latest"],
     "setup": []
@@ -55,79 +64,71 @@ curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1
 ```json
 {
   "session_id": "a1b2c3d4e5f6",
-  "lab_id": "lab-1",
-  "container_name": "sgp-lab-a1b2c3d4e5f6",
-  "status": "running"
+  "status": "running",
+  "container_name": "labops-lab-a1b2c3d4e5f6",
+  "user_id": "test-user",
+  "lab_id": "lab-1"
 }
 ```
 
 ### Git course
 ```bash
-curl -X POST http://localhost:8000/api/v1/labs/courses/git-fundamentals/labs/lab-1/start \
-  -H "Authorization: Bearer <idToken>" \
+curl -s -X POST $ORCH/labs \
+  -H "Authorization: Bearer $SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"image": "sgp-lab-ubuntu:latest", "apt_packages": [], "pre_pull": [], "setup": []}'
+  -d '{"user_id":"test-user","lab_id":"lab-1","image":"labops-ubuntu:latest","apt_packages":[],"pre_pull":[],"setup":[]}'
 ```
-
-### Lab not found
-```bash
-curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-999/start
-```
-
-**Expected:** `404` with `"detail": "Lab 'lab-999' config not found in course 'docker-mastery'"`
-
-### Course not found
-```bash
-curl -X POST http://localhost:8000/api/v1/labs/courses/nonexistent/labs/lab-1/start
-```
-
-**Expected:** `404` with `"detail": "Course 'nonexistent' not found"`
 
 ---
 
-## 3. Backend Proxy — Session Status
+## 3. Session — Status / Recovery
 
 ```bash
-curl http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/status/<session_id>
+# by session id
+curl -s $ORCH/labs/<session_id>
+
+# recover from Docker labels (user_id + lab_id) — survives orchestrator restarts
+curl -s "$ORCH/labs/by_key?user_id=test-user&lab_id=lab-1"
 ```
 
-**Expected:**
+**Expected (status):**
 ```json
 {
   "session_id": "a1b2c3d4e5f6",
   "lab_type": "custom",
   "lab_id": "lab-1",
   "container_id": "f6e5d4c3b2a1",
-  "container_name": "sgp-lab-a1b2c3d4e5f6",
+  "container_name": "labops-lab-a1b2c3d4e5f6",
   "status": "running",
   "created_at": "2026-07-12T10:30:00+00:00",
-  "user_id": ""
+  "user_id": "test-user"
 }
 ```
 
 ---
 
-## 4. Backend Proxy — Stop / Resume / Destroy
+## 4. Stop / Resume / Destroy
 
 ```bash
-# Stop
-curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/stop/<session_id>
+# Stop (pause)
+curl -s -X POST $ORCH/labs/<session_id>/stop
 
-# Resume
-curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/resume/<session_id>
+# Resume (restart)
+curl -s -X POST $ORCH/labs/<session_id>/resume
 
-# Destroy
-curl -X DELETE http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/<session_id>
+# Destroy (force remove)
+curl -s -X DELETE $ORCH/labs/<session_id>
 ```
 
 ---
 
-## 5. Backend Proxy — Exec
+## 5. Exec — validation commands
 
-Run a command inside the container.
+Run a command inside the container (`user` honors `validation.execution_user`).
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/exec/<session_id> \
+curl -s -X POST $ORCH/labs/<session_id>/exec \
+  -H "Authorization: Bearer $SECRET" \
   -H "Content-Type: application/json" \
   -d '{"command": "docker images -q | wc -l", "user": "student"}'
 ```
@@ -143,108 +144,69 @@ curl -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1
 
 ---
 
-## 6. Orchestrator Direct API (internal)
+## 6. WebSocket Terminal
 
-The orchestrator API is internal. The backend proxies all calls. These endpoints exist for debugging only.
-
-Base URL: `http://localhost:8001`
-
-### Start (internal — backend calls this)
-```bash
-curl -X POST http://localhost:8001/labs \
-  -H "Content-Type: application/json" \
-  -d '{"lab_id": "lab-1", "image": "sgp-lab-docker:latest"}'
-```
-
-### List labs
-```bash
-curl http://localhost:8001/labs
-```
-
-### Get session
-```bash
-curl http://localhost:8001/labs/<session_id>
-```
-
-### Exec
-```bash
-curl -X POST http://localhost:8001/labs/<session_id>/exec \
-  -H "Content-Type: application/json" \
-  -d '{"command": "whoami", "user": "student"}'
-```
-
-### Validate (legacy)
-```bash
-curl -X POST http://localhost:8001/labs/<session_id>/validate
-```
-
-### Inspect
-```bash
-curl -X POST http://localhost:8001/labs/<session_id>/inspect \
-  -H "Content-Type: application/json" \
-  -d '{"path": "/etc/passwd", "check": "exists"}'
-```
-
-### WebSocket Terminal
-
-Auth is a first-message handshake (`{"type":"auth","token":<jwt>}`) — the token is never in the URL. In the running stack the browser connects to the **backend** proxy instead; this tests the orchestrator directly:
+Auth is a first-message handshake (`{"type":"auth","token":<shared secret>}`) —
+the token is never in the URL. The browser connects **directly** to
+`ws://<ORCHESTRATOR_URL>/ws/terminal` (no backend proxy).
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/labs/courses/docker-mastery/labs/lab-1/token/<session_id> | python3 -c "import sys, json; print(json.load(sys.stdin)['ws_token'])")
 websocat --text ws://localhost:8001/ws/terminal
-# then type: {"type":"auth","token":"$TOKEN"}
-```
-
-### Session recovery (labels)
-```bash
-curl "http://localhost:8001/labs/by_key?user_id=<uid>&lab_id=lab-1"
-```
-Returns the live session if a labelled container exists, `404` otherwise.
-
-### Schemas
-```bash
-curl http://localhost:8001/schemas/yaml
-curl http://localhost:8001/schemas/sample
+# then type:
+{"type":"auth","token":"local-dev-super-secret"}
 ```
 
 ---
 
-## Full Lifecycle Test (via backend)
+## 7. Schemas
+
+```bash
+curl $ORCH/schemas/yaml
+curl $ORCH/schemas/sample
+```
+
+---
+
+## Full Lifecycle Test (orchestrator direct)
 
 ```bash
 #!/bin/bash
 set -e
-BACKEND="http://localhost:8000"
+ORCH="http://localhost:8001"
+SECRET="local-dev-super-secret"
 
 echo "=== 1. Start Lab ==="
-RESPONSE=$(curl -s -X POST $BACKEND/api/v1/labs/courses/docker-mastery/labs/lab-1/start)
+RESPONSE=$(curl -s -X POST $ORCH/labs \
+  -H "Authorization: Bearer $SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"test-user","lab_id":"lab-1","image":"labops-docker:latest","apt_packages":[],"pre_pull":["nginx:alpine"],"setup":[]}')
 echo $RESPONSE | python3 -m json.tool
 
 SESSION_ID=$(echo $RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin)['session_id'])")
 echo "Session ID: $SESSION_ID"
 
-echo -e "\n=== 2. Check Status ==="
-curl -s $BACKEND/api/v1/labs/courses/docker-mastery/labs/lab-1/status/$SESSION_ID | python3 -m json.tool
+echo -e "\n=== 2. Recover by labels ==="
+curl -s -H "Authorization: Bearer $SECRET" "$ORCH/labs/by_key?user_id=test-user&lab_id=lab-1" | python3 -m json.tool
 
 echo -e "\n=== 3. Exec: whoami ==="
-curl -s -X POST $BACKEND/api/v1/labs/courses/docker-mastery/labs/lab-1/exec/$SESSION_ID \
+curl -s -X POST -H "Authorization: Bearer $SECRET" $ORCH/labs/$SESSION_ID/exec \
   -H "Content-Type: application/json" \
   -d '{"command": "whoami", "user": "student"}' | python3 -m json.tool
 
 echo -e "\n=== 4. Exec: docker images ==="
-curl -s -X POST $BACKEND/api/v1/labs/courses/docker-mastery/labs/lab-1/exec/$SESSION_ID \
+curl -s -X POST -H "Authorization: Bearer $SECRET" $ORCH/labs/$SESSION_ID/exec \
   -H "Content-Type: application/json" \
   -d '{"command": "docker images -q | wc -l", "user": "student"}' | python3 -m json.tool
 
 echo -e "\n=== 5. Stop ==="
-curl -s -X POST $BACKEND/api/v1/labs/courses/docker-mastery/labs/lab-1/stop/$SESSION_ID | python3 -m json.tool
+curl -s -X POST -H "Authorization: Bearer $SECRET" $ORCH/labs/$SESSION_ID/stop | python3 -m json.tool
 
 echo -e "\n=== 6. Resume ==="
-curl -s -X POST $BACKEND/api/v1/labs/courses/docker-mastery/labs/lab-1/resume/$SESSION_ID | python3 -m json.tool
+curl -s -X POST -H "Authorization: Bearer $SECRET" $ORCH/labs/$SESSION_ID/resume | python3 -m json.tool
 
 echo -e "\n=== 7. Destroy ==="
-curl -s -X DELETE $BACKEND/api/v1/labs/courses/docker-mastery/labs/lab-1/$SESSION_ID | python3 -m json.tool
+curl -s -X DELETE -H "Authorization: Bearer $SECRET" $ORCH/labs/$SESSION_ID | python3 -m json.tool
 
 echo -e "\n=== 8. Verify Destroyed ==="
-curl -s $BACKEND/api/v1/labs/courses/docker-mastery/labs/lab-1/status/$SESSION_ID | python3 -m json.tool
+curl -s -H "Authorization: Bearer $SECRET" $ORCH/labs/$SESSION_ID | python3 -m json.tool
 ```

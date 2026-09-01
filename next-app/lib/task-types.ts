@@ -1,4 +1,4 @@
-export type TaskType = 'multiple_choice' | 'terminal_action' | 'port_check';
+export type TaskType = 'multiple_choice' | 'terminal_action' | 'port_check' | 'file_check' | 'script' | 'match';
 export type MatchType = 'exact' | 'contains' | 'regex';
 export type TaskStatus = 'pending' | 'correct' | 'incorrect';
 

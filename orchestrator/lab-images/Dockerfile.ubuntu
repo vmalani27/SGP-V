@@ -1,15 +1,15 @@
 # ──────────────────────────────────────────────────────────────
-# sgp-lab-ubuntu — Base lab image
+# labops-ubuntu — Base lab image
 # ──────────────────────────────────────────────────────────────
 # Ubuntu 22.04 with systemd (PID 1), student user, and sudo.
 # Used by: git-fundamentals, linux-fundamentals
 #
 # Build:
-#   docker build -t sgp-lab-ubuntu:latest -f Dockerfile.ubuntu .
+#   docker build -t labops-ubuntu:latest -f Dockerfile.ubuntu .
 #
 # The lab YAML can install additional packages via apt_packages:
 #   environment:
-#     base_image: "sgp-lab-ubuntu:latest"
+#     base_image: "labops-ubuntu:latest"
 #     apt_packages: [git, vim, curl]
 # ──────────────────────────────────────────────────────────────
 

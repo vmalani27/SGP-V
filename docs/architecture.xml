@@ -1,212 +1,331 @@
-<mxfile host="app.diagrams.net" modified="2026-08-02T00:00:00.000Z" agent="draw.io" version="24.0.0">
-  <diagram name="LabOps Architecture" id="labops-architecture">
-    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1150" math="0" shadow="0">
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-09-01T00:00:00.000Z" agent="draw.io" version="24.0.0">
+  <diagram name="LabOps Architecture v2" id="labops-arch-v2">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
 
-        <!-- Student / Browser -->
-        <mxCell id="user_box" value="Student — browser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=13;fontStyle=1;align=center;" vertex="1" parent="1">
-          <mxGeometry x="820" y="15" width="130" height="45" as="geometry"/>
+        <!-- ═══════════════════════════════════════════════════════════
+             ACTORS (top row)
+        ════════════════════════════════════════════════════════════════ -->
+
+        <mxCell id="actor_dev" value="Developer" style="shape=mxgraph.flowchart.start_2;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="30" width="40" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="actor_dev_label" value="Developer" style="text;html=1;align=center;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="140" y="75" width="80" height="20" as="geometry"/>
         </mxCell>
 
-        <!-- Host: docker compose stack -->
-        <mxCell id="host_compose" value="HOST — docker compose stack (sgp-frontend · sgp-backend · sgp-worker · floci)" style="rounded=1;dashed=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="40" width="1240" height="700" as="geometry"/>
+        <mxCell id="actor_student" value="Student" style="shape=mxgraph.flowchart.start_2;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="30" width="40" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="actor_student_label" value="Student browser" style="text;html=1;align=center;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="830" y="75" width="100" height="20" as="geometry"/>
         </mxCell>
 
-        <!-- content-v2 -->
-        <mxCell id="content_container" value="content-v2/ — source of truth (repo; publish → S3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="60" y="80" width="440" height="280" as="geometry"/>
-        </mxCell>
-        <mxCell id="content_index" value="index.json — course catalog" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="content_container">
-          <mxGeometry x="20" y="60" width="190" height="40" as="geometry"/>
-        </mxCell>
-        <mxCell id="content_course" value="course.yaml (fallback: course.json)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="content_container">
-          <mxGeometry x="20" y="120" width="190" height="50" as="geometry"/>
-        </mxCell>
-        <mxCell id="content_module" value="modules/{id}/module.yaml" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="content_container">
-          <mxGeometry x="20" y="190" width="190" height="40" as="geometry"/>
-        </mxCell>
-        <mxCell id="content_chapters" value="chapters/{id}.md — theory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="content_container">
-          <mxGeometry x="230" y="60" width="190" height="40" as="geometry"/>
-        </mxCell>
-        <mxCell id="content_labs" value="labs/{id}/lab.yaml (+ flat {id}.yaml) — tasks + env ref" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="content_container">
-          <mxGeometry x="230" y="120" width="190" height="50" as="geometry"/>
-        </mxCell>
-        <mxCell id="content_env" value="environments/{ref}.yaml — shared defs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="content_container">
-          <mxGeometry x="230" y="190" width="190" height="40" as="geometry"/>
+        <!-- ═══════════════════════════════════════════════════════════
+             LANE HEADERS
+        ════════════════════════════════════════════════════════════════ -->
+
+        <!-- Lane 1: Content Pipeline -->
+        <mxCell id="lane1_header" value="Content pipeline" style="text;html=1;align=center;fontSize=14;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="340" height="36" as="geometry"/>
         </mxCell>
 
-        <!-- sgp-frontend -->
-        <mxCell id="frontend_container" value="sgp-frontend — Next.js 15 · :3000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="580" y="80" width="600" height="280" as="geometry"/>
-        </mxCell>
-        <mxCell id="fe_auth" value="Firebase client auth (login / register / session)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
-          <mxGeometry x="20" y="60" width="270" height="40" as="geometry"/>
-        </mxCell>
-        <mxCell id="fe_chapter_quiz" value="Chapter viewer + quizzes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
-          <mxGeometry x="20" y="120" width="270" height="60" as="geometry"/>
-        </mxCell>
-        <mxCell id="fe_catalog" value="Course catalog + curriculum (completion state)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
-          <mxGeometry x="20" y="195" width="270" height="50" as="geometry"/>
-        </mxCell>
-        <mxCell id="fe_terminal" value="xterm.js terminal — connects to orchestrator WS /ws/terminal (first-message token handshake, never in URL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
-          <mxGeometry x="310" y="60" width="270" height="40" as="geometry"/>
-        </mxCell>
-        <mxCell id="fe_task_runner" value="Lab task runner (multiple_choice / terminal_action / port_check) + submit flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
-          <mxGeometry x="310" y="120" width="270" height="60" as="geometry"/>
-        </mxCell>
-        <mxCell id="fe_toolbar" value="Toolbar: pause / resume / restart / destroy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="frontend_container">
-          <mxGeometry x="310" y="195" width="270" height="50" as="geometry"/>
+        <!-- Lane 2: Application Services -->
+        <mxCell id="lane2_header" value="Application services (docker compose)" style="text;html=1;align=center;fontSize=14;fontStyle=1;fillColor=#f8cecc;strokeColor=#b85450;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="110" width="560" height="36" as="geometry"/>
         </mxCell>
 
-        <!-- sgp-backend -->
-        <mxCell id="backend_container" value="sgp-backend — FastAPI · :8000 (API gateway)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="580" y="430" width="600" height="280" as="geometry"/>
-        </mxCell>
-        <mxCell id="be_auth" value="Firebase token verify (Admin SDK)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
-          <mxGeometry x="20" y="60" width="270" height="40" as="geometry"/>
-        </mxCell>
-        <mxCell id="be_enroll" value="Users / enrollments + progress (PUT /progress, PUT /labs/{id}/progress)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
-          <mxGeometry x="20" y="120" width="270" height="60" as="geometry"/>
-        </mxCell>
-        <mxCell id="be_content" value="Content version handshake — GET /api/v1/content/version (Firestore contentVersion + S3 download_url)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
-          <mxGeometry x="20" y="200" width="270" height="50" as="geometry"/>
-        </mxCell>
-        <mxCell id="be_lifecycle" value="REMOVED — backend no longer ships lab proxy routers (labs.py/demos.py deleted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
-          <mxGeometry x="310" y="60" width="270" height="60" as="geometry"/>
-        </mxCell>
-        <mxCell id="be_validate" value="REMOVED — no validation proxy; matching runs client-side via orchestrator exec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
-          <mxGeometry x="310" y="140" width="270" height="50" as="geometry"/>
-        </mxCell>
-        <mxCell id="be_course_api" value="Course API (TOC, chapters, lab config + tasks)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="backend_container">
-          <mxGeometry x="310" y="205" width="270" height="50" as="geometry"/>
+        <!-- Lane 3: Cloud / External -->
+        <mxCell id="lane3_header" value="Cloud &amp; external services" style="text;html=1;align=center;fontSize=14;fontStyle=1;fillColor=#e1d5e7;strokeColor=#9673a6;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="980" y="110" width="360" height="36" as="geometry"/>
         </mxCell>
 
-        <!-- Vagrant VM: orchestrator + lab runtime host -->
-        <mxCell id="vagrant_vm" value="VAGRANT VM — Ubuntu Server 22.04 · VMware/VirtualBox (provisioned via provisioning/*.sh; guest :8000 → host :8001)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="750" width="1220" height="330" as="geometry"/>
+        <!-- Lane backgrounds (visual) -->
+        <mxCell id="lane1_bg" value="" style="rounded=1;fillColor=#f0f7ff;strokeColor=#6c8ebf;strokeWidth=1;dashed=0;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="148" width="340" height="730" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane2_bg" value="" style="rounded=1;fillColor=#fff5f5;strokeColor=#b85450;strokeWidth=1;dashed=0;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="400" y="148" width="560" height="730" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane3_bg" value="" style="rounded=1;fillColor=#f9f4fc;strokeColor=#9673a6;strokeWidth=1;dashed=0;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="980" y="148" width="360" height="730" as="geometry"/>
         </mxCell>
 
-        <!-- S3 content store -->
-        <mxCell id="s3_container" value="AWS S3 (Dev/Prod Buckets) · Pushed by GitHub Actions CI runner (aws s3 sync) · latest.json + published/{version}/{content.tar.gz, manifest.json}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="60" y="365" width="440" height="55" as="geometry"/>
+        <!-- ═══════════════════════════════════════════════════════════
+             LANE 1 — CONTENT PIPELINE
+        ════════════════════════════════════════════════════════════════ -->
+
+        <!-- content-v2/ source -->
+        <mxCell id="content_src" value="content-v2/ (repo)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="168" width="300" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="c_index" value="index.json — course catalog" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="196" width="130" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="c_course" value="course.yaml / course.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="240" width="130" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="c_chapters" value="chapters/{id}.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="284" width="130" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="c_labs" value="labs/{id}/lab.yaml — tasks + env ref" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="218" y="196" width="130" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="c_env" value="environments/{ref}.yaml" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="218" y="268" width="130" height="50" as="geometry"/>
         </mxCell>
 
-        <!-- sgp-orchestrator -->
-        <mxCell id="orchestrator_container" value="sgp-orchestrator — FastAPI · :8001 systemd service (zero content knowledge; guest :8000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="vagrant_vm">
-          <mxGeometry x="560" y="40" width="620" height="260" as="geometry"/>
+        <!-- GitHub Actions CI -->
+        <mxCell id="ci" value="GitHub Actions CI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="368" width="300" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="orch_docker" value="Docker SDK — container lifecycle + exec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="orchestrator_container">
-          <mxGeometry x="20" y="60" width="270" height="50" as="geometry"/>
+        <mxCell id="ci_val" value="1. Validate content structure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="392" width="130" height="34" as="geometry"/>
         </mxCell>
-        <mxCell id="orch_ws" value="WebSocket terminal /ws/terminal — first-message JWT handshake, tmux, resize frames → PTY resize" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="orchestrator_container">
-          <mxGeometry x="20" y="130" width="270" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="orch_bykey" value="GET /labs/by_key — recover sessions from Docker labels (com.sgp.user_id / lab_id)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="orchestrator_container">
-          <mxGeometry x="20" y="210" width="270" height="50" as="geometry"/>
-        </mxCell>
-        <mxCell id="orch_sessions" value="Session + timeout manager (auto-destroy after 40 min)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="orchestrator_container">
-          <mxGeometry x="310" y="60" width="270" height="50" as="geometry"/>
-        </mxCell>
-        <mxCell id="orch_images" value="Base lab images: sgp-lab-ubuntu / -git / -docker (DinD)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="orchestrator_container">
-          <mxGeometry x="310" y="130" width="270" height="70" as="geometry"/>
+        <mxCell id="ci_pkg" value="2. Build &amp; publish content.tar.gz to S3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="218" y="392" width="130" height="50" as="geometry"/>
         </mxCell>
 
-        <!-- sgp-worker -->
-        <mxCell id="worker_container" value="sgp-worker — FastAPI · :8002 (content sync)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="60" y="430" width="440" height="280" as="geometry"/>
+        <!-- labops-worker -->
+        <mxCell id="worker" value="labops-worker — FastAPI :8002" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="498" width="300" height="160" as="geometry"/>
         </mxCell>
-        <mxCell id="wk_validator" value="Validator — validate_all (index / TOC / lab YAML; errors block seed, warnings logged)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="worker_container">
-          <mxGeometry x="20" y="60" width="190" height="80" as="geometry"/>
+        <mxCell id="wk_loop" value="Sync loop 300s or POST /sync (webhook)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="524" width="130" height="46" as="geometry"/>
         </mxCell>
-        <mxCell id="wk_seeder" value="Seeder — sync_courses (upsert courses, delete orphans, contentHash skip)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="worker_container">
-          <mxGeometry x="240" y="60" width="180" height="80" as="geometry"/>
+        <mxCell id="wk_val" value="Validator — validate_all; errors block seed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="582" width="130" height="46" as="geometry"/>
         </mxCell>
-        <mxCell id="wk_loop" value="Sync loop every 300s (or POST /sync — webhook trigger): download → validate → seed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="worker_container">
-          <mxGeometry x="20" y="180" width="400" height="45" as="geometry"/>
+        <mxCell id="wk_seed" value="Seeder — upsert courses, delete orphans (Firestore)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="218" y="524" width="130" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_verify" value="Verify artifact sha256 + per-file manifest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="218" y="596" width="130" height="46" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             LANE 2 — APPLICATION SERVICES
+        ════════════════════════════════════════════════════════════════ -->
+
+        <!-- labops-frontend -->
+        <mxCell id="frontend" value="labops-frontend — Next.js 15 :3000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="420" y="168" width="520" height="260" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe_auth" value="Firebase client auth (login / register / session)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="432" y="196" width="230" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe_catalog" value="Course catalog + curriculum (completion state)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="432" y="248" width="230" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe_chapter" value="Chapter viewer + quizzes (multiple_choice)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="432" y="300" width="230" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe_bootstrap" value="Content bootstrap: download tar.gz → sha256 verify → extract → serve locally" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="432" y="352" width="230" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe_terminal" value="xterm.js terminal — WS /ws/terminal (first-msg JWT handshake, never in URL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="678" y="196" width="250" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe_task" value="Lab task runner (terminal_action / port_check / file_check) + submit flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="678" y="262" width="250" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe_toolbar" value="Toolbar: pause / resume / restart / destroy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="678" y="328" width="250" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="fe_note" value="Answers never sent to browser — validation runs via exec in container" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#d6a800;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="678" y="380" width="250" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- labops-backend -->
+        <mxCell id="backend" value="labops-backend — FastAPI :8000  (metadata only — never reads content files)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="420" y="458" width="520" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="be_auth2" value="Firebase Admin SDK — token verify" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="432" y="490" width="230" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="be_enroll" value="Users / enrollments + progress (PUT /progress, PUT /labs/{id}/progress)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="432" y="542" width="230" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="be_version" value="GET /api/v1/content/version — version handshake (Firestore contentVersion + S3 download_url)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="432" y="604" width="230" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="be_course" value="Course API — TOC, chapters, lab config + tasks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="678" y="490" width="250" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="be_removed1" value="REMOVED — lab proxy routers (labs.py / demos.py)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#cccccc;fontSize=11;fontColor=#999999;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="678" y="542" width="250" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="be_removed2" value="REMOVED — validation proxy (now exec via orchestrator)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#cccccc;fontSize=11;fontColor=#999999;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="678" y="594" width="250" height="52" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             LANE 3 — CLOUD & EXTERNAL
+        ════════════════════════════════════════════════════════════════ -->
+
+        <!-- AWS S3 -->
+        <mxCell id="s3" value="AWS S3 — content store" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="168" width="320" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3_latest" value="latest.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1012" y="200" width="140" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3_tar" value="published/{version}/content.tar.gz + manifest.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1162" y="200" width="146" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3_note" value="Dev bucket (Floci/LocalStack local) · Beta/Prod buckets via CI" style="text;html=1;align=left;fontSize=10;fontColor=#6c8ebf;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="256" width="320" height="20" as="geometry"/>
         </mxCell>
 
         <!-- Firebase -->
-        <mxCell id="firebase_container" value="Firebase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="1280" y="430" width="470" height="330" as="geometry"/>
+        <mxCell id="firebase" value="Firebase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="318" width="320" height="260" as="geometry"/>
         </mxCell>
-        <mxCell id="fb_auth" value="Firebase Auth (client SDK + Admin SDK token verify)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="firebase_container">
-          <mxGeometry x="20" y="60" width="430" height="50" as="geometry"/>
+        <mxCell id="fb_auth" value="Firebase Auth (client SDK + Admin SDK token verify)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1012" y="350" width="296" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="fb_firestore" value="Firestore" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;spacingTop=6;fontSize=12;fontStyle=1;" vertex="1" parent="firebase_container">
-          <mxGeometry x="20" y="140" width="430" height="150" as="geometry"/>
+        <!-- Firestore sub-box -->
+        <mxCell id="firestore" value="Firestore" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1012" y="408" width="296" height="154" as="geometry"/>
         </mxCell>
-        <mxCell id="fb_users" value="users/{uid}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="fb_firestore">
-          <mxGeometry x="20" y="50" width="120" height="45" as="geometry"/>
+        <mxCell id="fs_users" value="users/{uid}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="436" width="86" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="fb_courses" value="courses/{id} (seeded by worker)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="fb_firestore">
-          <mxGeometry x="155" y="50" width="120" height="45" as="geometry"/>
+        <mxCell id="fs_courses" value="courses/{id} (seeded by worker)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1116" y="436" width="88" height="52" as="geometry"/>
         </mxCell>
-        <mxCell id="fb_enrollments" value="enrollments/{uid}_{courseId} (progress + labsProgress)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="fb_firestore">
-          <mxGeometry x="290" y="50" width="120" height="45" as="geometry"/>
+        <mxCell id="fs_enroll" value="enrollments/{uid}_{courseId} — progress + labsProgress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1214" y="436" width="86" height="60" as="geometry"/>
         </mxCell>
-
-        <!-- Docker Engine (inside the VM) -->
-        <mxCell id="docker_container" value="Docker Engine + Sysbox runtime (inside the VM — VM-local docker.sock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="vagrant_vm">
-          <mxGeometry x="20" y="40" width="520" height="260" as="geometry"/>
-        </mxCell>
-        <mxCell id="docker_engine" value="Docker Engine (docker.sock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;fontStyle=1;" vertex="1" parent="docker_container">
-          <mxGeometry x="20" y="60" width="400" height="45" as="geometry"/>
-        </mxCell>
-        <mxCell id="lab_linux" value="Linux Lab (systemd + student user)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;" vertex="1" parent="docker_container">
-          <mxGeometry x="20" y="150" width="120" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="lab_git" value="Git Lab" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;" vertex="1" parent="docker_container">
-          <mxGeometry x="155" y="150" width="120" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="lab_docker" value="Docker Lab (DinD)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;" vertex="1" parent="docker_container">
-          <mxGeometry x="290" y="150" width="120" height="70" as="geometry"/>
+        <mxCell id="fs_contentver" value="contentVersion → version handshake" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="494" width="280" height="40" as="geometry"/>
         </mxCell>
 
-        <!-- Edges -->
-        <mxCell id="e_user_frontend" value="HTTPS :3000" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;fontStyle=1;strokeWidth=2;" edge="1" parent="1" source="user_box" target="frontend_container">
+        <!-- ═══════════════════════════════════════════════════════════
+             VAGRANT VM — BOTTOM TIER (full width)
+        ════════════════════════════════════════════════════════════════ -->
+
+        <mxCell id="vagrant" value="Vagrant VM — Ubuntu Server 22.04 (VMware / VirtualBox)  |  provisioning/*.sh  |  guest :8000 → host :8001" style="rounded=1;dashed=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#555555;strokeWidth=2;verticalAlign=top;spacingTop=8;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1300" height="250" as="geometry"/>
+        </mxCell>
+
+        <!-- orchestrator -->
+        <mxCell id="orch" value="labops-orchestrator — FastAPI :8001 (systemd service; zero content knowledge)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="936" width="680" height="192" as="geometry"/>
+        </mxCell>
+        <mxCell id="orch_lifecycle" value="Container lifecycle — start / pause / resume / restart / destroy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="966" width="300" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="orch_ws2" value="WS /ws/terminal — first-msg JWT, tmux attach, PTY resize frames" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="1024" width="300" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="orch_exec" value="exec validate — runs answer check inside container; returns exit code only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="72" y="1082" width="300" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="orch_session" value="Session + timeout manager (auto-destroy 40 min)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="386" y="966" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="orch_labels" value="GET /labs/by_key — recover sessions from Docker labels (com.labops.user_id / lab_id)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="386" y="1024" width="340" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Docker Engine + Sysbox -->
+        <mxCell id="docker" value="Docker Engine + Sysbox runtime (docker.sock — VM local)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="762" y="936" width="556" height="192" as="geometry"/>
+        </mxCell>
+        <mxCell id="lab_linux2" value="Linux lab (systemd + student user)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="774" y="984" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="lab_git2" value="Git lab" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="954" y="984" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="lab_dind" value="Docker lab (DinD — Sysbox)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1134" y="984" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="docker_images" value="Base images: labops-ubuntu · labops-git · labops-docker (DinD)" style="text;html=1;align=center;fontSize=11;fontColor=#10739e;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="762" y="1060" width="556" height="24" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             EDGES
+        ════════════════════════════════════════════════════════════════ -->
+
+        <!-- Developer → content-v2 git push -->
+        <mxCell id="e_dev_content" value="git push content-v2/" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;fontStyle=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="actor_dev" target="ci">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_fe_auth" value="Firebase client auth" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="firebase_container">
+
+        <!-- content-v2 → CI (trigger) -->
+        <mxCell id="e_content_ci" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;strokeColor=#6c8ebf;" edge="1" parent="1" source="content_src" target="ci">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_fe_backend" value="REST API — courses/catalog, progress, content/version (metadata only — no lab/terminal traffic)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="backend_container">
+
+        <!-- CI → S3 upload -->
+        <mxCell id="e_ci_s3" value="1. upload content.tar.gz" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;fontStyle=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="ci" target="s3">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="210" y="440"/><mxPoint x="1160" y="440"/><mxPoint x="1160" y="290"/></Array></mxGeometry>
+        </mxCell>
+
+        <!-- CI → Worker webhook -->
+        <mxCell id="e_ci_worker" value="2. POST /sync webhook" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;fontStyle=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="ci" target="worker">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_fe_orchestrator" value="REST /labs /demos + WS /ws/terminal — direct (token handshake)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="orchestrator_container">
+
+        <!-- Worker → S3 download -->
+        <mxCell id="e_worker_s3" value="3. download + verify sha256" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;strokeWidth=1.5;strokeColor=#6c8ebf;" edge="1" parent="1" source="worker" target="s3">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="360" y="578"/><mxPoint x="1160" y="578"/><mxPoint x="1160" y="290"/></Array></mxGeometry>
+        </mxCell>
+
+        <!-- Worker → Firestore seed -->
+        <mxCell id="e_worker_firestore" value="4. seed courses collection" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;strokeWidth=1.5;strokeColor=#9673a6;" edge="1" parent="1" source="worker" target="firestore">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="360" y="540"/><mxPoint x="1160" y="540"/><mxPoint x="1160" y="440"/></Array></mxGeometry>
+        </mxCell>
+
+        <!-- Student → Frontend -->
+        <mxCell id="e_student_fe" value="HTTPS :3000" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;fontStyle=1;strokeWidth=2;strokeColor=#b85450;" edge="1" parent="1" source="actor_student" target="frontend">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_backend_firebase" value="Firebase Admin SDK — Firestore (users, enrollments)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="backend_container" target="firebase_container">
+
+        <!-- Frontend → Backend (REST metadata) -->
+        <mxCell id="e_fe_be" value="REST — catalog, progress, content/version" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;fontStyle=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="frontend" target="backend">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_backend_orchestrator" value="REMOVED — backend↔orchestrator proxy path (decoupled; frontend talks to it directly)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="backend_container" target="orchestrator_container">
-          <mxGeometry relative="1" as="geometry"/>
+
+        <!-- Frontend → S3 direct download (content bootstrap) -->
+        <mxCell id="e_fe_s3" value="direct download tar.gz (content bootstrap)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;strokeWidth=1.5;strokeColor=#6c8ebf;" edge="1" parent="1" source="frontend" target="s3">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="680" y="320"/><mxPoint x="1160" y="320"/><mxPoint x="1160" y="280"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_worker_s3" value="download latest.json + tarball — verify artifact_sha256 + per-file manifest (S3-only)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="worker_container" target="s3_container">
-          <mxGeometry relative="1" as="geometry"/>
+
+        <!-- Frontend → Firebase Auth -->
+        <mxCell id="e_fe_firebase" value="Firebase client auth" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;strokeWidth=1.5;strokeColor=#9673a6;" edge="1" parent="1" source="frontend" target="fb_auth">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="942" y="230"/><mxPoint x="1012" y="230"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_fe_bootstrap" value="content bootstrap — download + verify + extract (version handshake via backend)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="frontend_container" target="s3_container">
-          <mxGeometry relative="1" as="geometry"/>
+
+        <!-- Frontend → Orchestrator (REST + WS) -->
+        <mxCell id="e_fe_orch" value="REST /labs /demos + WS /ws/terminal (direct — token handshake)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;fontStyle=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="frontend" target="orch">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="680" y="860"/><mxPoint x="400" y="860"/><mxPoint x="400" y="935"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_worker_firebase" value="seed courses collection" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="worker_container" target="firebase_container">
-          <mxGeometry relative="1" as="geometry"/>
+
+        <!-- Backend → Firestore -->
+        <mxCell id="e_be_firestore" value="Admin SDK — users, enrollments, contentVersion" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;strokeWidth=1.5;strokeColor=#9673a6;" edge="1" parent="1" source="backend" target="firestore">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="942" y="560"/><mxPoint x="1160" y="560"/><mxPoint x="1160" y="470"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_orchestrator_docker" value="Docker API (docker.sock)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="orchestrator_container" target="docker_container">
-          <mxGeometry relative="1" as="geometry"/>
+
+        <!-- Backend → Firebase Auth verify -->
+        <mxCell id="e_be_fbauth" value="token verify" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;strokeWidth=1.5;strokeColor=#9673a6;" edge="1" parent="1" source="backend" target="fb_auth">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="942" y="490"/><mxPoint x="1012" y="490"/><mxPoint x="1012" y="370"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_engine_linux" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1;" edge="1" parent="docker_container" source="docker_engine" target="lab_linux">
-          <mxGeometry relative="1" as="geometry"/>
+
+        <!-- Orchestrator → Docker -->
+        <mxCell id="e_orch_docker" value="Docker API (docker.sock)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;fontStyle=1;strokeWidth=2;strokeColor=#10739e;" edge="1" parent="1" source="orch" target="docker">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="740" y="1032"/><mxPoint x="762" y="1032"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_engine_git" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1;" edge="1" parent="docker_container" source="docker_engine" target="lab_git">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e_engine_docker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1;" edge="1" parent="docker_container" source="docker_engine" target="lab_docker">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e_validator_seeder" value="valid → seed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=10;" edge="1" parent="worker_container" source="wk_validator" target="wk_seeder">
-          <mxGeometry relative="1" as="geometry"/>
+
+        <!-- REMOVED: backend ↔ orchestrator (dashed ghost) -->
+        <mxCell id="e_removed_be_orch" value="REMOVED — backend↔orchestrator proxy" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;fontColor=#999999;strokeColor=#cccccc;dashed=1;strokeWidth=1;" edge="1" parent="1" source="backend" target="orch">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="680" y="760"/><mxPoint x="400" y="760"/><mxPoint x="400" y="935"/></Array></mxGeometry>
         </mxCell>
 
       </root>

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "sgp-dockermastery-content-delivery",
     "name": "SGP — Docker Mastery Content Delivery",
-    "description": "End-to-end test suite for the content-delivery user story, scoped to the Docker Mastery course (courseId=docker-mastery, lab lab-1, module docker-fundamentals).\n\nRUN ORDER: run folders 0 → 5 in order with the Collection Runner. Requests capture variables (version, sessionId, idToken, labConfigRaw, ...) consumed by later requests.\n\nAspects covered:\n  A1 Version handshake / content integrity (GET /api/v1/content/version)\n  A2 Client-side content delivery — backend serves NO content files; the frontend serves extracted local content (/api/local-content/*)\n  A3 Catalog + course TOC from Firestore (/api/v1/courses)\n  A4 Client-driven lab provisioning (env config in the start request body)\n  A5 Client-driven task validation (task_type + validation in the validate request body)\n  A6 Lab lifecycle through backend→orchestrator (start/tasks/validate/status/stop/resume/token/destroy)\n  A7 Progress & completion in Firestore\n\nAUTH: protected endpoints use a Firebase ID token. Request 2.1 signs in with the Identity Toolkit REST API using {{firebaseApiKey}} + {{testEmail}}/{{testPassword}} and stores the token in {{idToken}}. Without Firebase config, folders 0–1 still pass (public); 2+ will 401.",
+    "description": "End-to-end test suite for the content-delivery user story, scoped to the Docker Mastery course (courseId=docker-mastery, lab lab-1, module docker-fundamentals).\n\n⚠️ STALE (lab path changed): the backend proxy endpoints `/api/v1/labs/*`, `/api/v1/demos/*` and `WS /api/v1/labs/ws/lab` were REMOVED — the frontend talks to the orchestrator directly (`localhost:8001`, `Authorization: Bearer $ORCHESTRATOR_SECRET`, terminal `WS /ws/terminal`). Folders that exercise labs (A4–A6) 404 against the backend; run lab lifecycle against `orchestrator/postman_collection.json` (orchestrator direct) instead. Content handshake / catalog / progress folders (A1–A3, A7) remain valid.\n\nRUN ORDER: run folders 0 → 5 in order with the Collection Runner. Requests capture variables (version, sessionId, idToken, labConfigRaw, ...) consumed by later requests.\n\nAspects covered:\n  A1 Version handshake / content integrity (GET /api/v1/content/version)\n  A2 Client-side content delivery — backend serves NO content files; the frontend serves extracted local content (/api/local-content/*)\n  A3 Catalog + course TOC from Firestore (/api/v1/courses)\n  A4 Client-driven lab provisioning (env config in the start request body) — endpoint REMOVED; see stale note\n  A5 Client-driven task validation (task_type + validation in the validate request body) — endpoint REMOVED; see stale note\n  A6 Lab lifecycle proxy (start/tasks/validate/status/stop/resume/token/destroy) — REMOVED; use orchestrator/postman_collection.json\n  A7 Progress & completion in Firestore\n\nAUTH: protected endpoints use a Firebase ID token. Request 2.1 signs in with the Identity Toolkit REST API using {{firebaseApiKey}} + {{testEmail}}/{{testPassword}} and stores the token in {{idToken}}. Without Firebase config, folders 0–1 still pass (public); 2+ will 401.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -106,7 +106,7 @@
                   "  pm.expect(cfg).to.be.an('object');",
                   "  pm.expect(cfg.lab_id).to.eql(pm.variables.get('labId'));",
                   "  pm.expect(cfg.environment).to.be.an('object');",
-                  "  pm.expect(cfg.environment.base_image).to.eql('sgp-lab-docker:latest');",
+                  "  pm.expect(cfg.environment.base_image).to.eql('labops-docker:latest');",
                   "});",
                   "pm.test(\"config carries the tasks the client sends to start/tasks/validate\", () => {",
                   "  pm.expect(cfg.tasks).to.be.an('array').with.lengthOf.at.least(4);",
@@ -508,7 +508,7 @@
                   "  pm.variables.set('startPrePull', JSON.stringify(env.pre_pull || []));",
                   "  pm.variables.set('startSetup', JSON.stringify(cfg.setup || []));",
                   "} else {",
-                  "  pm.variables.set('startImage', 'sgp-lab-docker:latest');",
+                  "  pm.variables.set('startImage', 'labops-docker:latest');",
                   "  pm.variables.set('startApt', '[]');",
                   "  pm.variables.set('startPrePull', '[\"nginx:alpine\",\"alpine:latest\"]');",
                   "  pm.variables.set('startSetup', '[]');",

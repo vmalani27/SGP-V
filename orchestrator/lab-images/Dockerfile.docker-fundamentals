@@ -1,0 +1,44 @@
+# ──────────────────────────────────────────────────────────────
+# labops-docker-fundamentals — Docker Fundamentals course image
+# ──────────────────────────────────────────────────────────────
+# labops-ubuntu with systemd + Docker daemon pre-installed, plus
+# preloaded images for the Docker Fundamentals module.
+# Used by: docker-mastery
+#
+# Build:
+#   docker build -t labops-docker-fundamentals:latest -f Dockerfile.docker-fundamentals .
+#
+# The Docker daemon starts automatically via systemd.
+# The student user is intentionally NOT in the docker group — labs grant
+# access via the lab.yaml `setup` field (e.g. `usermod -aG docker student`),
+# or by having the student grant it themselves (docker-fundamentals lab-1).
+# ──────────────────────────────────────────────────────────────
+
+FROM labops-ubuntu:latest
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu jammy stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    && apt-get update && apt-get install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ensure docker daemon starts with systemd
+RUN systemctl enable docker.service
+
+# Pre-load images for Docker Fundamentals
+COPY preloads/*.tar /var/lib/docker-preload/
+RUN echo "[Unit]\nDescription=Load Docker Preloads\nAfter=docker.service\nRequires=docker.service\n\n[Service]\nType=oneshot\nExecStart=/bin/bash -c 'for f in /var/lib/docker-preload/*.tar; do docker load -i \$f; done'\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/docker-preload.service \
+    && systemctl enable docker-preload.service
+
+WORKDIR /home/student
+
+ENTRYPOINT ["/sbin/init"]
