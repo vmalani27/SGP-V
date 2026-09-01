@@ -1,37 +1,36 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
-# build-lab-images.sh — Build lab container images for development
-# ──────────────────────────────────────────────────────────────
-# During development, lab images are built locally inside the Vagrant VM.
-# In deployment, images are pulled from a Docker registry instead.
+# build-lab-images.sh — Pull or build lab container images
 # ──────────────────────────────────────────────────────────────
 set -euo pipefail
 
+REGISTRY_REPO="ghcr.io/vmalani27/sgp-v"
+TAG="${1:-dev}"
 ORCHESTRATOR_DIR="/opt/sgp/orchestrator"
 LAB_IMAGES_DIR="$ORCHESTRATOR_DIR/lab-images"
 
-echo "==> Building lab container images..."
+echo "==> Preparing lab container images (Tag: $TAG)..."
 
-# Build base Ubuntu image
-echo "  -> Building labops-ubuntu:latest..."
-docker build -t labops-ubuntu:latest \
-  -f "$LAB_IMAGES_DIR/Dockerfile.ubuntu" \
-  "$LAB_IMAGES_DIR"
+pull_or_build() {
+  local remote_img="$1"
+  local local_tag="$2"
+  local dockerfile="$3"
 
-# Pre-pull and save images for Docker Fundamentals module
-echo "  -> Pre-pulling internal images for Docker Fundamentals..."
-mkdir -p "$LAB_IMAGES_DIR/preloads"
-docker pull alpine:latest
-docker save alpine:latest -o "$LAB_IMAGES_DIR/preloads/alpine.tar"
-docker pull nginx:alpine
-docker save nginx:alpine -o "$LAB_IMAGES_DIR/preloads/nginx.tar"
+  echo "  -> Fetching $local_tag..."
+  if docker pull "$remote_img" 2>/dev/null; then
+    docker tag "$remote_img" "$local_tag"
+    echo "     [✓] Pulled $remote_img -> $local_tag"
+  else
+    echo "     [!] Could not pull $remote_img, building locally..."
+    docker build -t "$local_tag" -f "$LAB_IMAGES_DIR/$dockerfile" "$LAB_IMAGES_DIR"
+  fi
+}
 
-# Build Docker Fundamentals module image
-echo "  -> Building labops-docker-fundamentals:latest..."
-docker build -t labops-docker-fundamentals:latest \
-  -f "$LAB_IMAGES_DIR/Dockerfile.docker-fundamentals" \
-  "$LAB_IMAGES_DIR"
+pull_or_build "$REGISTRY_REPO/lab-ubuntu:$TAG" "labops-ubuntu:latest" "Dockerfile.ubuntu"
+pull_or_build "$REGISTRY_REPO/lab-docker:$TAG" "labops-docker:latest" "Dockerfile.docker"
+pull_or_build "$REGISTRY_REPO/lab-docker-fundamentals:$TAG" "labops-docker-fundamentals:latest" "Dockerfile.docker-fundamentals"
 
-echo "==> Lab images built successfully."
+echo "==> All lab images ready:"
 echo "    - labops-ubuntu:latest"
+echo "    - labops-docker:latest"
 echo "    - labops-docker-fundamentals:latest"

@@ -51,13 +51,20 @@ elif [ -f "$FRONTEND_DIR/.env.local" ]; then
   echo "  - Prepared existing .env.local for Next.js build"
 fi
 
-echo "==> Building Next.js production image inside the VM (target: runtime stage)..."
-docker build \
-  -t "${IMAGE_NAME}:prod" \
-  --target runtime \
-  --build-arg NEXT_PUBLIC_API_BASE_URL=https://labops-dev.onrender.com \
-  -f "$FRONTEND_DIR/Dockerfile" \
-  "$FRONTEND_DIR"
+REMOTE_FRONTEND="ghcr.io/vmalani27/sgp-v/frontend:dev"
+echo "==> Fetching Next.js frontend production image..."
+if docker pull "$REMOTE_FRONTEND" 2>/dev/null; then
+  docker tag "$REMOTE_FRONTEND" "${IMAGE_NAME}:prod"
+  echo "  - [✓] Pulled pre-built image from GHCR ($REMOTE_FRONTEND)"
+else
+  echo "  - [!] Could not pull from GHCR, building locally..."
+  docker build \
+    -t "${IMAGE_NAME}:prod" \
+    --target runtime \
+    --build-arg NEXT_PUBLIC_API_BASE_URL=https://labops-dev.onrender.com \
+    -f "$FRONTEND_DIR/Dockerfile" \
+    "$FRONTEND_DIR"
+fi
 
 echo "==> Creating persistent Docker volumes..."
 docker volume create "$VOLUME_NAME" >/dev/null

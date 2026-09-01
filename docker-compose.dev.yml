@@ -5,6 +5,7 @@ x-firebase-creds:
   FIREBASE_CREDENTIALS_JSON: ${FIREBASE_CREDENTIALS_JSON:-}
 services:
   backend:
+    image: ghcr.io/vmalani27/sgp-v/backend:dev
     build:
       context: ./backend
     container_name: labops-backend-dev
@@ -31,6 +32,7 @@ services:
     - '8000'
     - --reload
   frontend:
+    image: ghcr.io/vmalani27/sgp-v/frontend:dev
     build:
       context: ./next-app
       target: ${FRONTEND_TARGET:-dev}
@@ -55,6 +57,7 @@ services:
     - backend
     restart: unless-stopped
   orchestrator:
+    image: ghcr.io/vmalani27/sgp-v/orchestrator:dev
     build:
       context: ./orchestrator
       target: ${ORCHESTRATOR_TARGET:-runtime}
