@@ -50,7 +50,7 @@ See for yourself — each command below spins up a fresh Alpine container whose 
 
 :::terminal-demo
 id: why-containers
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:
@@ -111,7 +111,7 @@ Run the same image and watch it stay unchanged while a fresh container is create
 
 :::terminal-demo
 id: why-containers
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:

@@ -36,32 +36,61 @@ objectives:
   - Verify the application serves requests from inside the container
 
 tasks:
-  - id: containerize-app
+  - id: create-dockerfile
     prompt: >-
-      A starter application has been provided in `~/hello-app`. Your challenge is to completely containerize it.
+      A starter application has been provided in `~/hello-app`. Let's containerize it step by step.
       
-      Inspect the `app.py` and `requirements.txt` to understand what the app does.
-      Write a `Dockerfile` using the `python:3.12-alpine` base image. Use the dependency-installation pattern (copy requirements, install, then copy source).
-      Build the image, then run it in the background, publishing its port `8000` to the host.
-      
-      When you are done, the application should be running inside Docker and accessible at `http://localhost:8000`.
+      First, inspect `app.py` and `requirements.txt`. Then, write a `Dockerfile` inside `~/hello-app/` using the `python:3.12-alpine` base image.
+      Use the dependency-installation pattern: copy the requirements, install them, then copy the source code, expose port 8000, and set the default command to run `python app.py`.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f ~/hello-app/Dockerfile &&
+        grep -qi "FROM python:3.12-alpine" ~/hello-app/Dockerfile &&
+        grep -qi "COPY" ~/hello-app/Dockerfile &&
+        echo SUCCESS
+      match_type: exact
+      expected_output: SUCCESS
+    error_message: >-
+      Could not validate your Dockerfile. Ensure it exists at `~/hello-app/Dockerfile` and uses `FROM python:3.12-alpine`.
+    hints:
+      - "Create the file with a text editor: `nano ~/hello-app/Dockerfile`"
+      - "The file needs: `FROM python:3.12-alpine`, `WORKDIR /app`, `COPY requirements.txt .`, `RUN pip install -r requirements.txt`, `COPY app.py .`, `EXPOSE 8000`, `CMD [\"python\", \"app.py\"]`"
+    solution:
+      command: >-
+        printf 'FROM python:3.12-alpine\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCOPY app.py .\nEXPOSE 8000\nCMD ["python", "app.py"]\n' > ~/hello-app/Dockerfile
+
+  - id: build-image
+    prompt: >-
+      Now that your `Dockerfile` is ready, build the image and tag it as `hello-app`.
+    type: terminal_action
+    validation:
+      command: "docker images --format '{{.Repository}}' | grep -qx hello-app && echo SUCCESS"
+      match_type: exact
+      expected_output: SUCCESS
+    error_message: >-
+      Could not find an image named `hello-app`. Make sure to run the build command in the correct directory.
+    hints:
+      - "Use `docker build` with the `-t` flag to tag the image."
+      - "Run `docker build -t hello-app ~/hello-app`"
+    solution:
+      command: "docker build -t hello-app ~/hello-app"
+
+  - id: run-container
+    prompt: >-
+      Finally, run a container from your `hello-app` image in the background (`-d`), and publish its port `8000` to the host's port `8000` (`-p 8000:8000`).
     type: terminal_action
     validation:
       command: >-
         test -n "$(docker ps -q --filter publish=8000)" &&
-        curl -s -o /tmp/hello.out -w '%{http_code}' http://localhost:8000/ 2>/dev/null | grep -qx '200' &&
-        grep -qx 'hello from the app' /tmp/hello.out && echo SUCCESS
+        curl -s -o /tmp/hello.out -w '%{http_code}' http://127.0.0.1:8000/ 2>/dev/null | grep -q '200' &&
+        echo SUCCESS
       match_type: exact
       expected_output: SUCCESS
     error_message: >-
-      Could not find a Docker container running and serving the app on port 8000.
-      Make sure you built the image and ran it with `-d -p 8000:8000`.
+      Could not access the app on port 8000. Ensure you ran the container with `-d` and `-p 8000:8000`.
     hints:
-      - "Your Dockerfile needs: FROM python:3.12-alpine, WORKDIR /app, COPY requirements.txt ., RUN pip install -r requirements.txt, COPY app.py ., EXPOSE 8000, CMD [\"python\", \"app.py\"]"
-      - "Build it: `docker build -t hello-app ~/hello-app`"
-      - "Run it: `docker run -d -p 8000:8000 hello-app`"
+      - "Use `docker run` to start the container."
+      - "Run `docker run -d -p 8000:8000 hello-app`"
     solution:
-      command: >-
-        printf 'FROM python:3.12-alpine\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCOPY app.py .\nEXPOSE 8000\nCMD ["python", "app.py"]\n' > ~/hello-app/Dockerfile &&
-        docker build -t hello-app ~/hello-app &&
-        docker run -d -p 8000:8000 hello-app
+      command: "docker run -d -p 8000:8000 hello-app"

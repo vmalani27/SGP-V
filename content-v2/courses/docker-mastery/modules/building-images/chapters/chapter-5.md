@@ -168,7 +168,7 @@ Try it — the steps below load each command into the terminal for you. Click **
 
 :::terminal-demo
 id: build-first-image
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 state:

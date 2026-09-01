@@ -30,7 +30,7 @@ Try it — the steps below load each command into the terminal for you. Click **
 
 :::terminal-demo
 id: container-lifecycle
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 state:
@@ -71,7 +71,7 @@ Run both against the `demo` container you just created:
 
 :::terminal-demo
 id: container-lifecycle
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:
@@ -95,7 +95,7 @@ Names must be unique among existing containers. If you `docker run --name demo` 
 
 :::terminal-demo
 id: container-lifecycle
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:
@@ -123,7 +123,7 @@ The output is large, so target the part you want. The `--format` flag selects a 
 
 :::terminal-demo
 id: container-lifecycle
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:
@@ -160,7 +160,7 @@ Create a container that prints a message, then read its logs:
 
 :::terminal-demo
 id: container-lifecycle
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:
@@ -206,7 +206,7 @@ Watch the container move through its states — the chip in the header tracks `d
 
 :::terminal-demo
 id: container-lifecycle
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 state:

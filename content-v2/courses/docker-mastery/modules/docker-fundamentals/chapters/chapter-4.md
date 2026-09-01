@@ -40,7 +40,7 @@ Try it — write a file, stop and start the *same* container, then run a *fresh*
 
 :::terminal-demo
 id: container-data
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 state:
@@ -123,7 +123,7 @@ Try it — create a volume, write into it from one container, destroy that conta
 
 :::terminal-demo
 id: container-data
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:
@@ -203,7 +203,7 @@ Try it — mount a directory from your machine into a container, write to it fro
 
 :::terminal-demo
 id: container-data
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:

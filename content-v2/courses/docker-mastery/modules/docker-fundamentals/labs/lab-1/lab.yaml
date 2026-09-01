@@ -1,7 +1,7 @@
 id: lab-1
 title: Hello World Container
 difficulty: beginner
-environment: docker-basic
+environment: docker-fundamentals
 
 objectives:
   - Diagnose why Docker commands fail

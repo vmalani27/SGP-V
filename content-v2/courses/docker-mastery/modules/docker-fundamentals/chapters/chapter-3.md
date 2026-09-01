@@ -42,7 +42,7 @@ Try it — the steps below load each command into the terminal for you. Click **
 
 :::terminal-demo
 id: configuring-containers
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:
@@ -80,7 +80,7 @@ See for yourself — the override runs instead of the image's default, and the c
 
 :::terminal-demo
 id: configuring-containers
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
 steps:
@@ -132,7 +132,7 @@ Try it — run nginx with a published port, then confirm the mapping and read ba
 
 :::terminal-demo
 id: configuring-containers
-image: sgp-lab-docker:latest
+image: labops-docker:latest
 pre_pull:
   - alpine:latest
   - nginx:alpine
