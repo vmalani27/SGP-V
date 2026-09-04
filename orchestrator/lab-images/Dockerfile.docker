@@ -36,4 +36,7 @@ RUN systemctl enable docker.service
 
 WORKDIR /home/student
 
+# VOLUME for nested docker and containerd storage to prevent overlayfs-on-overlayfs EINVAL errors
+VOLUME ["/var/lib/docker", "/var/lib/containerd"]
+
 ENTRYPOINT ["/sbin/init"]

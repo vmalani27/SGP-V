@@ -1,15 +1,24 @@
 import type { ContentCourse, CourseCatalogEntry, CourseItem, Chapter, ContentModule } from './content-types';
 
-const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:8000';
-
 async function backendFetch<T>(path: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${BACKEND_URL}${path}`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    return res.json() as Promise<T>;
-  } catch {
-    return null;
+  const urls = [
+    process.env.BACKEND_API_URL,
+    'http://backend:8000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+  ].filter(Boolean) as string[];
+
+  for (const baseUrl of urls) {
+    try {
+      const res = await fetch(`${baseUrl}${path}`, { cache: 'no-store' });
+      if (res.ok) {
+        return (await res.json()) as T;
+      }
+    } catch {
+      // try next candidate URL
+    }
   }
+  return null;
 }
 
 export async function getCourseCatalog(): Promise<CourseCatalogEntry[]> {

@@ -1,16 +1,9 @@
 import { auth } from './firebase';
 import type { LabTask, TaskListResponse, TaskProgressData, ValidateResponse } from './task-types';
 
-function getEnv(key: string, fallback: string): string {
-  if (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__?.[key]) {
-    return window.__RUNTIME_CONFIG__[key] || fallback;
-  }
-  return process.env[key] || fallback;
-}
-
-export const getBaseUrl = () => getEnv('NEXT_PUBLIC_API_BASE_URL', 'http://localhost:8000');
-export const getOrchestratorUrl = () => getEnv('NEXT_PUBLIC_ORCHESTRATOR_URL', 'http://localhost:8001');
-export const getOrchestratorSecret = () => getEnv('NEXT_PUBLIC_ORCHESTRATOR_SECRET', 'local-dev-super-secret');
+export const getBaseUrl = () => process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+export const getOrchestratorUrl = () => process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8001';
+export const getOrchestratorSecret = () => process.env.NEXT_PUBLIC_ORCHESTRATOR_SECRET || 'local-dev-super-secret';
 
 async function getIdToken(): Promise<string | null> {
   if (!auth) return null;

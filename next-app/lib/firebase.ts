@@ -1,33 +1,20 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 
-declare global {
-  interface Window {
-    __RUNTIME_CONFIG__?: Record<string, string | undefined>;
-  }
-}
-
-function getEnv(key: string): string | undefined {
-  if (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__?.[key]) {
-    return window.__RUNTIME_CONFIG__[key];
-  }
-  return process.env[key];
-}
-
 const firebaseConfig: Record<string, string | undefined> = {
-  apiKey: getEnv('NEXT_PUBLIC_FIREBASE_API_KEY'),
-  authDomain: getEnv('NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN'),
-  projectId: getEnv('NEXT_PUBLIC_FIREBASE_PROJECT_ID'),
-  storageBucket: getEnv('NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET'),
-  messagingSenderId: getEnv('NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'),
-  appId: getEnv('NEXT_PUBLIC_FIREBASE_APP_ID'),
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 if (typeof window !== 'undefined') {
   console.log('--- Firebase Env Debug ---');
-  console.log('API Key:', firebaseConfig.apiKey ? 'Loaded' : 'MISSING');
-  console.log('Auth Domain:', firebaseConfig.authDomain ? 'Loaded' : 'MISSING');
-  console.log('Project ID:', firebaseConfig.projectId ? 'Loaded' : 'MISSING');
+  console.log('API Key:', process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? 'Loaded' : 'MISSING');
+  console.log('Auth Domain:', process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ? 'Loaded' : 'MISSING');
+  console.log('Project ID:', process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? 'Loaded' : 'MISSING');
   console.log('--------------------------');
 }
 

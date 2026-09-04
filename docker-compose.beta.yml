@@ -4,6 +4,7 @@ x-firebase-creds:
   FIREBASE_CREDENTIALS_JSON: ${FIREBASE_CREDENTIALS_JSON:-}
 services:
   backend:
+    image: ghcr.io/vmalani27/sgp-v/backend:beta
     build:
       context: ./backend
     container_name: labops-backend-beta
@@ -31,20 +32,17 @@ services:
     - '8000'
     - --reload
   frontend:
-    build:
-      context: ./next-app
-      target: ${FRONTEND_TARGET:-dev}
+    image: ghcr.io/vmalani27/sgp-v/frontend:beta
     container_name: labops-frontend-beta
+    user: "0:0"
     ports:
     - 3000:3000
     volumes:
-    - ./next-app:/app
-    - frontend_node_modules:/app/node_modules
-    - frontend_next:/app/.next
     - frontend_content:/app/.content
     environment:
-    - NODE_ENV=development
-    - CHOKIDAR_USEPOLLING=true
+    - NODE_ENV=production
+    - HOSTNAME=0.0.0.0
+    - PORT=3000
     - NEXT_TELEMETRY_DISABLED=1
     - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
     - BACKEND_API_URL=http://backend:8000

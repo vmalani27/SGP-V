@@ -189,7 +189,7 @@ class DockerService:
         container = self._get_container(name)
         info = self._container_info(container)
         try:
-            container.remove(force=force)
+            container.remove(force=force, v=True)
             logger.info(f"Removed container '{name}'")
             return info
         except APIError as e:
@@ -199,7 +199,7 @@ class DockerService:
         container = self._get_container(name)
         info = self._container_info(container)
         try:
-            container.remove(force=True)
+            container.remove(force=True, v=True)
             logger.info(f"Destroyed container '{name}'")
             return info
         except APIError as e:
