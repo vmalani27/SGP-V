@@ -1,0 +1,26 @@
+# ──────────────────────────────────────────────────────────────
+# labops-docker-build — Building Images course lab & demo image
+# ──────────────────────────────────────────────────────────────
+# Extends labops-docker with pre-baked fixtures in /home/student
+# and pre-configured environment for Building Images chapters & labs.
+# Used by: docker-mastery (Module 2: Building Images)
+#
+# Build:
+#   docker build -t labops-docker-build:latest -f Dockerfile.docker-build .
+# ──────────────────────────────────────────────────────────────
+
+ARG BASE_IMAGE=labops-docker:latest
+FROM ${BASE_IMAGE}
+
+# Pre-populate chapter fixtures into /home/student
+COPY fixtures/ /home/student/
+
+# Ensure student user owns all workspace files
+RUN chown -R student:student /home/student
+
+WORKDIR /home/student
+
+# VOLUME for nested docker and containerd storage to prevent overlayfs-on-overlayfs EINVAL errors
+VOLUME ["/var/lib/docker", "/var/lib/containerd"]
+
+ENTRYPOINT ["/sbin/init"]

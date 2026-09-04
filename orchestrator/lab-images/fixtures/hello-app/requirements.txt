@@ -1,0 +1,1 @@
+# No third-party dependencies - the app uses only the Python standard library.

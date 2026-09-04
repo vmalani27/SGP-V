@@ -18,7 +18,7 @@ When developers attempt to containerize an application without connecting these 
 
 We will containerize a lightweight Node.js web service built with Express. The application listens on port `3000` and responds to HTTP requests with JSON.
 
-Here is the directory structure for our project:
+The starter application is already prepared in your lab environment at `~/express-app`:
 
 ```text
 express-app/
@@ -29,7 +29,7 @@ express-app/
 ```
 
 ### `package.json`
-The dependency manifest declares the application and requires `express`:
+The dependency manifest declares our dependency on Express:
 
 ```json
 {
@@ -100,136 +100,93 @@ CMD ["node", "server.js"]
 
 ## Hands-On Execution & Terminal Steps
 
-### Step 1: Build and Tag the Image
+Let's build and run the application. Notice:
+- `EXPOSE 3000` documents the port, but `-p 3000:3000` is what maps incoming host traffic to the container port.
+- `-d` runs the container in detached mode so your terminal stays free.
 
-Run `docker build` from inside the `express-app` directory. We pass `-t` (introduced in Chapter 5) to give the image a repository name and version tag:
+Try it — click **Run this next**, review the command, then press Enter:
 
-```bash
-docker build -t express-app:1.0 .
-```
-
-* **`-t express-app:1.0`**: Names the image `express-app` with tag `1.0`.
-* **`.`**: Passes the current directory as the **build context**. Docker reads the `.dockerignore`, uploads the filtered directory to the daemon, and executes the Dockerfile.
-
-**Expected Output:**
-```text
-[+] Building 3.8s (10/10) FINISHED
- => [internal] load build definition from Dockerfile                       0.0s
- => => transferring dockerfile: 284B                                       0.0s
- => [internal] load metadata for docker.io/library/node:20-alpine          0.9s
- => [internal] load .dockerignore                                          0.0s
- => => transferring context: 52B                                           0.0s
- => [1/4] FROM docker.io/library/node:20-alpine                           0.0s
- => [internal] load build context                                          0.0s
- => => transferring context: 1.1kB                                         0.0s
- => [2/4] WORKDIR /app                                                     0.1s
- => [3/4] COPY package*.json ./                                            0.0s
- => [4/4] RUN npm install                                                  2.4s
- => [5/4] COPY . .                                                         0.0s
- => exporting to image                                                     0.3s
- => => naming to docker.io/library/express-app:1.0                         0.0s
-```
-
-### Step 2: Run the Container with Port Publishing
-
-In Chapter 6, you learned that `EXPOSE 3000` is documentation—it does not open network paths to the host. To reach the Express server from outside the container, you must publish the port using `-p`:
-
-```bash
-docker run -d -p 3000:3000 --name web-server express-app:1.0
-```
-
-* **`-d`** (*detached*): Runs the container in the background as a daemon process and returns your terminal prompt.
-* **`-p 3000:3000`** (*publish*): Formatted as `-p <host-port>:<container-port>`. Forwards incoming traffic on host port `3000` into container port `3000`. Without this flag, traffic to `http://localhost:3000` would be rejected.
-* **`--name web-server`**: Assigns an explicit name to the container so you can manage it without hunting for random IDs.
-* **`express-app:1.0`**: Specifies the exact image and tag to run.
-
-**Expected Output:**
-```text
-8f9e1c2a3b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f
-```
-
-### Step 3: Verify the Running Container and Logs
-
-Ensure the container is active and inspect the startup log:
-
-```bash
-docker ps
-```
-
-**Expected Output:**
-```text
-CONTAINER ID   IMAGE             COMMAND                  CREATED         STATUS         PORTS                    NAMES
-8f9e1c2a3b4d   express-app:1.0   "node server.js"         4 seconds ago   Up 3 seconds   0.0.0.0:3000->3000/tcp   web-server
-```
-
-Inspect the container logs to confirm Express started:
-
-```bash
-docker logs web-server
-```
-
-**Expected Output:**
-```text
-Application listening on port 3000
-```
-
-### Step 4: Test HTTP Connectivity
-
-Send a GET request to the published port on your host machine:
-
-```bash
-curl -i http://localhost:3000
-```
-
-**Expected Output:**
-```text
-HTTP/1.1 200 OK
-Content-Type: application/json; charset=utf-8
-Content-Length: 58
-Date: Fri, 04 Sep 2026 12:00:00 GMT
-Connection: keep-alive
-
-{"status":"ok","message":"Hello from inside the container!"}
-```
+:::terminal-demo
+id: building-application-image
+image: labops-docker-build:latest
+pre_pull:
+  - node:20-alpine
+state:
+  label: web-server
+  command: docker inspect -f '{{.State.Status}}' web-server 2>/dev/null || echo "not running"
+steps:
+  - id: inspect-project
+    label: Enter the project directory and inspect files
+    run: cd ~/express-app && ls -la
+    expect: |
+      `Dockerfile`, `package.json`, `server.js`, and `.dockerignore` are present.
+  - id: inspect-dockerfile
+    label: View the Dockerfile
+    run: cat Dockerfile
+    expect: |
+      Notice the layer sequence: runtime base, working directory, package manifest,
+      npm install, application source copy, exposed port, and startup CMD.
+  - id: build-image
+    label: Build and tag the image
+    run: docker build -t express-app:1.0 .
+    expect: |
+      Docker loads the build context, downloads dependencies into a layer via
+      `RUN npm install`, and tags the image as `express-app:1.0`.
+  - id: run-container
+    label: Run in detached mode with port publishing
+    run: docker run -d -p 3000:3000 --name web-server express-app:1.0
+    expect: |
+      A container ID is printed, and the state chip flips to `running`. Port 3000
+      is mapped from your host into the container.
+  - id: verify-ps
+    label: Confirm the container is running
+    run: docker ps
+    expect: |
+      A row for `web-server` appears showing image `express-app:1.0` and status `Up`.
+  - id: verify-logs
+    label: Inspect application logs
+    run: docker logs web-server
+    expect: |
+      `Application listening on port 3000` is printed by the Express process.
+  - id: test-http
+    label: Send an HTTP request to the published port
+    run: curl -i http://localhost:3000
+    expect: |
+      HTTP/1.1 200 OK with `{"status":"ok","message":"Hello from inside the container!"}`.
+examples:
+  - docker inspect web-server --format '{{json .NetworkSettings.Ports}}'
+  - docker top web-server
+:::
 
 ## The Learning Loop (Cause & Effect)
 
-Now let's verify how the build cache accelerates real development workflows.
+Now verify the real-world performance payoff of copying `package*.json` before application code. When you change `server.js`, Docker skips the expensive `npm install` layer and pulls it straight from cache.
 
-### Cause: Edit Code and Rebuild
+Run the experiment in the live terminal below:
 
-1. Edit `server.js` to change the returned message:
-   ```javascript
-   // Change:
-   res.json({ status: 'ok', message: 'Hello from inside the container!' });
-
-   // To:
-   res.json({ status: 'ok', message: 'Rebuilt in milliseconds with cached layers!' });
-   ```
-
-2. Rebuild the image with a new version tag:
-   ```bash
-   docker build -t express-app:1.1 .
-   ```
-
-### Effect: Instant Layer Cache Reuse
-
-Watch the build output closely:
-
-```text
- => [2/4] WORKDIR /app                                                     0.0s
- => [3/4] COPY package*.json ./                                            0.0s
- => CACHED [4/4] RUN npm install                                           0.0s
- => [5/4] COPY . .                                                         0.0s
- => exporting to image                                                     0.0s
- => => naming to docker.io/library/express-app:1.1                         0.0s
-```
-
-`RUN npm install` was not re-executed; Docker marked it `CACHED` and finished the build in less than half a second. Because `package*.json` was untouched, layer caching preserved the entire dependency installation.
-
-### What Happens if the Order Was Inverted?
-
-If the Dockerfile had used `COPY . .` *before* `RUN npm install`, modifying `server.js` would have invalidated the cache at the copy step. Docker would have been forced to re-run `npm install` and re-download all libraries on every single code change.
+:::terminal-demo
+id: building-application-image
+image: labops-docker-build:latest
+pre_pull:
+  - node:20-alpine
+steps:
+  - id: edit-code
+    label: Modify the application response message
+    run: sed -i 's/Hello from inside the container!/Rebuilt in milliseconds with cached layers!/' server.js
+    expect: |
+      `server.js` is updated. `package.json` remains completely untouched.
+  - id: rebuild-cached
+    label: Rebuild the image
+    run: docker build -t express-app:1.1 .
+    expect: |
+      Look for `CACHED RUN npm install`. Because dependencies did not change,
+      Docker reuses the cached layer and the rebuild completes in under a second.
+  - id: compare-history
+    label: Compare image layer history
+    run: docker history express-app:1.1
+    expect: |
+      Earlier layers match `express-app:1.0`; only the top layers changed.
+:::
 
 ## Key Takeaways
 

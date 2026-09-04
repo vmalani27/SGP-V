@@ -14,7 +14,8 @@ $images = @(
     @{ Name = "Orchestrator Service"; Remote = "$Registry/orchestrator:$Tag"; Local = $null },
     @{ Name = "Base Ubuntu Lab Image"; Remote = "$Registry/lab-ubuntu:$Tag"; Aliases = @("labops-ubuntu:latest", "sgp-lab-ubuntu:latest") },
     @{ Name = "Docker-in-Docker Lab Image"; Remote = "$Registry/lab-docker:$Tag"; Aliases = @("labops-docker:latest", "sgp-lab-docker:latest") },
-    @{ Name = "Preloaded Fundamentals Lab Image"; Remote = "$Registry/lab-docker-fundamentals:$Tag"; Aliases = @("labops-docker-fundamentals:latest", "sgp-lab-docker-fundamentals:latest") }
+    @{ Name = "Preloaded Fundamentals Lab Image"; Remote = "$Registry/lab-docker-fundamentals:$Tag"; Aliases = @("labops-docker-fundamentals:latest", "sgp-lab-docker-fundamentals:latest") },
+    @{ Name = "Preloaded Docker Build Lab Image"; Remote = "$Registry/lab-docker-build:$Tag"; Aliases = @("labops-docker-build:latest", "sgp-lab-docker-build:latest") }
 )
 
 $step = 1

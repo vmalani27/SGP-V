@@ -1,4 +1,5 @@
-base_image: "labops-docker:latest"
+base_image: "labops-docker-build:latest"
 pre_pull:
   - alpine:latest
+  - node:20-alpine
   - python:3.12-alpine

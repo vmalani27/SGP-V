@@ -280,3 +280,20 @@ jobs:
             ghcr.io/${{ env.REPO_LOWER }}/lab-docker-fundamentals:latest
           cache-from: type=gha,scope=lab-docker-fundamentals
           cache-to: type=gha,mode=max,scope=lab-docker-fundamentals
+
+      # 4. Building Images Course Image: labops-docker-build (inherits from lab-docker)
+      - name: Build & Push Lab Image (lab-docker-build)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./orchestrator/lab-images
+          file: ./orchestrator/lab-images/Dockerfile.docker-build
+          push: true
+          build-args: |
+            BASE_IMAGE=ghcr.io/${{ env.REPO_LOWER }}/lab-docker:${{ steps.tags.outputs.sha }}
+          tags: |
+            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-build:${{ steps.tags.outputs.branch }}
+            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-build:${{ steps.tags.outputs.sha }}
+            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-build:latest
+          cache-from: type=gha,scope=lab-docker-build
+          cache-to: type=gha,mode=max,scope=lab-docker-build
+

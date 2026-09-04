@@ -33,10 +33,16 @@ docker tag %REGISTRY%/lab-docker:%TAG% labops-docker:latest
 docker tag %REGISTRY%/lab-docker:%TAG% sgp-lab-docker:latest
 
 echo.
-echo [6/6] Pulling Preloaded Fundamentals Lab Image (%REGISTRY%/lab-docker-fundamentals:%TAG%)...
+echo [6/7] Pulling Preloaded Fundamentals Lab Image (%REGISTRY%/lab-docker-fundamentals:%TAG%)...
 docker pull %REGISTRY%/lab-docker-fundamentals:%TAG%
 docker tag %REGISTRY%/lab-docker-fundamentals:%TAG% labops-docker-fundamentals:latest
 docker tag %REGISTRY%/lab-docker-fundamentals:%TAG% sgp-lab-docker-fundamentals:latest
+
+echo.
+echo [7/7] Pulling Preloaded Docker Build Lab Image (%REGISTRY%/lab-docker-build:%TAG%)...
+docker pull %REGISTRY%/lab-docker-build:%TAG%
+docker tag %REGISTRY%/lab-docker-build:%TAG% labops-docker-build:latest
+docker tag %REGISTRY%/lab-docker-build:%TAG% sgp-lab-docker-build:latest
 
 echo.
 echo ==================================================

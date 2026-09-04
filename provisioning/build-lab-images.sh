@@ -19,7 +19,7 @@ pull_or_build() {
   echo "  -> Fetching $local_tag..."
   if docker pull "$remote_img" 2>/dev/null; then
     docker tag "$remote_img" "$local_tag"
-    echo "     [✓] Pulled $remote_img -> $local_tag"
+    echo "     [✔] Pulled $remote_img -> $local_tag"
   else
     echo "     [!] Could not pull $remote_img, building locally..."
     docker build -t "$local_tag" -f "$LAB_IMAGES_DIR/$dockerfile" "$LAB_IMAGES_DIR"
@@ -29,8 +29,10 @@ pull_or_build() {
 pull_or_build "$REGISTRY_REPO/lab-ubuntu:$TAG" "labops-ubuntu:latest" "Dockerfile.ubuntu"
 pull_or_build "$REGISTRY_REPO/lab-docker:$TAG" "labops-docker:latest" "Dockerfile.docker"
 pull_or_build "$REGISTRY_REPO/lab-docker-fundamentals:$TAG" "labops-docker-fundamentals:latest" "Dockerfile.docker-fundamentals"
+pull_or_build "$REGISTRY_REPO/lab-docker-build:$TAG" "labops-docker-build:latest" "Dockerfile.docker-build"
 
 echo "==> All lab images ready:"
 echo "    - labops-ubuntu:latest"
 echo "    - labops-docker:latest"
 echo "    - labops-docker-fundamentals:latest"
+echo "    - labops-docker-build:latest"
