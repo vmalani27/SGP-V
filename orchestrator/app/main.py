@@ -167,6 +167,6 @@ from app.utils.auth import verify_orchestrator_secret
 
 app.include_router(health_router)
 app.include_router(labs_router, dependencies=[Depends(verify_orchestrator_secret)])
-app.include_router(demos_router, dependencies=[Depends(verify_orchestrator_secret)])
+app.include_router(demos_router)
 app.include_router(schemas_router, dependencies=[Depends(verify_orchestrator_secret)])
 app.include_router(terminal_router)

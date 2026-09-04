@@ -81,6 +81,19 @@ class DockerService:
         self.client = docker.DockerClient(base_url=DOCKER_HOST, timeout=300)
         self.client.api.timeout = 300
 
+    def _get_orchestrator_network(self) -> str | None:
+        import socket
+        try:
+            hostname = socket.gethostname()
+            self_container = self.client.containers.get(hostname)
+            networks = self_container.attrs.get("NetworkSettings", {}).get("Networks", {})
+            for net_name in networks.keys():
+                if net_name != "bridge":
+                    return net_name
+        except Exception:
+            pass
+        return None
+
     def start_lab(self, image: str, name: str, labels: dict[str, str] | None = None) -> dict:
         normalized_image = IMAGE_ALIASES.get(image, image)
         target_image = normalized_image
@@ -117,6 +130,9 @@ class DockerService:
                     )
 
         runtime_opts = get_runtime_options()
+        orch_net = self._get_orchestrator_network()
+        if orch_net and "network" not in runtime_opts:
+            runtime_opts["network"] = orch_net
 
         try:
             container = self.client.containers.run(

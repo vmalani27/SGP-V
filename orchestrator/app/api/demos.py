@@ -15,11 +15,12 @@ import logging
 import threading
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app.config import DEMO_PREFIX, LABEL_DEMO_ID, LABEL_USER_ID
 from app.services.docker_service import DockerService, get_docker_service
+from app.utils.auth import verify_orchestrator_secret
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +57,27 @@ class CreateDemoRequest(BaseModel):
 class ExecDemoRequest(BaseModel):
     command: str
     user: str = "root"
+    user_id: str = ""
 
 
-@router.post("")
+def _resolve_demo_container_name(name_or_id: str, user_id: str, docker_svc: DockerService) -> str:
+    """Resolve a container name if the caller passed a demo_id instead."""
+    try:
+        docker_svc._get_container(name_or_id)
+        return name_or_id
+    except Exception:
+        pass
+
+    labels = {LABEL_DEMO_ID: name_or_id}
+    if user_id:
+        labels[LABEL_USER_ID] = user_id
+    running = docker_svc.get_running_lab_by_labels(labels)
+    if running:
+        return running["name"]
+    return name_or_id
+
+
+@router.post("", dependencies=[Depends(verify_orchestrator_secret)])
 def create_demo(req: CreateDemoRequest, docker_svc: DockerService = Depends(get_docker_service)):
     """Create a disposable demo container and wait for its inner Docker daemon.
 
@@ -141,7 +160,7 @@ def create_demo(req: CreateDemoRequest, docker_svc: DockerService = Depends(get_
         return {"name": name, "status": info["status"], "container_id": info["id"]}
 
 
-@router.get("/by_key")
+@router.get("/by_key", dependencies=[Depends(verify_orchestrator_secret)])
 def get_demo_by_key(
     user_id: str,
     demo_id: str,
@@ -166,12 +185,13 @@ def get_demo_by_key(
     return demo
 
 
-@router.post("/{name}/exec")
+@router.post("/{name}/exec", dependencies=[Depends(verify_orchestrator_secret)])
 def exec_demo(name: str, req: ExecDemoRequest, docker_svc: DockerService = Depends(get_docker_service)):
     """Run a single predefined command inside the demo container."""
+    container_name = _resolve_demo_container_name(name, req.user_id, docker_svc)
     try:
         exit_code, output = docker_svc.exec_command(
-            name,
+            container_name,
             ["/bin/bash", "-c", req.command],
             user=req.user or "root",
         )
@@ -186,11 +206,130 @@ def exec_demo(name: str, req: ExecDemoRequest, docker_svc: DockerService = Depen
     return {"exit_code": exit_code, "output": output}
 
 
-@router.delete("/{name}")
-def destroy_demo(name: str, docker_svc: DockerService = Depends(get_docker_service)):
+@router.delete("/{name}", dependencies=[Depends(verify_orchestrator_secret)])
+def destroy_demo(name: str, user_id: str = "", docker_svc: DockerService = Depends(get_docker_service)):
     """Destroy a demo container. Safe no-op if it is already gone."""
+    container_name = _resolve_demo_container_name(name, user_id, docker_svc)
     try:
-        docker_svc.destroy_lab(name)
+        docker_svc.destroy_lab(container_name)
     except RuntimeError:
         pass
-    return {"status": "destroyed"}
+@router.get("/{name}/ports/{port}", dependencies=[Depends(verify_orchestrator_secret)])
+def check_demo_port(
+    name: str,
+    port: int,
+    user_id: str = "",
+    docker_svc: DockerService = Depends(get_docker_service),
+):
+    """Check if a TCP port is open and accepting connections inside the demo container."""
+    import socket
+
+    container_name = _resolve_demo_container_name(name, user_id, docker_svc)
+    try:
+        container = docker_svc._get_container(container_name)
+    except Exception:
+        return {"open": False, "port": port}
+
+    if container.status != "running":
+        return {"open": False, "port": port}
+
+    networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+    ip = None
+    for _, net_conf in networks.items():
+        if net_conf.get("IPAddress"):
+            ip = net_conf["IPAddress"]
+            break
+    if not ip:
+        ip = container.attrs.get("NetworkSettings", {}).get("IPAddress")
+
+    host_target = ip or container_name
+    is_open = False
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            res = s.connect_ex((host_target, port))
+            is_open = (res == 0)
+    except Exception:
+        is_open = False
+
+    return {"open": is_open, "port": port, "container": container_name}
+
+
+@router.api_route("/{name}/proxy/{port}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+@router.api_route("/{name}/proxy/{port}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+async def proxy_demo_port(
+    name: str,
+    port: int,
+    path: str = "",
+    request: Request = None,
+    user_id: str = "",
+    docker_svc: DockerService = Depends(get_docker_service),
+):
+    """Dynamically proxy HTTP requests to a web server running inside the demo container."""
+    import asyncio
+    import urllib.error
+    import urllib.request
+    from fastapi import Response
+
+    container_name = _resolve_demo_container_name(name, user_id, docker_svc)
+    try:
+        container = docker_svc._get_container(container_name)
+    except RuntimeError:
+        raise HTTPException(status_code=404, detail=f"Demo container '{name}' not found")
+
+    networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+    ip = None
+    for _, net_conf in networks.items():
+        if net_conf.get("IPAddress"):
+            ip = net_conf["IPAddress"]
+            break
+    if not ip:
+        ip = container.attrs.get("NetworkSettings", {}).get("IPAddress")
+
+    # Prefer direct container name resolution via Docker DNS if in user-defined network, else IP
+    host_target = container_name if (networks and "bridge" not in networks) else (ip or container_name)
+    target_url = f"http://{host_target}:{port}/{path}"
+    if request and request.url.query:
+        target_url += f"?{request.url.query}"
+
+    body = await request.body() if request else None
+    headers = dict(request.headers) if request else {}
+    headers.pop("host", None)
+
+    req = urllib.request.Request(
+        target_url,
+        data=body if body else None,
+        headers=headers,
+        method=request.method if request else "GET",
+    )
+
+    loop = asyncio.get_running_loop()
+
+    def _fetch():
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.getcode(), dict(resp.headers), resp.read()
+        except urllib.error.HTTPError as he:
+            return he.code, dict(he.headers), he.read()
+        except urllib.error.URLError as ue:
+            return (
+                502,
+                {"content-type": "application/json"},
+                f'{{"error": "Could not connect to port {port} inside container ({ue.reason}). Ensure your service is running and published on port {port}."}}'.encode(),
+            )
+        except Exception as e:
+            return 500, {"content-type": "application/json"}, f'{{"error": "{str(e)}"}}'.encode()
+
+    status_code, resp_headers, content = await loop.run_in_executor(None, _fetch)
+
+    safe_headers = {}
+    for k, v in resp_headers.items():
+        if k.lower() not in ("transfer-encoding", "content-length", "connection"):
+            safe_headers[k] = v
+
+    return Response(
+        content=content,
+        status_code=status_code,
+        headers=safe_headers,
+        media_type=safe_headers.get("content-type", "text/html"),
+    )

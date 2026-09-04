@@ -12,6 +12,9 @@
 ARG BASE_IMAGE=labops-docker:latest
 FROM ${BASE_IMAGE}
 
+# Ensure git and curl are explicitly present for repository inspection in labs
+RUN apt-get update && apt-get install -y --no-install-recommends git curl && rm -rf /var/lib/apt/lists/*
+
 # Pre-populate chapter fixtures into /home/student
 COPY fixtures/ /home/student/
 
