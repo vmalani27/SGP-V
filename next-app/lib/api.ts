@@ -1,9 +1,16 @@
 import { auth } from './firebase';
 import type { LabTask, TaskListResponse, TaskProgressData, ValidateResponse } from './task-types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8001';
-const ORCHESTRATOR_SECRET = process.env.NEXT_PUBLIC_ORCHESTRATOR_SECRET || 'local-dev-super-secret';
+function getEnv(key: string, fallback: string): string {
+  if (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__?.[key]) {
+    return window.__RUNTIME_CONFIG__[key] || fallback;
+  }
+  return process.env[key] || fallback;
+}
+
+export const getBaseUrl = () => getEnv('NEXT_PUBLIC_API_BASE_URL', 'http://localhost:8000');
+export const getOrchestratorUrl = () => getEnv('NEXT_PUBLIC_ORCHESTRATOR_URL', 'http://localhost:8001');
+export const getOrchestratorSecret = () => getEnv('NEXT_PUBLIC_ORCHESTRATOR_SECRET', 'local-dev-super-secret');
 
 async function getIdToken(): Promise<string | null> {
   if (!auth) return null;
@@ -38,7 +45,7 @@ export async function apiFetch<T = unknown>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${getBaseUrl()}${path}`, {
     ...options,
     headers,
   });
@@ -57,11 +64,11 @@ export async function orchestratorFetch<T = unknown>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${ORCHESTRATOR_SECRET}`,
+    'Authorization': `Bearer ${getOrchestratorSecret()}`,
     ...(options.headers as Record<string, string>),
   };
 
-  const res = await fetch(`${ORCHESTRATOR_URL}${path}`, {
+  const res = await fetch(`${getOrchestratorUrl()}${path}`, {
     ...options,
     headers,
   });
@@ -191,8 +198,8 @@ export const api = {
         
         return {
           ...session,
-          ws_token: JSON.stringify({ token: ORCHESTRATOR_SECRET, session_id: session.session_id, kind: "lab" }),
-          ws_url: `${ORCHESTRATOR_URL.replace('http', 'ws')}/ws/terminal`,
+          ws_token: JSON.stringify({ token: getOrchestratorSecret(), session_id: session.session_id, kind: "lab" }),
+          ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`,
         };
       } catch (e) {
         return null;
@@ -227,8 +234,8 @@ export const api = {
       });
       return {
         ...session,
-        ws_token: JSON.stringify({ token: ORCHESTRATOR_SECRET, session_id: session.session_id, kind: "lab" }),
-        ws_url: `${ORCHESTRATOR_URL.replace('http', 'ws')}/ws/terminal`,
+        ws_token: JSON.stringify({ token: getOrchestratorSecret(), session_id: session.session_id, kind: "lab" }),
+        ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`,
       };
     },
     status: (courseId: string, labId: string, sessionId: string) =>
@@ -252,8 +259,8 @@ export const api = {
       ),
     token: (courseId: string, labId: string, sessionId: string) =>
       Promise.resolve({
-        ws_token: JSON.stringify({ token: ORCHESTRATOR_SECRET, session_id: sessionId, kind: "lab" }),
-        ws_url: `${ORCHESTRATOR_URL.replace('http', 'ws')}/ws/terminal`
+        ws_token: JSON.stringify({ token: getOrchestratorSecret(), session_id: sessionId, kind: "lab" }),
+        ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`
       }),
     tasks: async (courseId: string, labId: string, tasks: unknown[]) => {
       return localFetch<TaskListResponse>(`/api/local-content/labs/${courseId}/${labId}/tasks`);
@@ -445,8 +452,8 @@ export const api = {
       return {
         ...res,
         reused: res.reused || false,
-        ws_token: JSON.stringify({ token: ORCHESTRATOR_SECRET, demo_id: demoId, user_id: userId, kind: "demo" }),
-        ws_url: `${ORCHESTRATOR_URL.replace('http', 'ws')}/ws/terminal`,
+        ws_token: JSON.stringify({ token: getOrchestratorSecret(), demo_id: demoId, user_id: userId, kind: "demo" }),
+        ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`,
       };
     },
     exec: async (demoId: string, command: string) => {
