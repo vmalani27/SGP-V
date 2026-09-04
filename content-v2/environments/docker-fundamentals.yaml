@@ -1,0 +1,2 @@
+base_image: "labops-docker-fundamentals:latest"
+pre_pull: []

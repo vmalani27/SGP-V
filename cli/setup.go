@@ -123,3 +123,48 @@ func RunSetup() bool {
 
 	return true
 }
+
+// RunPull pulls all service and lab images from GHCR and tags them locally.
+func RunPull() bool {
+	fmt.Println("Pulling LabOps Container Images from GHCR...")
+	fmt.Println("==================================================")
+
+	if !CheckDependency("docker") {
+		fmt.Println("Error: Docker is not installed or not in PATH.")
+		return false
+	}
+
+	images := []struct {
+		name   string
+		remote string
+		tags   []string
+	}{
+		{"Backend Service", "ghcr.io/vmalani27/sgp-v/backend:dev", nil},
+		{"Frontend Service", "ghcr.io/vmalani27/sgp-v/frontend:dev", nil},
+		{"Orchestrator Service", "ghcr.io/vmalani27/sgp-v/orchestrator:dev", nil},
+		{"Base Ubuntu Lab", "ghcr.io/vmalani27/sgp-v/lab-ubuntu:dev", []string{"labops-ubuntu:latest", "sgp-lab-ubuntu:latest"}},
+		{"Docker Lab", "ghcr.io/vmalani27/sgp-v/lab-docker:dev", []string{"labops-docker:latest", "sgp-lab-docker:latest"}},
+		{"Docker Fundamentals Lab", "ghcr.io/vmalani27/sgp-v/lab-docker-fundamentals:dev", []string{"labops-docker-fundamentals:latest", "sgp-lab-docker-fundamentals:latest"}},
+	}
+
+	for i, img := range images {
+		fmt.Printf("[%d/%d] Pulling %s (%s)...\n", i+1, len(images), img.name, img.remote)
+		cmd := exec.Command("docker", "pull", img.remote)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Warning: Failed to pull %s: %v\n", img.remote, err)
+		}
+
+		for _, tag := range img.tags {
+			tagCmd := exec.Command("docker", "tag", img.remote, tag)
+			_ = tagCmd.Run()
+		}
+		fmt.Println()
+	}
+
+	fmt.Println("==================================================")
+	fmt.Println("All available LabOps images are pulled and ready.")
+	return true
+}
+

@@ -9,6 +9,25 @@ from app.config import CONTAINER_RUNTIME_MODE, DOCKER_HOST, LAB_PREFIX
 logger = logging.getLogger(__name__)
 
 
+IMAGE_ALIASES = {
+    "sgp-lab-ubuntu:latest": "labops-ubuntu:latest",
+    "sgp-lab-docker:latest": "labops-docker:latest",
+    "sgp-lab-docker-fundamentals:latest": "labops-docker-fundamentals:latest",
+    "sgp-lab-ubuntu": "labops-ubuntu:latest",
+    "sgp-lab-docker": "labops-docker:latest",
+    "sgp-lab-docker-fundamentals": "labops-docker-fundamentals:latest",
+}
+
+REMOTE_IMAGE_MAP = {
+    "labops-ubuntu:latest": "ghcr.io/vmalani27/sgp-v/lab-ubuntu:dev",
+    "labops-docker:latest": "ghcr.io/vmalani27/sgp-v/lab-docker:dev",
+    "labops-docker-fundamentals:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-fundamentals:dev",
+    "sgp-lab-ubuntu:latest": "ghcr.io/vmalani27/sgp-v/lab-ubuntu:dev",
+    "sgp-lab-docker:latest": "ghcr.io/vmalani27/sgp-v/lab-docker:dev",
+    "sgp-lab-docker-fundamentals:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-fundamentals:dev",
+}
+
+
 def get_runtime_options() -> dict:
     """Dynamically applies security and runtime settings based on CONTAINER_RUNTIME_MODE.
 
@@ -63,19 +82,45 @@ class DockerService:
         self.client.api.timeout = 300
 
     def start_lab(self, image: str, name: str, labels: dict[str, str] | None = None) -> dict:
+        normalized_image = IMAGE_ALIASES.get(image, image)
+        target_image = normalized_image
+
         try:
-            self.client.images.get(image)
+            self.client.images.get(normalized_image)
         except ImageNotFound:
-            raise RuntimeError(
-                f"Image '{image}' not found on the Docker host. "
-                "Lab images must be pre-built before the orchestrator starts."
-            )
+            try:
+                self.client.images.get(image)
+                target_image = image
+            except ImageNotFound:
+                remote_image = REMOTE_IMAGE_MAP.get(normalized_image) or REMOTE_IMAGE_MAP.get(image)
+                if remote_image:
+                    logger.info(
+                        f"Image '{normalized_image}' not found locally on Docker host. "
+                        f"Attempting to pull '{remote_image}' from GHCR..."
+                    )
+                    try:
+                        pulled = self.client.images.pull(remote_image)
+                        pulled.tag(normalized_image)
+                        if image != normalized_image:
+                            pulled.tag(image)
+                        target_image = normalized_image
+                        logger.info(f"Successfully pulled '{remote_image}' and tagged as '{normalized_image}'")
+                    except Exception as pull_err:
+                        logger.error(f"Failed to auto-pull '{remote_image}': {pull_err}")
+                        raise RuntimeError(
+                            f"Image '{image}' not found on Docker host and failed to pull from {remote_image}: {pull_err}"
+                        )
+                else:
+                    raise RuntimeError(
+                        f"Image '{image}' not found on the Docker host. "
+                        "Lab images must be pre-built or pulled before the orchestrator starts."
+                    )
 
         runtime_opts = get_runtime_options()
 
         try:
             container = self.client.containers.run(
-                image=image,
+                image=target_image,
                 name=name,
                 hostname=name,
                 detach=True,
@@ -83,7 +128,7 @@ class DockerService:
                 **runtime_opts,
             )
             logger.info(
-                f"Started container '{name}' ({container.short_id}) with image '{image}' "
+                f"Started container '{name}' ({container.short_id}) with image '{target_image}' "
                 f"(mode: {CONTAINER_RUNTIME_MODE}, opts: {runtime_opts})"
             )
             return self._container_info(container)

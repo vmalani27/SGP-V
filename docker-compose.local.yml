@@ -31,6 +31,9 @@ services:
       ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://host.docker.internal:8001}
       WS_ORCHESTRATOR_URL: ${WS_ORCHESTRATOR_URL:-ws://host.docker.internal:8001}
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-in-production}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
     extra_hosts:
     - host.docker.internal:host-gateway
     restart: unless-stopped

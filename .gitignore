@@ -23,9 +23,10 @@ service-account*.json
 *.csv
 
 # Per-environment sealed config + firebase service-account keys
-environments/*/firebase/
-environments/**/FIREBASE_CREDS_*.json
-environments/
+/environments/*/firebase/
+/environments/**/FIREBASE_CREDS_*.json
+/environments/
+
 
 # Build artifacts & compiled binaries
 *.zip
