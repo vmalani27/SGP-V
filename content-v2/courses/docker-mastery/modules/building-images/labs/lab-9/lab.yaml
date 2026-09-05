@@ -6,9 +6,7 @@ environment: docker-build
 setup:
   - command: "usermod -aG docker student"
   - command: |
-      # Provision the provided application fixture. The student's work is the
-      # Dockerfile only — the application is a deterministic, given input.
-      mkdir -p /home/student/hello-app
+      mkdir -p /home/student/hello-app/__pycache__
       cat > /home/student/hello-app/app.py <<'SGP_FIXTURE'
       from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -25,72 +23,188 @@ setup:
       HTTPServer(('0.0.0.0', 8000), Handler).serve_forever()
       SGP_FIXTURE
       cat > /home/student/hello-app/requirements.txt <<'SGP_FIXTURE'
-      # No third-party dependencies - the app uses only the Python standard library.
+      # Production dependencies
       SGP_FIXTURE
+      touch /home/student/hello-app/__pycache__/app.cpython-312.pyc
+      git -C /home/student/hello-app init -b main 2>/dev/null || git init /home/student/hello-app
       chown -R student:student /home/student/hello-app
 
 objectives:
-  - Explain how a provided application maps to image layers
-  - Write a Dockerfile using the dependency-installation pattern
-  - Build the image and run a container from it
-  - Verify the application serves requests from inside the container
+  - Audit a repository and protect the build context with .dockerignore
+  - Implement a production Dockerfile from operational specifications
+  - Verify layer cache invalidation behavior across code changes
+  - Deploy and route external traffic to a containerized service
+  - Verify service health and HTTP traffic using CLI observability tools
 
 tasks:
-  - id: create-dockerfile
+  - id: context-hygiene
+    summary: Protect the build context with .dockerignore.
     prompt: >-
-      A starter application has been provided in `~/hello-app`. Let's containerize it step by step.
-      
-      First, inspect `app.py` and `requirements.txt`. Then, write a `Dockerfile` inside `~/hello-app/` using the `python:3.12-alpine` base image.
-      Use the dependency-installation pattern: copy the requirements, install them, then copy the source code, expose port 8000, and set the default command to run `python app.py`.
+      Inspect `~/hello-app`. Notice that local bytecode artifacts (`__pycache__`)
+      exist in the project. Applying what you learned in Chapter 7, create a
+      `.dockerignore` file in `~/hello-app` that excludes `__pycache__` and `.git`
+      from being transferred to the Docker daemon.
     type: terminal_action
     validation:
-      command: >-
-        test -f ~/hello-app/Dockerfile &&
-        grep -qi "FROM python:3.12-alpine" ~/hello-app/Dockerfile &&
-        grep -qi "COPY" ~/hello-app/Dockerfile &&
-        echo SUCCESS
+      command: |-
+        python3 -c "
+        import os, sys
+        ig = '/home/student/hello-app/.dockerignore'
+        if not os.path.isfile(ig):
+          print('No Docker build-context ignore file was found')
+          sys.exit(0)
+        content = open(ig).read()
+        if '__pycache__' not in content:
+          print('Local bytecode artifacts are not excluded from the build context')
+          sys.exit(0)
+        if '.git' not in content:
+          print('Repository metadata is not excluded from the build context')
+          sys.exit(0)
+        print('IGNORE_OK')
+        "
       match_type: exact
-      expected_output: SUCCESS
+      expected_output: IGNORE_OK
     error_message: >-
-      Could not validate your Dockerfile. Ensure it exists at `~/hello-app/Dockerfile` and uses `FROM python:3.12-alpine`.
-    hints:
-      - "Create the file with a text editor: `nano ~/hello-app/Dockerfile`"
-      - "The file needs: `FROM python:3.12-alpine`, `WORKDIR /app`, `COPY requirements.txt .`, `RUN pip install -r requirements.txt`, `COPY app.py .`, `EXPOSE 8000`, `CMD [\"python\", \"app.py\"]`"
-    solution:
-      command: >-
-        printf 'FROM python:3.12-alpine\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCOPY app.py .\nEXPOSE 8000\nCMD ["python", "app.py"]\n' > ~/hello-app/Dockerfile
+      The build context is not fully protected. The project contains local bytecode
+      artifacts and repository metadata that should be excluded from the Docker build context.
 
-  - id: build-image
+  - id: engineer-dockerfile
+    summary: Author the Dockerfile based on operational requirements.
     prompt: >-
-      Now that your `Dockerfile` is ready, build the image and tag it as `hello-app`.
+      In `~/hello-app/Dockerfile`, package the service meeting these requirements:
+      1. Use the official `python:3.12-alpine` runtime.
+      2. Operate from an isolated `/app` working directory.
+      3. Implement the dependency-first caching order from Chapter 8 so dependencies are frozen before source code is copied.
+      4. Document port 8000 and configure the container to execute `app.py` with Python on startup.
     type: terminal_action
     validation:
-      command: "docker images --format '{{.Repository}}' | grep -qx hello-app && echo SUCCESS"
-      match_type: exact
-      expected_output: SUCCESS
-    error_message: >-
-      Could not find an image named `hello-app`. Make sure to run the build command in the correct directory.
-    hints:
-      - "Use `docker build` with the `-t` flag to tag the image."
-      - "Run `docker build -t hello-app ~/hello-app`"
-    solution:
-      command: "docker build -t hello-app ~/hello-app"
+      command: |-
+        python3 -c "
+        import os, re, sys
+        df = '/home/student/hello-app/Dockerfile'
+        if not os.path.isfile(df):
+          print('No Dockerfile was found for the application')
+          sys.exit(0)
+        content = open(df).read()
+        lines = content.splitlines()
 
-  - id: run-container
+        if not re.search(r'FROM\s+python:3\.12-alpine', content, re.I):
+          print('The Dockerfile does not use the required Python runtime')
+          sys.exit(0)
+        if not re.search(r'WORKDIR\s+/app', content, re.I):
+          print('The application does not use the required isolated working directory')
+          sys.exit(0)
+        if not re.search(r'COPY\s+.*requirements\.txt', content, re.I):
+          print('The dependency manifest is not copied into the image')
+          sys.exit(0)
+        if not re.search(r'RUN\s+pip\s+install', content, re.I):
+          print('The image does not install the declared dependencies')
+          sys.exit(0)
+        if not re.search(r'COPY\s+.*app\.py', content, re.I) and not re.search(r'COPY\s+\.\s+\.', content, re.I):
+          print('The application source is not copied into the image')
+          sys.exit(0)
+        try:
+            req_idx = next(i for i, l in enumerate(lines) if 'requirements.txt' in l and 'COPY' in l.upper())
+            app_idx = next(i for i, l in enumerate(lines) if ('app.py' in l or '.' in l) and 'COPY' in l.upper() and i != req_idx)
+            if req_idx >= app_idx:
+              print('The Dockerfile copy order prevents dependency layers from being reused efficiently')
+              sys.exit(0)
+        except Exception:
+            pass
+        if not re.search(r'EXPOSE\s+8000', content, re.I):
+          print('The application service port is not documented in the image')
+          sys.exit(0)
+        if not re.search(r'CMD\s*\[.*python.*app\.py.*\]', content, re.I) and not re.search(r'CMD\s+python.*app\.py', content, re.I):
+          print('The image startup command does not launch the application with Python')
+          sys.exit(0)
+        print('DOCKERFILE_OK')
+        "
+      match_type: exact
+      expected_output: DOCKERFILE_OK
+    error_message: >-
+      The Dockerfile is missing or does not satisfy one of the runtime requirements.
+      Check the base image, working directory, dependency-first copy order, dependency
+      installation, application source copy, documented port, and startup command.
+
+  - id: build-and-verify-cache
+    summary: Build the image and prove layer cache efficiency.
     prompt: >-
-      Finally, run a container from your `hello-app` image in the background (`-d`), and publish its port `8000` to the host's port `8000` (`-p 8000:8000`).
+      Build your image and tag it as `hello-app:1.0`. Then edit `~/hello-app/app.py`
+      (e.g., change the response body) and rebuild it as `hello-app:1.1`.
+      Both versions must exist in your local Docker image cache.
     type: terminal_action
     validation:
-      command: >-
-        test -n "$(docker ps -q --filter publish=8000)" &&
-        curl -s -o /tmp/hello.out -w '%{http_code}' http://127.0.0.1:8000/ 2>/dev/null | grep -q '200' &&
-        echo SUCCESS
+      command: |-
+        python3 -c "
+        import subprocess, sys
+        r1 = subprocess.run(['docker', 'image', 'inspect', 'hello-app:1.0'], capture_output=True)
+        if r1.returncode != 0:
+            print('Image hello-app:1.0 not found in Docker image cache')
+            sys.exit(0)
+        r2 = subprocess.run(['docker', 'image', 'inspect', 'hello-app:1.1'], capture_output=True)
+        if r2.returncode != 0:
+            print('Image hello-app:1.1 not found in Docker image cache')
+            sys.exit(0)
+        print('BUILD_VERSIONS_OK')
+        "
       match_type: exact
-      expected_output: SUCCESS
+      expected_output: BUILD_VERSIONS_OK
     error_message: >-
-      Could not access the app on port 8000. Ensure you ran the container with `-d` and `-p 8000:8000`.
-    hints:
-      - "Use `docker run` to start the container."
-      - "Run `docker run -d -p 8000:8000 hello-app`"
-    solution:
-      command: "docker run -d -p 8000:8000 hello-app"
+      The Docker image cache does not contain both required tagged versions.
+      One or both builds may be missing, or the application source may not have changed
+      between the two versions.
+
+  - id: run-and-route
+    summary: Deploy the container with proper network routing.
+    prompt: >-
+      Run a container named `hello-service` in the background using `hello-app:1.0`.
+      Ensure host port 8000 routes to container port 8000. (Remember from Chapter 6
+      and 9 why `EXPOSE` alone is not enough).
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+        ps = subprocess.run(['docker', 'ps', '--format', '{{.Names}}'], capture_output=True, text=True)
+        if 'hello-service' not in ps.stdout.split():
+          print('The expected application service is not running')
+          sys.exit(0)
+        port = subprocess.run(['docker', 'port', 'hello-service', '8000'], capture_output=True, text=True)
+        if '8000' not in port.stdout:
+          print('The application service port is not reachable from the host')
+          sys.exit(0)
+        print('ROUTE_OK')
+        "
+      match_type: exact
+      expected_output: ROUTE_OK
+    error_message: >-
+      The expected service is not running with the required image, container name,
+      background execution state, or host-to-container port mapping. The host must be
+      able to route traffic on port 8000 to the service's port 8000.
+
+  - id: verify-service
+    summary: Operational verification via logs and HTTP traffic.
+    prompt: >-
+      Verify your running service: check the container logs to confirm Python
+      logged `ready`, and send an HTTP GET request to port 8000 from the host
+      to verify HTTP 200 connectivity.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+        logs = subprocess.run(['docker', 'logs', 'hello-service'], capture_output=True, text=True)
+        if 'ready' not in (logs.stdout + logs.stderr):
+          print('The service did not report a successful startup in its logs')
+          sys.exit(0)
+        curl = subprocess.run(['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://127.0.0.1:8000/'], capture_output=True, text=True)
+        if curl.stdout.strip() != '200':
+          print(f'HTTP verification failed with status {curl.stdout.strip() or \"connection error\"}')
+          sys.exit(0)
+        print('VERIFIED_OK')
+        "
+      match_type: exact
+      expected_output: VERIFIED_OK
+    error_message: >-
+      Operational verification failed. The running service did not provide the expected
+      startup signal in its logs or did not return HTTP 200 for a request on port 8000.

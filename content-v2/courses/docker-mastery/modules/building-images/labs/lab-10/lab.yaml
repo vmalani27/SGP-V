@@ -2,215 +2,222 @@ id: lab-10
 title: Multi-Stage Builds
 difficulty: intermediate
 environment: docker-build
+destination_url: /api/health
 
 setup:
+  - command: "apt update && apt install -y npm"
   - command: "usermod -aG docker student"
+  - command: |
+      rm -f /home/student/order-service/Dockerfile
+      rm -f /home/student/order-service/package-lock.json
+      rm -rf /home/student/order-service/node_modules
+      chown -R student:student /home/student/order-service
 
 objectives:
-  - Create a Node.js application with TypeScript compilation
-  - Write a single-stage Dockerfile and observe the large image size
-  - Rewrite as a multi-stage build to separate build and runtime
-  - Compare image sizes and verify the application still works
+  - Initialize project dependencies and protect the Docker build context
+  - Build and diagnose container bloat in a single-stage Dockerfile
+  - Engineer a production-grade multi-stage Dockerfile adhering to nodebestpractices
+  - Verify container size reduction and elimination of build tools
+  - Deploy and audit runtime container security and process privileges
 
 tasks:
-  - id: create-project
+  - id: workspace-preparation
+    summary: Initialize workspace dependencies and verify build context exclusions.
     prompt: >-
-      Create a project directory named `node-app` in your home directory. Inside
-      it, create a `package.json` with `name: "node-app"`, `scripts: { "build":
-      "echo 'building...'", "start": "node dist/server.js" }`, and
-      `devDependencies: { "typescript": "^5.3.0" }`. Also create a
-      `tsconfig.json` with `compilerOptions: { "outDir": "./dist" }`, a
-      `src/server.js` file containing `console.log('server ready')`, and a
-      `dist/` directory with a placeholder file.
+      In ~/order-service, install the project's dependencies. Then inspect the build context exclusion rules and verify that local dependencies and compiled output are excluded.
     type: terminal_action
     validation:
-      command: >-
-        test -f ~/node-app/package.json &&
-        grep -q '"name": "node-app"' ~/node-app/package.json &&
-        test -f ~/node-app/tsconfig.json &&
-        grep -q '"outDir"' ~/node-app/tsconfig.json &&
-        test -f ~/node-app/src/server.js &&
-        grep -q "server ready" ~/node-app/src/server.js &&
-        test -d ~/node-app/dist && echo PROJECT_OK
-      match_type: exact
-      expected_output: PROJECT_OK
-    error_message: >-
-      ~/node-app should contain package.json, tsconfig.json, src/server.js,
-      and a dist/ directory. Check with `ls -R ~/node-app`.
-    hints:
-      - "Create the directory structure with `mkdir -p ~/node-app/src ~/node-app/dist`."
-      - "package.json needs name, scripts, and devDependencies fields."
-      - "tsconfig.json needs compilerOptions with outDir set to ./dist."
-    solution:
-      command: >-
-        mkdir -p ~/node-app/src ~/node-app/dist &&
-        echo '{}' > ~/node-app/dist/.gitkeep &&
-        printf '{\n  "name": "node-app",\n  "scripts": { "build": "echo \'building...\'", "start": "node dist/server.js" },\n  "devDependencies": { "typescript": "^5.3.0" }\n}\n'
-        > ~/node-app/package.json &&
-        printf '{\n  "compilerOptions": { "outDir": "./dist" }\n}\n'
-        > ~/node-app/tsconfig.json &&
-        echo "console.log('server ready')" > ~/node-app/src/server.js
+      command: |-
+        python3 -c "
+        import os, sys
+        base = '/home/student/order-service'
+        lock = os.path.join(base, 'package-lock.json')
+        mods = os.path.join(base, 'node_modules')
+        ign  = os.path.join(base, '.dockerignore')
 
-  - id: write-single-stage
+        if not os.path.isfile(lock) or not os.path.isdir(mods):
+            print('Dependency tree or lockfile missing.')
+            sys.exit(0)
+        if not os.path.isfile(ign):
+            print('Build context ignore file missing.')
+            sys.exit(0)
+        content = open(ign).read()
+        if 'node_modules' not in content or 'dist' not in content:
+            print('Context exclusion rules incomplete.')
+            sys.exit(0)
+        print('WORKSPACE_OK')
+        "
+      match_type: exact
+      expected_output: WORKSPACE_OK
+    error_message: >-
+      The local workspace dependencies, lockfile, or build context exclusion rules
+      do not satisfy the required project configuration.
+
+  - id: single-stage-baseline
+    summary: Build the single-stage baseline image.
     prompt: >-
-      In `~/node-app`, write a `Dockerfile` that starts from `node:20`, sets the
-      working directory to `/app`, copies all files, runs `npm install`, runs
-      `npm run build`, exposes port 3000, and starts the application with
-      `npm start`. This is a single-stage build.
+      Build a baseline container image from the existing specification at
+      `~/order-service/Dockerfile.single` and tag the resulting image as
+      `order-service:single`.
     type: terminal_action
     validation:
-      command: >-
-        test -f ~/node-app/Dockerfile &&
-        grep -q 'FROM node:20' ~/node-app/Dockerfile &&
-        grep -q 'WORKDIR /app' ~/node-app/Dockerfile &&
-        grep -q 'COPY' ~/node-app/Dockerfile &&
-        grep -q 'npm install' ~/node-app/Dockerfile &&
-        grep -q 'npm run build' ~/node-app/Dockerfile &&
-        grep -q 'EXPOSE' ~/node-app/Dockerfile &&
-        grep -q 'npm start' ~/node-app/Dockerfile && echo DOCKERFILE_OK
+      command: |-
+        python3 -c "
+        import subprocess, sys
+        r = subprocess.run(['docker', 'image', 'inspect', 'order-service:single'], capture_output=True)
+        if r.returncode != 0:
+            print('Image not found.')
+            sys.exit(0)
+        print('BASELINE_OK')
+        "
+      match_type: exact
+      expected_output: BASELINE_OK
+    error_message: >-
+      The baseline image 'order-service:single' is not available in the local image registry.
+
+  - id: author-multistage-dockerfile
+    summary: Author a production multi-stage Dockerfile.
+    prompt: >-
+      Create a production-ready multi-stage `Dockerfile` in `~/order-service` for
+      the TypeScript application. Build the application in an isolated stage and
+      produce a minimal production image from it. Use the project configuration and
+      the Docker documentation and examples from this chapter to determine how the
+      final container should run.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import os, re, sys
+        df = '/home/student/order-service/Dockerfile'
+        if not os.path.isfile(df):
+            print('Dockerfile missing.')
+            sys.exit(0)
+        content = open(df).read()
+
+        if not re.search(r'FROM\s+node:20-alpine\s+AS\s+builder', content, re.I):
+            print('Builder stage definition missing.')
+            sys.exit(0)
+        if not re.search(r'COPY\s+--from=builder\s+.*dist.*dist', content, re.I):
+            print('Artifact extraction missing.')
+            sys.exit(0)
+        if len(re.findall(r'FROM\s+node:20-alpine', content, re.I)) < 2:
+            print('Multi-stage structure missing.')
+            sys.exit(0)
+        if not re.search(r'npm\s+ci.*(?:--omit=dev|--only=production|--production)', content, re.I):
+            print('Production dependency isolation missing.')
+            sys.exit(0)
+        if not re.search(r'USER\s+node', content, re.I):
+            print('Unprivileged user specification missing.')
+            sys.exit(0)
+        if not re.search(r'EXPOSE\s+3000', content, re.I):
+            print('Port exposure declaration missing.')
+            sys.exit(0)
+        if not re.search(r'CMD\s*\[.*node.*server\.js.*\]', content, re.I):
+            print('Direct node startup command missing.')
+            sys.exit(0)
+        print('DOCKERFILE_OK')
+        "
       match_type: exact
       expected_output: DOCKERFILE_OK
     error_message: >-
-      ~/node-app/Dockerfile should contain FROM node:20, WORKDIR, COPY, npm
-      install, npm run build, EXPOSE, and npm start. Read it with
-      `cat ~/node-app/Dockerfile`.
-    hints:
-      - "Start with `FROM node:20` for the full Node.js image."
-      - "Copy all files with `COPY . .` after setting WORKDIR."
-      - "Run `npm install` then `npm run build`, then expose port 3000 and start with `npm start`."
-    solution:
-      command: >-
-        printf 'FROM node:20\n\nWORKDIR /app\n\nCOPY . .\n\nRUN npm install\n\nRUN npm run build\n\nEXPOSE 3000\n\nCMD ["npm", "start"]\n'
-        > ~/node-app/Dockerfile
+      The Dockerfile in ~/order-service does not satisfy the multi-stage architecture
+      or runtime security constraints.
 
-  - id: build-single-stage
+  - id: build-production-image
+    summary: Build the optimized multi-stage production image.
     prompt: >-
-      Build an image from `~/node-app` and tag it `node-app-single`. Check the
-      image size with `docker images`. This image includes the full Node.js
-      runtime, npm, TypeScript compiler, and all dev dependencies.
+      Build the multi-stage image using your authored `~/order-service/Dockerfile`
+      and tag the image as `order-service:multi`. The resulting image must achieve
+      significant size reduction compared to the single-stage baseline by excluding
+      compilers and development dependencies.
     type: terminal_action
     validation:
-      command: >-
-        docker image inspect node-app-single >/dev/null 2>&1 &&
-        docker image inspect node-app-single --format '{{.Size}}' 2>/dev/null |
-        awk '{if ($1 > 500000000) print "SIZE_LARGE_OK"}' && echo BUILD_OK
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+        r = subprocess.run(['docker', 'image', 'inspect', 'order-service:multi'], capture_output=True)
+        if r.returncode != 0:
+            print('Image not found.')
+            sys.exit(0)
+        data = json.loads(r.stdout.decode('utf-8'))
+        size = data[0].get('Size', 0)
+        if size > 210000000:
+            print('Image size exceeds multi-stage threshold.')
+            sys.exit(0)
+        print('PRODUCTION_IMAGE_OK')
+        "
       match_type: exact
-      expected_output: BUILD_OK
+      expected_output: PRODUCTION_IMAGE_OK
     error_message: >-
-      The node-app-single image should exist and be larger than 500MB. Build it
-      with `docker build -t node-app-single ~/node-app` and check
-      `docker images node-app-single`.
-    hints:
-      - "Build with `docker build -t node-app-single ~/node-app`."
-      - "Check size with `docker images node-app-single`."
-      - "The full node:20 image is about 1GB, so this image will be large."
-    solution:
-      command: "docker build -t node-app-single ~/node-app"
+      The production image 'order-service:multi' is either missing or does not meet
+      the required size constraints.
 
-  - id: write-multi-stage
+  - id: runtime-audit
+    summary: Deploy the production container and audit runtime security.
     prompt: >-
-      Rewrite the Dockerfile as a multi-stage build. Use `node:20-alpine` as
-      the build stage (named `builder`) that installs dependencies and builds
-      the project. Then create a final stage also from `node:20-alpine` that
-      copies only the built files from the builder stage. The final image should
-      expose port 3000 and start with `npm start`.
+      Deploy a detached container named `order-api` from `order-service:multi` with
+      port 3000 published to the host.
+
+      Contract & Success Criteria:
+      - The container is running and healthy.
+      - HTTP endpoint `http://localhost:3000/api/health` responds with HTTP 200 and reports healthy service status.
+      - The process inside the container runs under unprivileged user permissions (`node`).
+      - Build-time development tooling, specifically the TypeScript compiler executable (`tsc`), is completely absent from the container filesystem.
     type: terminal_action
     validation:
-      command: >-
-        grep -q 'AS builder' ~/node-app/Dockerfile &&
-        grep -q 'FROM node:20-alpine' ~/node-app/Dockerfile &&
-        grep -q 'COPY --from=builder' ~/node-app/Dockerfile &&
-        grep -q 'EXPOSE' ~/node-app/Dockerfile &&
-        grep -q 'npm start' ~/node-app/Dockerfile && echo MULTI_STAGE_OK
-      match_type: exact
-      expected_output: MULTI_STAGE_OK
-    error_message: >-
-      The Dockerfile should have two FROM statements, with the first named
-      `builder`. The second stage should use `COPY --from=builder`. Read it
-      with `cat ~/node-app/Dockerfile`.
-    hints:
-      - "Start with `FROM node:20-alpine AS builder` for the build stage."
-      - "In the final stage, use `COPY --from=builder /app/dist ./dist` to copy built files."
-      - "Also copy package.json and run `npm prune --production` to get only runtime dependencies."
-    solution:
-      command: >-
-        printf 'FROM node:20-alpine AS builder\n\nWORKDIR /app\n\nCOPY . .\n\nRUN npm install\n\nRUN npm run build\n\nFROM node:20-alpine\n\nWORKDIR /app\n\nCOPY --from=builder /app/dist ./dist\n\nCOPY --from=builder /app/package.json ./\n\nRUN npm prune --production\n\nEXPOSE 3000\n\nCMD ["npm", "start"]\n'
-        > ~/node-app/Dockerfile
+      command: |-
+        python3 -c "
+        import subprocess, urllib.request, json, sys
 
-  - id: build-multi-stage
-    prompt: >-
-      Rebuild the image with the same tag `node-app-single` (overwriting the
-      previous one). Check the new image size — it should be significantly
-      smaller because the build tools are no longer in the final image.
-    type: terminal_action
-    validation:
-      command: >-
-        docker image inspect node-app-single >/dev/null 2>&1 &&
-        docker image inspect node-app-single --format '{{.Size}}' 2>/dev/null |
-        awk '{if ($1 < 300000000) print "SIZE_SMALL_OK"}' && echo REBUILD_OK
-      match_type: exact
-      expected_output: REBUILD_OK
-    error_message: >-
-      The rebuilt node-app-single image should exist and be smaller than 300MB.
-      Rebuild with `docker build -t node-app-single ~/node-app` and check
-      `docker images node-app-single`.
-    hints:
-      - "Rebuild with `docker build -t node-app-single ~/node-app`."
-      - "The multi-stage build should produce a much smaller image."
-      - "Check size with `docker images node-app-single`."
-    solution:
-      command: "docker build -t node-app-single ~/node-app"
+        r = subprocess.run(['docker', 'inspect', '-f', '{{.State.Running}}', 'order-api'], capture_output=True, text=True)
+        if r.returncode != 0 or 'true' not in r.stdout.strip().lower():
+            print('Container not running.')
+            sys.exit(0)
 
-  - id: verify-works
-    prompt: >-
-      Run the smaller image and confirm it still starts correctly. The container
-      should print `server ready` to its logs.
-    type: terminal_action
-    validation:
-      command: >-
-        docker run -d --name node-test -p 3000:3000 node-app-single 2>/dev/null &&
-        sleep 2 &&
-        docker logs node-test 2>/dev/null | grep -q 'server ready' &&
-        docker stop node-test >/dev/null 2>&1 &&
-        docker rm node-test >/dev/null 2>&1 &&
-        echo APP_WORKS
-      match_type: exact
-      expected_output: APP_WORKS
-    error_message: >-
-      The container should print `server ready` to its logs. Run it with
-      `docker run -d --name node-test -p 3000:3000 node-app-single` and check
-      `docker logs node-test`.
-    hints:
-      - "Run detached with `docker run -d --name node-test -p 3000:3000 node-app-single`."
-      - "Wait a moment, then check logs with `docker logs node-test`."
-      - "Clean up with `docker stop node-test && docker rm node-test`."
-    solution:
-      command: >-
-        docker run -d --name node-test -p 3000:3000 node-app-single &&
-        sleep 2 &&
-        docker logs node-test &&
-        docker stop node-test &&
-        docker rm node-test
+        try:
+            req = urllib.request.urlopen('http://localhost:3000/api/health', timeout=5)
+            if req.status != 200:
+                print('Health check returned non-200.')
+                sys.exit(0)
+            body = json.loads(req.read().decode('utf-8'))
+            if body.get('status') != 'healthy':
+                print('Health check body unhealthy.')
+                sys.exit(0)
+        except Exception:
+            print('Failed to reach health endpoint.')
+            sys.exit(0)
 
-  - id: explain-benefit
+        r_user = subprocess.run(['docker', 'exec', 'order-api', 'whoami'], capture_output=True, text=True)
+        if r_user.stdout.strip() != 'node':
+            print('Process not running as unprivileged user.')
+            sys.exit(0)
+
+        r_tsc = subprocess.run(['docker', 'exec', 'order-api', 'test', '-f', './node_modules/.bin/tsc'], capture_output=True)
+        if r_tsc.returncode == 0:
+            print('Compiler binary detected in production container.')
+            sys.exit(0)
+
+        print('AUDIT_PASSED')
+        "
+      match_type: exact
+      expected_output: AUDIT_PASSED
+    error_message: >-
+      The deployed container 'order-api' failed one or more runtime health,
+      privilege, or security isolation checks.
+
+  - id: architectural-evaluation
+    summary: Evaluate the operational advantages of multi-stage container builds.
     prompt: >-
-      Your multi-stage build copies only the compiled output and production
-      dependencies to the final image. What is the primary benefit of this
-      approach?
+      From an operational and security perspective, what is the primary distinction
+      between a multi-stage container build and a single-stage build that compiles code in place?
     type: multiple_choice
     options:
-      - "The final image is smaller and has fewer vulnerabilities because build tools are excluded"
-      - "The build runs faster because it uses Alpine Linux"
-      - "The application starts faster because there are fewer files"
+      - "Compilers, linters, and development dependencies are isolated to build layers and omitted from the shipped runtime image."
+      - "Docker automatically disables Linux namespace isolation for intermediate build stages to accelerate compilation."
+      - "The Docker daemon flattens all container filesystem layers into a single uncompressed tar archive on the host."
+      - "External network traffic is blocked by default within multi-stage containers unless explicitly published."
     validation:
-      expected_answer: "The final image is smaller and has fewer vulnerabilities because build tools are excluded"
+      expected_answer: "Compilers, linters, and development dependencies are isolated to build layers and omitted from the shipped runtime image."
     error_message: >-
-      Multi-stage builds reduce image size and attack surface by excluding build
-      tools, compilers, and dev dependencies from the production image.
-    hints:
-      - "What was removed from the final image compared to the single-stage build?"
-      - "Build tools and dev dependencies are not needed at runtime."
-      - "Smaller images mean less to push, pull, and attack."
-    error_hint: >-
-      Multi-stage builds reduce image size and attack surface by excluding build
-      tools, compilers, and dev dependencies from the production image.
+      The selected answer does not describe the core architectural benefit of
+      multi-stage container builds.

@@ -1,213 +1,215 @@
 id: lab-11
-title: Image Debugging
+title: Capstone - Production Image Engineering
 difficulty: intermediate
 environment: docker-build
+destination_url: /health
 
 setup:
   - command: "usermod -aG docker student"
+  - command: |
+      rm -rf /home/student/inventory-service
+      mkdir -p /home/student/inventory-service/src
+      mkdir -p /home/student/inventory-service/tests
+      mkdir -p /home/student/inventory-service/logs
+
+      cat > /home/student/inventory-service/package.json <<'EOF'
+      {
+        "name": "inventory-service",
+        "version": "1.0.0",
+        "main": "dist/server.js",
+        "scripts": {
+          "build": "tsc",
+          "start": "node dist/server.js",
+          "test": "echo 'running tests...'"
+        },
+        "dependencies": {
+          "express": "^4.19.2"
+        },
+        "devDependencies": {
+          "typescript": "^5.4.5",
+          "@types/express": "^4.17.21",
+          "@types/node": "^20.12.7"
+        }
+      }
+      EOF
+
+      cat > /home/student/inventory-service/tsconfig.json <<'EOF'
+      {
+        "compilerOptions": {
+          "target": "ES2022",
+          "module": "commonjs",
+          "outDir": "./dist",
+          "rootDir": "./src",
+          "strict": true,
+          "esModuleInterop": true,
+          "skipLibCheck": true
+        },
+        "include": ["src/**/*"]
+      }
+      EOF
+
+      cat > /home/student/inventory-service/src/server.ts <<'EOF'
+      import express, { Request, Response } from 'express';
+
+      const app = express();
+      const PORT = process.env.PORT || 8080;
+
+      app.use(express.json());
+
+      app.get('/health', (req: Request, res: Response) => {
+        res.status(200).json({ status: 'healthy', service: 'inventory' });
+      });
+
+      app.get('/api/items', (req: Request, res: Response) => {
+        res.status(200).json([
+          { id: 'SKU-001', name: 'Widget A', stock: 120 },
+          { id: 'SKU-002', name: 'Widget B', stock: 45 }
+        ]);
+      });
+
+      app.listen(PORT, () => {
+        console.log(`Inventory service listening on port ${PORT}`);
+      });
+      EOF
+
+      cat > /home/student/inventory-service/.env <<'EOF'
+      DB_PASSWORD=production_super_secret_password_do_not_leak
+      API_TOKEN=prod_token_9921_secret
+      EOF
+
+      cat > /home/student/inventory-service/tests/server.test.ts <<'EOF'
+      console.log("unit test suite");
+      EOF
+
+      echo "2026-09-05 DEBUG server initialized" > /home/student/inventory-service/logs/debug.log
+
+      chown -R student:student /home/student/inventory-service
 
 objectives:
-  - Diagnose why a container exits immediately
-  - Use docker logs and docker inspect to identify failures
-  - Fix broken Dockerfile instructions
-  - Verify the corrected image runs successfully
+  - Isolate build context to protect secrets and eliminate local development artifacts
+  - Author a production-grade multi-stage Dockerfile adhering to nodebestpractices
+  - Enforce least-privilege security by executing containers as an unprivileged user
+  - Minimize attack surface by stripping compilers, test suites, and package caches
+  - Deploy and verify runtime service health and isolation independently
 
 tasks:
-  - id: create-broken-app
+  - id: package-and-harden-service
+    summary: Containerize, harden, and deploy the inventory service to production standards.
     prompt: >-
-      Create a project directory named `broken-app` in your home directory.
-      Inside it, create an `app.py` file containing a simple Python script that
-      prints `app output` and a `Dockerfile` that starts from `python:3.12-alpine`,
-      sets the working directory to `/app`, copies `app.py` into the image, and
-      runs the script with `python app.py`. However, intentionally set the
-      working directory to `/wrong/path` instead of `/app`.
+      The uncontainerized `inventory-service` at `~/inventory-service` must be
+      packaged and deployed according to strict operational and security requirements.
+
+      Operational Requirements:
+      1. Context Protection: Establish build context exclusions preventing sensitive files (`.env`), test suites (`tests`), debug logs (`logs`), local dependencies (`node_modules`), and build output (`dist`) from transferring to the Docker daemon.
+      2. Architecture: Author a production multi-stage `Dockerfile` in `~/inventory-service` using `node:20-alpine`:
+         - Stage 1 (`builder`): Compiles the TypeScript application into `./dist` using declared dependencies.
+         - Stage 2 (Production): Operates from `/usr/src/app`. Packages strictly production dependencies, clears package manager caches, and contains only the compiled `dist/` directory from the builder stage.
+      3. Security & Privilege:
+         - The production container must execute under unprivileged user identity (`node`).
+         - The container must document exposure of port 8080.
+         - The startup command must execute `dist/server.js` directly with Node without an intermediary shell.
+      4. Image Contract:
+         - Tag the image as `inventory-service:prod`.
+         - The final image size must remain under 210 MB.
+      5. Deployment Contract:
+         - Run a detached container named `inventory-api` with host port 8080 mapped to container port 8080.
+         - The `/health` endpoint must return HTTP 200 with `{"status":"healthy"}`.
+         - Build-time tooling (`tsc`) and local secrets (`.env`) must not be accessible in the running container.
     type: terminal_action
     validation:
-      command: >-
-        test -f ~/broken-app/app.py &&
-        grep -q "print('app output')" ~/broken-app/app.py &&
-        test -f ~/broken-app/Dockerfile &&
-        grep -q 'FROM python:3.12-alpine' ~/broken-app/Dockerfile &&
-        grep -q 'WORKDIR /wrong/path' ~/broken-app/Dockerfile &&
-        grep -q 'COPY app.py' ~/broken-app/Dockerfile &&
-        grep -q 'python app.py' ~/broken-app/Dockerfile && echo BROKEN_APP_OK
-      match_type: exact
-      expected_output: BROKEN_APP_OK
-    error_message: >-
-      ~/broken-app should contain app.py with `print('app output')` and a
-      Dockerfile with WORKDIR set to `/wrong/path`. Check with
-      `cat ~/broken-app/app.py` and `cat ~/broken-app/Dockerfile`.
-    hints:
-      - "Create the directory with `mkdir -p ~/broken-app`."
-      - "app.py should print 'app output' when run."
-      - "The Dockerfile should have WORKDIR /wrong/path to simulate the bug."
-    solution:
-      command: >-
-        mkdir -p ~/broken-app &&
-        echo "print('app output')" > ~/broken-app/app.py &&
-        printf 'FROM python:3.12-alpine\n\nWORKDIR /wrong/path\n\nCOPY app.py .\n\nCMD ["python", "app.py"]\n'
-        > ~/broken-app/Dockerfile
+      command: |-
+        python3 -c "
+        import os, re, subprocess, urllib.request, json, sys
 
-  - id: build-broken
-    prompt: >-
-      Build an image from `~/broken-app` and tag it `broken-app`. The build
-      should succeed (Dockerfile syntax is valid), but the image has a runtime
-      problem.
-    type: terminal_action
-    validation:
-      command: "docker image inspect broken-app >/dev/null 2>&1 && echo IMAGE_BUILT"
-      match_type: exact
-      expected_output: IMAGE_BUILT
-    error_message: >-
-      No image tagged `broken-app` exists. Build it with
-      `docker build -t broken-app ~/broken-app` and check `docker images`.
-    hints:
-      - "Build with `docker build -t broken-app ~/broken-app`."
-      - "The Dockerfile syntax is correct, so the build should succeed."
-      - "Verify with `docker images` — broken-app should be listed."
-    solution:
-      command: "docker build -t broken-app ~/broken-app"
+        base = '/home/student/inventory-service'
+        ign  = os.path.join(base, '.dockerignore')
+        df   = os.path.join(base, 'Dockerfile')
 
-  - id: run-broken
-    prompt: >-
-      Run the `broken-app` image. The container should exit immediately. Observe
-      the exit behavior — the container starts and stops almost instantly.
-    type: terminal_action
-    validation:
-      command: >-
-        docker run --rm broken-app 2>/dev/null; echo "exit_code=$?" |
-        grep -q "exit_code=1" && echo EXIT_DETECTED
-      match_type: exact
-      expected_output: EXIT_DETECTED
-    error_message: >-
-      The container should exit with code 1 (error). Run
-      `docker run --rm broken-app` and observe the exit code.
-    hints:
-      - "Run with `docker run --rm broken-app`."
-      - "The container exits immediately because the working directory is wrong."
-      - "Check the exit code with `echo $?` after running."
-    solution:
-      command: "docker run --rm broken-app"
+        # 1. Verify build context exclusions
+        if not os.path.isfile(ign):
+            print('Build context ignore file is missing.')
+            sys.exit(0)
+        ign_content = open(ign).read()
+        for required_pattern in ['.env', 'tests', 'node_modules', 'dist']:
+            if required_pattern not in ign_content:
+                print('Build context does not exclude required patterns.')
+                sys.exit(0)
 
-  - id: diagnose-with-logs
-    prompt: >-
-      Run the container again, but this time capture its output using docker
-      logs. The error message should indicate that the file cannot be found in
-      the wrong directory. Identify the specific error.
-    type: terminal_action
-    validation:
-      command: >-
-        docker run -d --name broken-test broken-app 2>/dev/null &&
-        sleep 1 &&
-        docker logs broken-test 2>&1 | grep -qi "no such file\|not found\|error" &&
-        docker rm -f broken-test >/dev/null 2>&1 &&
-        echo LOGS_OK
-      match_type: exact
-      expected_output: LOGS_OK
-    error_message: >-
-      Docker logs should show an error about the file not being found. Run the
-      container and check `docker logs`.
-    hints:
-      - "Run detached with `docker run -d --name broken-test broken-app`."
-      - "Check logs with `docker logs broken-test`."
-      - "The error should mention the file path or directory."
-    solution:
-      command: >-
-        docker run -d --name broken-test broken-app &&
-        sleep 1 &&
-        docker logs broken-test 2>&1 &&
-        docker rm -f broken-test
+        # 2. Verify Dockerfile multi-stage specification
+        if not os.path.isfile(df):
+            print('Dockerfile is missing.')
+            sys.exit(0)
+        df_content = open(df).read()
+        if not re.search(r'FROM\s+node:20-alpine\s+AS\s+builder', df_content, re.I):
+            print('Builder stage is not properly defined.')
+            sys.exit(0)
+        if len(re.findall(r'FROM\s+node:20-alpine', df_content, re.I)) < 2:
+            print('Multi-stage structure is incomplete.')
+            sys.exit(0)
+        if not re.search(r'COPY\s+--from=builder\s+.*dist.*dist', df_content, re.I):
+            print('Compiled artifacts are not extracted from builder stage.')
+            sys.exit(0)
+        if not re.search(r'USER\s+node', df_content, re.I):
+            print('Unprivileged user specification is missing.')
+            sys.exit(0)
+        if not re.search(r'EXPOSE\s+8080', df_content, re.I):
+            print('Port exposure declaration is missing.')
+            sys.exit(0)
+        if not re.search(r'CMD\s*\[.*node.*server\.js.*\]', df_content, re.I):
+            print('Direct node startup command is missing.')
+            sys.exit(0)
 
-  - id: diagnose-with-inspect
-    prompt: >-
-      Use `docker inspect` to examine the container's configuration. Look at the
-      `WorkingDir` field in the container config — it should show `/wrong/path`.
-      This confirms the Dockerfile set the wrong working directory.
-    type: terminal_action
-    validation:
-      command: >-
-        docker inspect broken-app --format '{{.Config.WorkingDir}}' 2>/dev/null |
-        grep -q '/wrong/path' && echo INSPECT_OK
-      match_type: exact
-      expected_output: INSPECT_OK
-    error_message: >-
-      `docker inspect broken-app --format '{{.Config.WorkingDir}}'` should show
-      `/wrong/path`. Run this command to verify.
-    hints:
-      - "Use `docker inspect broken-app --format '{{.Config.WorkingDir}}'` to see the working directory."
-      - "The output should show `/wrong/path`, which is the bug."
-      - "This confirms the Dockerfile set WORKDIR incorrectly."
-    solution:
-      command: "docker inspect broken-app --format '{{.Config.WorkingDir}}'"
+        # 3. Verify production image exists and satisfies size budget
+        r_img = subprocess.run(['docker', 'image', 'inspect', 'inventory-service:prod'], capture_output=True)
+        if r_img.returncode != 0:
+            print('Production image inventory-service:prod was not found.')
+            sys.exit(0)
+        img_data = json.loads(r_img.stdout.decode('utf-8'))
+        if img_data[0].get('Size', 0) > 210000000:
+            print('Production image exceeds the allocated size budget.')
+            sys.exit(0)
 
-  - id: fix-dockerfile
-    prompt: >-
-      Fix the Dockerfile in `~/broken-app` by changing the working directory from
-      `/wrong/path` to `/app`. The application files should be copied to and
-      executed from `/app`.
-    type: terminal_action
-    validation:
-      command: >-
-        grep -q 'WORKDIR /app' ~/broken-app/Dockerfile &&
-        ! grep -q 'WORKDIR /wrong/path' ~/broken-app/Dockerfile && echo FIX_OK
-      match_type: exact
-      expected_output: FIX_OK
-    error_message: >-
-      The Dockerfile should now have `WORKDIR /app` instead of
-      `WORKDIR /wrong/path`. Read it with `cat ~/broken-app/Dockerfile`.
-    hints:
-      - "Edit the Dockerfile to change `WORKDIR /wrong/path` to `WORKDIR /app`."
-      - "The COPY instruction should copy app.py into /app."
-      - "Verify with `cat ~/broken-app/Dockerfile`."
-    solution:
-      command: >-
-        sed -i 's|WORKDIR /wrong/path|WORKDIR /app|g' ~/broken-app/Dockerfile
+        # 4. Verify container deployment & runtime health
+        r_ps = subprocess.run(['docker', 'inspect', '-f', '{{.State.Running}}', 'inventory-api'], capture_output=True, text=True)
+        if r_ps.returncode != 0 or 'true' not in r_ps.stdout.strip().lower():
+            print('Container inventory-api is not running.')
+            sys.exit(0)
 
-  - id: rebuild-and-verify
-    prompt: >-
-      Rebuild the `broken-app` image with the fixed Dockerfile. Then run it and
-      confirm it now prints `app output` and exits successfully (exit code 0).
-    type: terminal_action
-    validation:
-      command: >-
-        docker build -t broken-app ~/broken-app >/dev/null 2>&1 &&
-        docker run --rm broken-app 2>/dev/null | grep -q 'app output' &&
-        echo REBUILD_OK
-      match_type: exact
-      expected_output: REBUILD_OK
-    error_message: >-
-      The rebuilt image should print `app output` when run. Rebuild with
-      `docker build -t broken-app ~/broken-app` and run with
-      `docker run --rm broken-app`.
-    hints:
-      - "Rebuild with `docker build -t broken-app ~/broken-app`."
-      - "Run with `docker run --rm broken-app`."
-      - "The container should print `app output` and exit with code 0."
-    solution:
-      command: >-
-        docker build -t broken-app ~/broken-app &&
-        docker run --rm broken-app
+        try:
+            req = urllib.request.urlopen('http://localhost:8080/health', timeout=5)
+            if req.status != 200:
+                print('Health check returned non-200 status.')
+                sys.exit(0)
+            data = json.loads(req.read().decode('utf-8'))
+            if data.get('status') != 'healthy':
+                print('Service health payload reported unhealthy status.')
+                sys.exit(0)
+        except Exception:
+            print('Health endpoint failed to respond.')
+            sys.exit(0)
 
-  - id: explain-debugging
-    prompt: >-
-      When debugging a container that exits immediately, which combination of
-      commands gives you the most complete picture of what went wrong?
-    type: multiple_choice
-    options:
-      - "docker logs shows stdout/stderr output; docker inspect shows the container configuration including WorkingDir and Entrypoint"
-      - "docker ps shows the exit code; docker images shows the image size"
-      - "docker run -it shows the error; docker rm cleans up the container"
-    validation:
-      expected_answer: "docker logs shows stdout/stderr output; docker inspect shows the container configuration including WorkingDir and Entrypoint"
+        # 5. Verify unprivileged process execution
+        r_user = subprocess.run(['docker', 'exec', 'inventory-api', 'whoami'], capture_output=True, text=True)
+        if r_user.stdout.strip() != 'node':
+            print('Container process is executing with elevated privileges.')
+            sys.exit(0)
+
+        # 6. Verify compiler is stripped
+        r_tsc = subprocess.run(['docker', 'exec', 'inventory-api', 'test', '-f', './node_modules/.bin/tsc'], capture_output=True)
+        if r_tsc.returncode == 0:
+            print('Build-time compiler was detected in the production container.')
+            sys.exit(0)
+
+        # 7. Verify secrets were not leaked into container
+        r_sec = subprocess.run(['docker', 'exec', 'inventory-api', 'test', '-f', '/usr/src/app/.env'], capture_output=True)
+        if r_sec.returncode == 0:
+            print('Sensitive environment files were leaked into the container.')
+            sys.exit(0)
+
+        print('STANDALONE_ASSESSMENT_PASSED')
+        "
+      match_type: exact
+      expected_output: STANDALONE_ASSESSMENT_PASSED
     error_message: >-
-      docker logs captures the application output (including error messages),
-      while docker inspect reveals the container's configuration (like working
-      directory and entrypoint). Together they diagnose most runtime issues.
-    hints:
-      - "Which command shows what the container printed?"
-      - "Which command shows the container's configuration?"
-      - "Logs show output; inspect shows configuration."
-    error_hint: >-
-      docker logs captures the application output (including error messages),
-      while docker inspect reveals the container's configuration (like working
-      directory and entrypoint). Together they diagnose most runtime issues.
+      The inventory-service deployment does not meet the required operational,
+      security, or health specifications.

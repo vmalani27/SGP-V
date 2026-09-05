@@ -29,18 +29,8 @@ tasks:
       match_type: exact
       expected_output: SCRIPT_OK
     error_message: >-
-      ~/greeter/greet.sh should start with #!/bin/sh, print `hello from the
-      image`, and be executable. Check with `cat ~/greeter/greet.sh` and
-      `ls -l ~/greeter/greet.sh`.
-    hints:
-      - "Which command creates a file with content in it? You used it in the last lab."
-      - "A script starts with `#!/bin/sh` on its own line, and `echo` prints text."
-      - "Make it executable with `chmod +x ~/greeter/greet.sh`."
-    solution:
-      command: >-
-        mkdir -p ~/greeter &&
-        printf '#!/bin/sh\necho hello from the image\n' > ~/greeter/greet.sh &&
-        chmod +x ~/greeter/greet.sh
+      The greeting script is missing, has an invalid interpreter or output, or is
+      not executable.
 
   - id: write-dockerfile
     prompt: >-
@@ -61,16 +51,8 @@ tasks:
       match_type: exact
       expected_output: DOCKERFILE_OK
     error_message: >-
-      ~/greeter/Dockerfile should contain FROM, WORKDIR, COPY, RUN, EXPOSE, and
-      CMD. Read it with `cat ~/greeter/Dockerfile`.
-    hints:
-      - "You used FROM, WORKDIR, COPY, and CMD in the last lab. Now add RUN and EXPOSE too."
-      - "`RUN chmod +x greet.sh` runs during the build; `EXPOSE 8080` documents the port; `CMD [\"/app/greet.sh\"]` (or `CMD [\"sh\", \"greet.sh\"]`) runs the script at start."
-      - "All six instructions — FROM, WORKDIR, COPY, RUN, EXPOSE, CMD — should appear once each."
-    solution:
-      command: >-
-        printf 'FROM alpine:latest\n\nWORKDIR /app\n\nCOPY greet.sh .\n\nRUN chmod +x greet.sh\n\nEXPOSE 8080\n\nCMD ["./greet.sh"]\n'
-        > ~/greeter/Dockerfile
+      The Dockerfile is missing or does not define the required build steps,
+      working directory, port metadata, and startup behavior.
 
   - id: build-image
     prompt: >-
@@ -82,14 +64,7 @@ tasks:
       match_type: exact
       expected_output: IMAGE_BUILT
     error_message: >-
-      No image tagged `greeter-app` exists. Build it with
-      `docker build -t greeter-app ~/greeter` and check `docker images`.
-    hints:
-      - "Which command builds an image from a Dockerfile?"
-      - "`docker build -t greeter-app ~/greeter` builds and tags it in one step."
-      - "Verify with `docker images` — greeter-app should be listed."
-    solution:
-      command: "docker build -t greeter-app ~/greeter"
+      The required application image tag is not present in the local Docker image store.
 
   - id: run-image
     prompt: >-
@@ -105,18 +80,9 @@ tasks:
       match_type: exact
       expected_output: RUN_OK
     error_message: >-
-      There is no container named `greeter` created from your `greeter-app`
-      image. This step only counts once you run `docker run --name greeter
-      greeter-app` in your terminal and that container prints `hello from the
-      image` in its logs. Remove a stale `greeter` first with `docker rm -f
-      greeter`, and don't use `--rm` — it deletes the container before it can
-      be checked.
-    hints:
-      - "Which flag gives a container a name? `docker run --name <name> <image>`."
-      - "`docker run --name greeter greeter-app` runs the image, prints the text, and exits — but the container stays around to inspect."
-      - "Confirm with `docker ps -a` (state: `Exited`) and `docker logs greeter`. If nothing prints, the RUN step may not have made the script executable, or CMD may reference the wrong path."
-    solution:
-      command: "docker run --name greeter greeter-app"
+      The expected container is missing, uses a different image, or did not produce
+      the required greeting in its logs. A disposable container cannot be inspected
+      after it exits.
 
   - id: verify-expose
     prompt: >-
@@ -130,14 +96,7 @@ tasks:
       match_type: exact
       expected_output: EXPOSE_OK
     error_message: >-
-      The image does not document port 8080. Check with
-      `docker image inspect greeter-app --format '{{json .Config.ExposedPorts}}'`.
-    hints:
-      - "Which command shows an image's configuration as JSON?"
-      - "`docker image inspect greeter-app --format '{{json .Config.ExposedPorts}}'` shows the documented ports."
-      - "EXPOSE writes the port into the image's config — that is how Docker knows the application's intended port."
-    solution:
-      command: "docker image inspect greeter-app --format '{{json .Config.ExposedPorts}}'"
+      The image configuration does not contain the required documented service port.
 
   - id: when-run
     prompt: >-
@@ -151,9 +110,5 @@ tasks:
     validation:
       expected_answer: "RUN executes while the image is being built; CMD executes when a container starts"
     error_message: >-
-      RUN runs during `docker build` and its effects are saved into the image;
-      CMD runs every time a container starts from the image.
-    hints:
-      - "What does `docker build` do with each instruction?"
-      - "One of these runs the `chmod` at build time. The other runs the script at start time."
-      - "Build-time instructions like RUN change the image; run-time instructions like CMD describe what happens when a container starts."
+      The selected statement reverses or conflates build-time and container-start
+      behavior for the two Dockerfile instructions.

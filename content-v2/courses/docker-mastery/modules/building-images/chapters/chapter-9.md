@@ -109,6 +109,7 @@ Try it — click **Run this next**, review the command, then press Enter:
 :::terminal-demo
 id: building-application-image
 image: labops-docker-build:latest
+port: 3000
 pre_pull:
   - node:20-alpine
 state:

@@ -1,51 +1,80 @@
-# Lab 10: Multi-Stage Builds
-
-## What You're Doing and Why
-
-Pulling existing images only gets you so far. To containerize your own application, you need to write a Dockerfile — a text file that describes how to build your image layer by layer. This is the most important skill in this module. Every application you ever deploy with Docker begins with a Dockerfile.
-
-## Background
-
-A Dockerfile is a sequence of instructions. Each instruction creates a new layer in the image. Docker caches each layer so that if nothing above a layer has changed, Docker reuses the cache and skips the step. This cache behavior is the reason Dockerfile instruction order matters: put the things that change rarely near the top and the things that change frequently near the bottom. Dependency installation changes rarely; application code changes constantly. Install dependencies first, then copy application code.
-
-## Command Reference
-
-### `FROM <image>`
-
-Sets the base image. Every Dockerfile begins with `FROM`.
-
-### `WORKDIR /path`
-
-Sets the working directory for all subsequent instructions.
-
-### `COPY <source> <destination>`
-
-Copies files from the build context into the image.
-
-### `RUN <command>`
-
-Executes a command during the build and commits the result as a new layer.
-
-### `CMD ["executable", "arg"]`
-
-Sets the default command to run when the container starts. Can be overridden at runtime.
-
-### `EXPOSE <port>`
-
-Documents which port the application listens on. Does not actually publish the port.
-
-### `docker build -t <name>:<tag> .`
-
-Builds an image from the Dockerfile in the current directory and tags it with the given name.
+# Lab 10: Multi-Stage Builds Assessment
 
 ## Scenario
 
-A Python Flask application has been provided. It has a `requirements.txt` and a single `app.py`. Write a Dockerfile that installs the dependencies and runs the application. Build the image and run a container from it.
+An Express TypeScript microservice is provisioned in your home directory at `~/order-service`. The repository includes a legacy single-stage Dockerfile (`Dockerfile.single`) that compiles TypeScript in place. This approach creates container bloat and leaves development tooling inside the deployed artifact.
 
-## Objective
+Your objective is to assess and eliminate this bloat by establishing workspace context boundaries, measuring the baseline image footprint, and authoring a hardened, production-grade multi-stage `Dockerfile`.
 
-Write a Dockerfile for the provided Flask application. Build the image. Run a container with the appropriate port mapping. Access the application from your browser.
+---
 
-## Reflection
+## Workspace Structure
 
-Look at the order of your `COPY` and `RUN` instructions. If you copy `requirements.txt` and install dependencies before copying your application code, then Docker will reuse the cached dependency layer every time you rebuild, as long as `requirements.txt` has not changed. Modify `app.py` and rebuild. Observe that the dependency installation is skipped. Now move the `COPY requirements.txt` line below `COPY . .` and rebuild after changing `app.py`. Every rebuild now reinstalls all dependencies. Instruction order has a significant impact on build performance.
+The service is located at `~/order-service`:
+
+```text
+order-service/
+├── .dockerignore
+├── Dockerfile.single       # Baseline single-stage build specification
+├── package.json            # Service manifests & dependencies
+├── tsconfig.json           # TypeScript compilation configuration
+└── src/
+    ├── api/
+    │   └── order-routes.ts # HTTP routing and health endpoints
+    ├── domain/
+    │   └── order-service.ts# Business domain logic
+    └── server.ts           # Service bootstrap
+```
+
+---
+
+## Operational Requirements & Contract
+
+### 1. Workspace Context Boundaries
+- The project dependency tree and package lockfile must be initialized in the local workspace.
+- Build context exclusion rules must prevent local dependency directories (`node_modules`) and compiled output directories (`dist`) from transferring to the Docker daemon during builds.
+
+### 2. Baseline Image
+- The baseline image must be built from `~/order-service/Dockerfile.single` and registered with the tag `order-service:single`.
+
+### 3. Production Multi-Stage Dockerfile Specification
+The primary `Dockerfile` in `~/order-service` must implement a multi-stage architecture fulfilling the following contract:
+
+- **Intermediate Stage (`builder`)**:
+  - Base image: `node:20-alpine` with stage identifier `builder`.
+  - Installs all dependencies declared in the project manifests.
+  - Compiles TypeScript source files from `src/` to `dist/`.
+
+- **Production Runtime Stage**:
+  - Base image: `node:20-alpine`.
+  - Working directory: `/usr/src/app`.
+  - Installs strictly production dependencies (excluding development dependencies).
+  - Purges package manager cache archives to prevent layer inflation.
+  - Extracts only the compiled `dist/` directory from the `builder` stage.
+  - Executes as the unprivileged `node` user.
+  - Documents exposed port `3000`.
+  - Starts the service by executing `dist/server.js` directly with the Node runtime without an intermediary process manager.
+
+### 4. Production Image Build
+- The resulting multi-stage image must be tagged as `order-service:multi`.
+- The final image size must reflect the exclusion of compilers and development dependencies, remaining significantly smaller than the single-stage baseline.
+
+### 5. Runtime Deployment & Security Audit
+- The deployed container must be named `order-api` with host port 3000 mapped to container port 3000.
+- The service must report healthy status with HTTP 200 on endpoint `/api/health`.
+- The running process must execute under unprivileged user identity (`node`).
+- Development tooling, specifically the TypeScript compiler executable (`tsc`), must be completely absent from the container filesystem.
+
+---
+
+## Success Criteria
+
+| Evaluation Check | Acceptance Criteria |
+| :--- | :--- |
+| **Workspace Hygiene** | Lockfile generated; `.dockerignore` excludes `node_modules` and `dist`. |
+| **Baseline Registry** | `order-service:single` image exists in the local daemon. |
+| **Multi-Stage Architecture** | `~/order-service/Dockerfile` defines separate builder and runtime stages. |
+| **Least Privilege & Hygiene** | Production stage drops root permissions (`USER node`) and cleans package caches. |
+| **Image Size Threshold** | `order-service:multi` image size is under 210 MB. |
+| **Runtime Health** | `order-api` container responds with HTTP 200 on `/api/health`. |
+| **Attack Surface Elimination**| `./node_modules/.bin/tsc` does not exist inside the running container. |

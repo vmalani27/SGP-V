@@ -28,17 +28,8 @@ tasks:
       match_type: exact
       expected_output: PROJECT_OK
     error_message: >-
-      ~/cache-demo should contain deps.txt (with `dep=v1`) and app.sh (with
-      `app v1`). Check with `ls ~/cache-demo`.
-    hints:
-      - "Create the directory with `mkdir -p ~/cache-demo`."
-      - "Write each file with `echo '...' > ~/cache-demo/filename`."
-      - "deps.txt holds `dep=v1`; app.sh holds `app v1`."
-    solution:
-      command: >-
-        mkdir -p ~/cache-demo &&
-        echo 'dep=v1' > ~/cache-demo/deps.txt &&
-        echo 'app v1' > ~/cache-demo/app.sh
+      The cache demo project is missing a required dependency or application file,
+      or one of their contents does not match the initial project state.
 
   - id: write-dockerfile
     prompt: >-
@@ -59,17 +50,8 @@ tasks:
       match_type: exact
       expected_output: DOCKERFILE_OK
     error_message: >-
-      ~/cache-demo/Dockerfile should contain FROM, COPY deps.txt, a RUN that
-      copies deps.txt to installed.txt, COPY app.sh, and CMD. Read it with
-      `cat ~/cache-demo/Dockerfile`.
-    hints:
-      - "The RUN step stands in for dependency installation: `RUN cp deps.txt installed.txt`."
-      - "Order matters here: copy deps.txt, RUN to install it, then copy app.sh last."
-      - "Finish with `CMD [\"cat\", \"app.sh\"]`."
-    solution:
-      command: >-
-        printf 'FROM alpine:latest\n\nWORKDIR /app\n\nCOPY deps.txt .\n\nRUN cp deps.txt installed.txt\n\nCOPY app.sh .\n\nCMD ["cat", "app.sh"]\n'
-        > ~/cache-demo/Dockerfile
+      The Dockerfile is missing the dependency layer, source layer, or startup
+      behavior required to demonstrate cache reuse.
 
   - id: build-first
     prompt: >-
@@ -87,15 +69,8 @@ tasks:
       match_type: exact
       expected_output: FIRST_BUILD_OK
     error_message: >-
-      The cache-demo image should print `app v1` and contain
-      /app/installed.txt holding `dep=v1`. Build it and run it with
-      `docker run --rm cache-demo`.
-    hints:
-      - "Build with `docker build -t cache-demo ~/cache-demo`."
-      - "Run with `docker run --rm cache-demo` — the CMD prints app.sh."
-      - "Check installed.txt with `docker run --rm --entrypoint cat cache-demo /app/installed.txt`."
-    solution:
-      command: "docker build -t cache-demo ~/cache-demo"
+      The initial image is missing, does not print the initial application version,
+      or does not contain the dependency artifact from the first build.
 
   - id: modify-source
     prompt: >-
@@ -114,16 +89,8 @@ tasks:
       match_type: exact
       expected_output: SOURCE_EDIT_OK
     error_message: >-
-      The image should print `app v2` while installed.txt still holds `dep=v1`.
-      Rebuild after editing app.sh and run it again.
-    hints:
-      - "Edit app.sh to print `app v2`, then rebuild with `docker build -t cache-demo ~/cache-demo`."
-      - "Watch the build output — the dependency step should be labeled CACHED."
-      - "Because deps.txt did not change, the dependency step was reused, so installed.txt still holds `dep=v1`."
-    solution:
-      command: >-
-        echo 'app v2' > ~/cache-demo/app.sh &&
-        docker build -t cache-demo ~/cache-demo
+      The source-change rebuild did not produce the updated application output while
+      preserving the dependency artifact from the earlier layer.
 
   - id: modify-deps
     prompt: >-
@@ -139,17 +106,8 @@ tasks:
       match_type: exact
       expected_output: DEPS_EDIT_OK
     error_message: >-
-      installed.txt should now hold `dep=v2`. Rebuild after changing deps.txt
-      and check with `docker run --rm --entrypoint cat cache-demo
-      /app/installed.txt`.
-    hints:
-      - "Change deps.txt to `dep=v2`, then rebuild with `docker build -t cache-demo ~/cache-demo`."
-      - "Because deps.txt changed, the COPY deps.txt step changed, which invalidates the RUN step — it runs again."
-      - "The rebuilt image's installed.txt should now hold `dep=v2`."
-    solution:
-      command: >-
-        echo 'dep=v2' > ~/cache-demo/deps.txt &&
-        docker build -t cache-demo ~/cache-demo
+      The dependency-change rebuild did not update the generated dependency artifact,
+      so the dependency layer was not refreshed as required.
 
   - id: why-order
     prompt: >-
@@ -164,14 +122,5 @@ tasks:
     validation:
       expected_answer: "Copy the dependency manifest, install dependencies, then copy the application source"
     error_message: >-
-      Dependencies change rarely and source changes constantly, so the
-      dependency step belongs at the top — then source edits reuse it from
-      cache.
-    hints:
-      - "Which file changes more often: the dependency manifest or your source code?"
-      - "Put rarely-changing instructions at the top so their expensive steps stay cached."
-      - "Manifest first, install second, source last — the dependency-installation pattern you saw in this lab."
-    error_hint: >-
-      Dependencies change rarely and source changes constantly, so the
-      dependency step belongs at the top — then source edits reuse it from
-      cache.
+      The selected order would cause frequent source changes to invalidate the
+      dependency installation layer unnecessarily.

@@ -29,11 +29,8 @@ tasks:
       match_type: exact
       expected_output: PROJECT_OK
     error_message: >-
-      ~/context-demo should contain app.txt (with 'application data') and
-      secret.txt (with 'super secret'). Verify with `ls ~/context-demo`.
-    hints:
-      - "Create the directory with `mkdir -p ~/context-demo`."
-      - "Create files using `echo 'text' > ~/context-demo/<filename>`."
+      The context demo project is missing one or more required files or their
+      contents do not match the project specification.
 
   - id: write-dockerfile
     summary: Define a Dockerfile that ingests the entire build context.
@@ -52,11 +49,8 @@ tasks:
       match_type: exact
       expected_output: DOCKERFILE_OK
     error_message: >-
-      ~/context-demo/Dockerfile must contain FROM, WORKDIR /app, COPY . ., and a
-      CMD listing /app. Check with `cat ~/context-demo/Dockerfile`.
-    hints:
-      - "To copy everything from the build context, use `COPY . .`."
-      - "To list files on startup, use `CMD [\"ls\", \"-1\", \"/app\"]`."
+      The Dockerfile does not define the required base image, working directory,
+      build-context copy behavior, or startup listing.
 
   - id: build-included
     summary: Build and run the image to observe default context ingestion.
@@ -74,8 +68,8 @@ tasks:
       match_type: exact
       expected_output: BOTH_INCLUDED
     error_message: >-
-      The image should contain both app.txt and secret.txt. Build with
-      `docker build -t context-demo ~/context-demo` and test with `docker run --rm context-demo`.
+      The built image is unavailable or does not contain both project files in its
+      runtime listing.
 
   - id: add-dockerignore
     summary: Configure context exclusion rules.
@@ -90,8 +84,7 @@ tasks:
       match_type: exact
       expected_output: IGNORE_OK
     error_message: >-
-      ~/context-demo/.dockerignore should contain a line for secret.txt.
-      Verify with `cat ~/context-demo/.dockerignore`.
+      The build-context ignore rules do not exclude the sensitive project file.
 
   - id: rebuild-and-verify
     summary: Rebuild the image and verify that the excluded file is absent.
@@ -107,11 +100,8 @@ tasks:
       match_type: exact
       expected_output: EXCLUDED_OK
     error_message: >-
-      secret.txt is still inside the image. Rebuild with
-      `docker build -t context-demo ~/context-demo` so .dockerignore takes effect.
-    hints:
-      - "Run `docker build -t context-demo ~/context-demo` to recompile the layers."
-      - "Run `docker run --rm context-demo` to inspect the output."
+      The rebuilt image still contains the file that should have been excluded, or
+      the required application file is no longer present.
 
   - id: outside-context
     summary: Conceptual checkpoint on build context boundaries.
@@ -126,5 +116,5 @@ tasks:
     validation:
       expected_answer: "COPY can only access files within the build context directory passed to docker build"
     error_message: >-
-      The build context acts as a security and isolation boundary. The daemon
-      cannot access filesystem paths outside the context root directory.
+      The selected explanation does not identify the build context as the boundary
+      that controls which host files Docker can access.
