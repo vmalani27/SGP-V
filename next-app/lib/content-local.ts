@@ -51,12 +51,23 @@ export async function getContentVersion(): Promise<ContentVersion | null> {
     try {
       const res = await fetch(`${baseUrl}/api/v1/content/version`, { cache: 'no-store' });
       if (res.ok) {
-        return (await res.json()) as ContentVersion;
+        const data = (await res.json()) as ContentVersion;
+        console.log(`[ContentSync] Successfully fetched version from ${baseUrl}:`, {
+          version: data.version,
+          changesCount: data.changes?.length ?? 0,
+          from_version: data.from_version,
+          updatedAt: data.updatedAt,
+        });
+        if (data.changes && data.changes.length > 0) {
+          console.log('[ContentSync] Raw changes list from backend:', data.changes);
+        }
+        return data;
       }
     } catch {
       // try next candidate URL
     }
   }
+  console.warn('[ContentSync] Failed to fetch content version from all backend candidate URLs:', urls);
   return null;
 }
 
@@ -83,61 +94,50 @@ async function isCurrent(version: string): Promise<boolean> {
   }
 }
 
-async function ensureChangesFile(version: string): Promise<void> {
-  try {
-    const existing = JSON.parse(await fs.readFile(CHANGES_PATH, 'utf8'));
-    if (existing && existing.version === version) return;
-  } catch {
-    // missing or unreadable — rewrite below
-  }
-  await fs.writeFile(
-    CHANGES_PATH,
-    JSON.stringify({ version, from_version: null, changes: [] }, null, 2),
-    'utf8',
-  );
-}
-
 /** Persist the changelog alongside the version marker for the current version. */
 async function writeChanges(info: ContentVersion): Promise<void> {
+  const payload = {
+    version: info.version,
+    from_version: info.from_version ?? null,
+    changes: info.changes ?? [],
+    updatedAt: info.updatedAt ?? new Date().toISOString(),
+  };
   await fs.writeFile(
     CHANGES_PATH,
-    JSON.stringify(
-      {
-        version: info.version,
-        from_version: info.from_version ?? null,
-        changes: info.changes ?? [],
-        updatedAt: info.updatedAt ?? null,
-      },
-      null,
-      2,
-    ),
+    JSON.stringify(payload, null, 2),
     'utf8',
   );
+  console.log('[ContentSync] Persisted changelog to disk at', CHANGES_PATH, payload);
 }
 
 async function doSync(): Promise<void> {
+  console.log('[ContentSync] doSync() initiated...');
   const info = await getContentVersion();
-  if (!info || !info.version || !info.download_url) return; // nothing published yet — keep current
-
-  if (await isCurrent(info.version)) {
-    await ensureChangesFile(info.version); // never wipe badges for the live version
+  if (!info || !info.version || !info.download_url) {
+    console.log('[ContentSync] No published content available from backend version handshake.');
     return;
   }
 
+  // Always keep changes.json synchronized with the active version's changelog metadata
+  await writeChanges(info);
+
+  const current = await isCurrent(info.version);
+  console.log(`[ContentSync] Content version ${info.version} isCurrent=${current}`);
+  if (current) {
+    return;
+  }
+
+  console.log(`[ContentSync] Downloading new content tarball from ${info.download_url}...`);
   const res = await fetch(info.download_url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Failed to download content (${res.status})`);
 
   const buf = Buffer.from(await res.arrayBuffer());
-  // artifact_sha256 covers the raw (uncompressed) tar bytes, which are
-  // deterministic across builds; the gzip stream is not. Decompress first.
   const raw = gunzipSync(buf);
   const digest = createHash('sha256').update(raw).digest('hex').slice(0, 16);
   if (info.artifact_sha256 && digest !== info.artifact_sha256) {
     throw new Error(`Content checksum mismatch: got ${digest}, expected ${info.artifact_sha256}`);
   }
 
-  // Extract into a temp sibling dir, then atomically swap into place so a
-  // failure mid-download never leaves a partially-updated content tree.
   await fs.rm(TMP_DIR, { recursive: true, force: true });
   const tmpData = path.join(TMP_DIR, 'data');
   await fs.mkdir(tmpData, { recursive: true });
@@ -148,7 +148,7 @@ async function doSync(): Promise<void> {
   await fs.rm(DATA_DIR, { recursive: true, force: true });
   await fs.rename(tmpData, DATA_DIR);
   await fs.writeFile(MARKER_PATH, info.version);
-  await writeChanges(info);
+  console.log(`[ContentSync] Content sync complete! Extracted version ${info.version} into ${DATA_DIR}`);
   await fs.rm(TMP_DIR, { recursive: true, force: true });
 }
 
@@ -262,7 +262,7 @@ export async function readLabConfig(courseId: string, labId: string): Promise<Re
 // Firestore), the backend exposes it in /content/version, and this maps raw
 // content paths onto the chapter/lab items of one course.
 
-const ITEM_PATH_RE = /^courses\/([^/]+)\/modules\/[^/]+\/(?:chapters\/([^/]+)\.md|labs\/([^/]+)\/)/;
+const ITEM_PATH_RE = /^courses\/([^/]+)\/modules\/[^/]+\/(?:chapters\/([^/]+)\.md|labs\/([^/]+)(?:\/|$))/;
 
 /**
  * Return new/updated chapter+lab item ids for a course, from the changelog
@@ -272,41 +272,66 @@ const ITEM_PATH_RE = /^courses\/([^/]+)\/modules\/[^/]+\/(?:chapters\/([^/]+)\.m
 export async function getCourseChanges(courseId: string): Promise<CourseChanges> {
   try {
     await ensureContent();
-  } catch {
-    return {};
-  }
-
-  let raw: string | null = null;
-  try {
-    raw = await fs.readFile(CHANGES_PATH, 'utf8');
-  } catch {
-    return {};
+  } catch (err) {
+    console.warn('[getCourseChanges] ensureContent() threw an error:', err);
   }
 
   let parsed: { changes?: ContentChange[]; updatedAt?: string | null } | null = null;
   try {
+    const raw = await fs.readFile(CHANGES_PATH, 'utf8');
     parsed = JSON.parse(raw);
-  } catch {
+    console.log(`[getCourseChanges] Read ${CHANGES_PATH}:`, {
+      changesCount: parsed?.changes?.length ?? 0,
+      updatedAt: parsed?.updatedAt,
+    });
+  } catch (err) {
+    console.log(`[getCourseChanges] Could not read ${CHANGES_PATH}, attempting direct getContentVersion() fallback...`);
+    try {
+      const info = await getContentVersion();
+      if (info) {
+        parsed = { changes: info.changes, updatedAt: info.updatedAt };
+        console.log('[getCourseChanges] Handshake fallback returned:', {
+          changesCount: parsed?.changes?.length ?? 0,
+          updatedAt: parsed?.updatedAt,
+        });
+      }
+    } catch (fallbackErr) {
+      console.warn('[getCourseChanges] Fallback to getContentVersion() failed:', fallbackErr);
+    }
+  }
+
+  if (!Array.isArray(parsed?.changes) || parsed.changes.length === 0) {
+    console.log(`[getCourseChanges] No changes array found for course ${courseId}. Returning empty badge map.`);
     return {};
   }
-  if (!Array.isArray(parsed?.changes)) return {};
 
-  // Badges are temporary: a changelog without a usable publish timestamp, or
-  // one older than the TTL, renders nothing regardless of what changed.
-  if (typeof parsed.updatedAt !== 'string') return {};
-  const releasedAt = new Date(parsed.updatedAt).getTime();
-  if (!Number.isFinite(releasedAt) || Date.now() - releasedAt > BADGE_TTL_MS) return {};
+  // Badges are temporary: if an explicit publish timestamp is provided and older
+  // than the TTL, render nothing. If missing or invalid, treat as fresh within TTL.
+  if (typeof parsed.updatedAt === 'string') {
+    const releasedAt = new Date(parsed.updatedAt).getTime();
+    if (Number.isFinite(releasedAt) && Date.now() - releasedAt > BADGE_TTL_MS) {
+      console.log(`[getCourseChanges] Changelog expired for course ${courseId} (releasedAt=${parsed.updatedAt}, TTL=${BADGE_TTL_MS}ms). Returning empty badge map.`);
+      return {};
+    }
+  }
 
   const map: CourseChanges = {};
   for (const c of parsed.changes) {
     if (!c || typeof c !== 'object') continue;
     if (c.change === 'removed') continue; // deletions leave the TOC anyway
     const m = ITEM_PATH_RE.exec(c.path ?? '');
-    if (!m) continue;
-    if (m[1] !== courseId) continue;
+    if (!m) {
+      console.log(`[getCourseChanges] Path did not match ITEM_PATH_RE: "${c.path}"`);
+      continue;
+    }
+    if (m[1] !== courseId) {
+      continue; // Change belongs to a different course
+    }
     const id = m[2] ?? m[3];
     if (!id) continue;
     map[id] = { kind: m[2] ? 'chapter' : 'lab', change: c.change };
+    console.log(`[getCourseChanges] Added badge for [${courseId}] -> item "${id}" (${m[2] ? 'chapter' : 'lab'}): ${c.change}`);
   }
+  console.log(`[getCourseChanges] Final badge map for course [${courseId}]:`, map);
   return map;
 }

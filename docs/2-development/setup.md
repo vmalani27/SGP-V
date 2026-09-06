@@ -11,14 +11,13 @@ Compose stack, and the Vagrant orchestrator VM.
 | # | Requirement | Notes |
 |---|-------------|-------|
 | 1 | [Docker Engine](https://docs.docker.com/get-docker/) + Docker Compose v2 | `docker compose` (not `docker-compose`) |
-| 2 | [Vagrant](https://developer.hashicorp.com/vagrant) + VirtualBox (or your provider) | Runs the orchestrator VM (Docker + Sysbox); the orchestrator runs there as a systemd service, not a container |
+| 2 | Orchestrator Runtime | **Option A (Linux / WSL2)**: Native Sysbox CE 0.7.0 (`"time-namespaces": false`)<br/>**Option B (Docker Desktop)**: `CONTAINER_RUNTIME_MODE=privileged`<br/>**Option C (Universal Fallback)**: [Vagrant](https://developer.hashicorp.com/vagrant) + VirtualBox/VMware (`vagrant up`) |
 | 3 | AWS CLI | For publishing content to Floci (`aws`) |
 | 4 | Python 3 + `pyyaml` | For the content validation/publish scripts |
 | 5 | A **Firebase project** with Auth + Firestore enabled | Service-account JSON + Web API key (see §2) |
 | 6 | **AWS IAM credentials** (dev/beta stacks) | Required by `docker-compose.dev.yml` / `docker-compose.beta.yml` to generate S3 presigned download URLs (see §3). The local Floci stack needs only dummy creds. |
 
-> **Sysbox** is required only inside the orchestrator VM (auto-provisioned by
-> `vagrant up`), not on the host. See `orchestrator/README.md`.
+> **Sysbox Runtime**: Can run natively on Linux or inside Windows **WSL2** (Ubuntu 22.04 LTS, kernel $\ge$ 5.12). Vagrant VM is maintained as the ultimate fallback. See `README.md`.
 
 ---
 

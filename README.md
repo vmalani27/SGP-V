@@ -1,7 +1,15 @@
 # LabOps — DevOps Learning Platform
 
-A KodeKloud-style platform for learning Git and Docker through hands-on
-interactive labs with real terminal environments.
+## Features
+
+LabOps is a local-first, open-source KodeKloud alternative: hands-on DevOps and container sandboxes running right on your laptop with zero cloud bills.
+
+- **Authentic terminal, right in your browser** — LabOps drops you straight into a real Linux command line. You get hands-on experience with production tools without dealing with broken local dependencies or manual installs.
+- **Safe, breakable playgrounds** — You get full root access to experiment, run services, and test risky commands. LabOps keeps everything walled off, so there is zero chance of messing up your personal laptop.
+- **Instant, step-by-step grading** — You never have to guess if you got a task right. LabOps checks your actual files and system settings in the background, giving you a green checkmark when it works or clear hints when something is missing.
+- **Try commands as you read** — No more switching between documentation tabs and separate terminal windows. LabOps embeds interactive mini-terminals directly into the text so you can test concepts the second you read about them.
+- **Zero waiting around** — LabOps boots lightweight practice environments in just a few seconds. You spend your time learning and building, not waiting on slow setup scripts or heavy virtual machines.
+- **Clear, structured learning path** — You always know what to learn next. LabOps breaks down intimidating DevOps topics into manageable, hands-on tasks that track your progress from your first command to advanced architectures.
 
 ## Architecture
 
@@ -125,17 +133,80 @@ sequenceDiagram
 CI/scripts. The worker seeds Firestore metadata; the frontend downloads the bytes
 and serves them locally. The backend never touches course files.
 
-## Highlights
+### Container Runtime Modes & Host Security Boundaries
 
-- **Version handshake** — `GET /api/v1/content/version` → `{version, download_url, artifact_sha256}`
-- **Client-driven labs** — the frontend supplies the env config and task specs in
-  request bodies; validation runs server-side (exec in the container), so answers
-  never reach the browser
-- **Task validation** — answer-based (`multiple_choice`) vs state-based
-  (`terminal_action`/`port_check`/`file_check`, exit-code preferred over output match)
-- **Session recovery** — containers carry `com.labops.*` labels; `start` re-attaches
-  instead of duplicating after a restart
-- **Guided in-chapter demos** — `:::terminal-demo` blocks → demo container + terminal
+The orchestrator dynamically manages lab containers using two runtime modes controlled by the `CONTAINER_RUNTIME_MODE` environment variable:
+
+| Mode | Runtime Engine | Docker Flag | Intended Host Platform | Security Isolation Mechanism |
+|------|---------------|-------------|------------------------|------------------------------|
+| **`sysbox`** *(default / recommended)* | `sysbox-runc` | `privileged: false` | Ubuntu Host (bare-metal, cloud VM, WSL2, Vagrant VM) | Linux User Namespaces (`userns`), cgroups, `/proc` & `/sys` virtualization |
+| **`privileged`** *(fallback)* | standard `runc` | `privileged: true` | Windows / macOS via Docker Desktop | WSL2 / Hyper-V utility VM isolation boundary |
+
+#### Runtime Architecture & Fallback Hierarchy:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  Tier 1: Native Linux (Ubuntu 22.04 / Debian)                          │
+│  ➜ Production Target: Direct Sysbox CE + rootless userns isolation    │
+├────────────────────────────────────────────────────────────────────────┤
+│  Tier 2: Windows + WSL2 (Ubuntu 22.04, WSL2 Kernel ≥ 5.12)             │
+│  ➜ Development / Testing: Native Sysbox with daemon.json adjustment   │
+│  ➜ Fast, direct, zero Vagrant VM overhead                              │
+├────────────────────────────────────────────────────────────────────────┤
+│  Tier 3: Docker Desktop Dev Mode                                       │
+│  ➜ Local Dev: CONTAINER_RUNTIME_MODE=privileged (WSL2 hypervisor safe) │
+├────────────────────────────────────────────────────────────────────────┤
+│  Tier 4: Vagrant VM Fallback (VirtualBox / VMware / Hyper-V)           │
+│  ➜ Universal Fallback: Completely isolated guest VM environment        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Critical Host Security Principles:
+- **Ubuntu / Linux Hosts — NEVER use `privileged` mode**:
+  On a native Ubuntu or Linux host system (including the Vagrant Ubuntu VM guest), running containers in `privileged` mode disables user namespace isolation and grants the container root-equivalent access to host devices (`/dev`), kernel parameters, and the host filesystem. A student executing `docker run` or malicious scripts could easily escape to compromise the host. For Linux/Ubuntu, the orchestrator **must strictly use `sysbox` mode** (`sysbox-runc`), which enables rootless system containers with isolated daemons and systemd without root privilege on the host.
+- **Docker Desktop on Windows — Safe in `privileged` mode (WSL2 Security Boundary)**:
+  Running `CONTAINER_RUNTIME_MODE=privileged` on Windows Docker Desktop is safe because Docker Desktop executes inside a dedicated utility VM. The **WSL2 virtual machine itself acts as the hardware virtualization security boundary**, isolating container processes from the underlying Windows host operating system.
+
+---
+
+> ### 💡 Fun Fact & Discovery: Native Sysbox on Windows (WSL2 without Vagrant!)
+>
+> It was historically assumed that Windows developers could *only* run Sysbox by provisioning a heavyweight Vagrant / VirtualBox / VMware VM. 
+> 
+> **We validated that Windows + WSL2 (Ubuntu 22.04 LTS, Kernel $\ge$ 5.12) can run Sysbox CE natively without Vagrant.**
+>
+> #### Validated WSL2 Compatibility Matrix:
+> | Component | Validated Version / Configuration |
+> |---|---|
+> | **Host OS** | Windows 10/11 + WSL2 |
+> | **Linux Distro** | Ubuntu 22.04.5 LTS (Jammy) |
+> | **WSL2 Kernel** | `6.6.87.2-microsoft-standard-WSL2` (or any kernel $\ge$ 5.12 with ID-mapped mounts) |
+> | **Docker Engine & CLI** | `29.6.1` (or compatible Docker CE) |
+> | **Sysbox CE** | `0.7.0` (`sysbox-runc`) |
+> | **Sysbox Runtime Selection** | `--runtime=sysbox-runc` |
+>
+> #### The Critical Compatibility Fix (`/etc/docker/daemon.json`):
+> Recent Docker versions automatically request the Linux **Time Namespace** (`CLONE_NEWTIME`), which causes Sysbox 0.7.0 to fail with `namespace {"time" ""} does not exist`. 
+> 
+> By setting `"time-namespaces": false` in `/etc/docker/daemon.json` inside your WSL2 distro, Sysbox runs smoothly:
+>
+> ```json
+> {
+>   "features": {
+>     "cdi": false,
+>     "time-namespaces": false
+>   },
+>   "runtimes": {
+>     "sysbox-runc": {
+>       "path": "/usr/bin/sysbox-runc"
+>     }
+>   }
+> }
+> ```
+>
+> With this simple adjustment, Windows developers can test real nested Docker and systemd labs with native Linux performance inside WSL2 — leaving Vagrant as the furthest fallback if everything else fails!
+
+---
 
 ## Setup (new developer)
 
@@ -180,24 +251,24 @@ The repository is structured with clear separation between local dev and remote 
 | Manual end-to-end test suite | [`docs/2-development/TESTING.md`](docs/2-development/TESTING.md) |
 | Postman API suite | [`postman/README.md`](postman/README.md) |
 
-## Current Status
+## Current Status & Progress
 
-**Working** — client content bootstrap (handshake → download → sha256 verify →
-local extract → serve); Firestore-seeded catalog/TOC; enrollment + progress
-(chapters, `labsProgress`); frontend ↔ orchestrator direct (lab lifecycle,
-validation `exec`, tmux WebSocket terminal) with the backend fully decoupled
-(metadata/progress/version handshake only); label-based session recovery +
-restart-safe containers; guided chapter demos; worker full-reconcile sync. Live
-content: `d139fdc9a662520e`.
+**Working**
+- **Dual Orchestrator Runtime Modes**: `sysbox` mode (`sysbox-runc`, unprivileged) for secure isolation on Ubuntu/Linux/Vagrant, and `privileged` mode fallback for Docker Desktop on Windows/macOS where the WSL2 utility VM provides the virtualization security boundary.
+- **Client Content Bootstrap**: Presigned S3 private download handshake (`GET /api/v1/content/version`), sha256 checksum verification, and local tarball extraction with zero backend content coupling.
+- **Cloud Backend & Serverless Worker**: Decoupled FastAPI metadata API backed by Firestore, and webhook-driven AWS Lambda worker (`worker/lambda_function.py`) for automatic Firestore metadata reconciliation.
+- **Multi-Environment Infrastructure**: Full separation across `local` (Floci emulation), `dev`, and `beta` environments with automated GitHub Actions CI/CD (`build-images.yml`, `publish-content-dev.yml`, `publish-content-beta.yml`) publishing to AWS S3 and GHCR.
+- **LabOps CLI Distribution**: Standalone Go CLI tool (`cli/`) with pre-compiled binaries for Windows (`labops.exe`), Linux, and macOS (`doctor`, `setup`, `start`, `stop`, `logs`).
+- **Container Lifecycle & In-Chapter Demos**: Label-based container session recovery (`com.labops.*`), real-time state validation (exit code, port, file check), and interactive chapter demo sandboxes (`labops-docker-fundamentals`, `labops-docker-build`).
+- **Course Content Progress**:
+  - *Docker Mastery*: Labs 1–13 fully implemented with active validation tasks (covering Docker Fundamentals, Building Images, and Container Networking modules).
+  - *Git Fundamentals*: Complete course structure and curriculum index established; Lab 1 active with multi-task validation.
 
-**Remaining / open**
-- 16/20 labs are skeleton stubs (tasks for labs 4–10 of both courses)
-- **Commit `scripts/generate_manifest.py`'s raw-tar hash fix + the cp-based
-  workflow** — CI still produces checksum-mismatched artifacts until pushed
-  (see `docs/2-development/bugs.md`)
-- Course immutability enforcement (`structuralHash`) · webhook-triggered sync
-  (Item D, designed) · content-integrity sync + new-content badges · group-
-  membership false-negative bug · automated test harness
+**Remaining / Open**
+- Complete validation tasks for Docker Mastery (Labs 14–15: Persistent Storage) and Git Fundamentals (Labs 2–10).
+- Replace dev-only static orchestrator shared secret with short-lived session tokens issued by the backend on lab start.
+- Course content immutability enforcement (`structuralHash` verification).
+- Automated end-to-end integration test harness across the multi-environment matrix.
 - Backlog: [`docs/2-development/deferred-improvements.md`](docs/2-development/deferred-improvements.md)
 
 ## Docs

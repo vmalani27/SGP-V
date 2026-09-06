@@ -6,41 +6,53 @@ import (
 	"os/exec"
 )
 
-// RunLogs pulls and displays logs from the VM services.
+// RunLogs pulls and displays logs from Docker Compose or Vagrant VM services.
 func RunLogs() bool {
 	fmt.Println("Fetching LabOps Environment Logs...")
 	fmt.Println("==================================================")
+	foundLogs := false
 
-	dir, err := FindVagrantfileDir()
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
+	// 1. Check Docker Compose
+	composeDir, composeFile, err := FindComposeFile()
+	if err == nil {
+		fmt.Printf("Docker Compose Logs (%s):\n", composeFile)
+		fmt.Println("--------------------------------------------------")
+		if IsDockerDaemonRunning() {
+			cmd := exec.Command("docker", "compose", "-f", composeFile, "logs", "--tail", "40")
+			cmd.Dir = composeDir
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err == nil {
+				foundLogs = true
+			}
+		} else if wslReady, distro := CheckWSLDockerReady(); wslReady {
+			wslDir := ToWSLPath(composeDir)
+			cmd := exec.Command("wsl.exe", "-d", distro, "sh", "-c", fmt.Sprintf("cd '%s' && docker compose -f '%s' logs --tail 40", wslDir, composeFile))
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err == nil {
+				foundLogs = true
+			}
+		}
 	}
 
-	// 1. Fetch Orchestrator Logs
-	fmt.Println("\n1. Orchestrator Service Logs (systemd):")
-	fmt.Println("--------------------------------------------------")
-	orcCmd := exec.Command("vagrant", "ssh", "-c", "sudo journalctl -u labops-orchestrator -n 40 --no-pager")
-	orcCmd.Dir = dir
-	orcCmd.Stdout = os.Stdout
-	orcCmd.Stderr = os.Stderr
-	
-	if err := orcCmd.Run(); err != nil {
-		fmt.Printf("Warning: Could not fetch orchestrator logs (is the VM running?): %v\n", err)
+	// 2. Check Vagrant VM
+	vDir, err := FindVagrantfileDir()
+	if err == nil {
+		fmt.Println("\nVagrant VM Orchestrator Service Logs (systemd):")
+		fmt.Println("--------------------------------------------------")
+		orcCmd := exec.Command("vagrant", "ssh", "-c", "sudo journalctl -u labops-orchestrator -n 40 --no-pager")
+		orcCmd.Dir = vDir
+		orcCmd.Stdout = os.Stdout
+		orcCmd.Stderr = os.Stderr
+		if err := orcCmd.Run(); err == nil {
+			foundLogs = true
+		}
 	}
 
-	// 2. Fetch Frontend Container Logs
-	fmt.Println("\n2. Frontend Container Logs (docker):")
-	fmt.Println("--------------------------------------------------")
-	feCmd := exec.Command("vagrant", "ssh", "-c", "sudo docker logs --tail 40 labops-frontend")
-	feCmd.Dir = dir
-	feCmd.Stdout = os.Stdout
-	feCmd.Stderr = os.Stderr
-	
-	if err := feCmd.Run(); err != nil {
-		fmt.Printf("Warning: Could not fetch frontend container logs (is the VM/container running?): %v\n", err)
+	if !foundLogs {
+		fmt.Println("No active LabOps logs were found.")
 	}
-
 	fmt.Println("==================================================")
 	return true
 }

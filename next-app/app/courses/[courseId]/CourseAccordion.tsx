@@ -115,6 +115,14 @@ export default function CourseAccordion({
     .filter((c): c is ItemChange => Boolean(c));
   const changedCount = moduleChanges.length;
   const newCount = moduleChanges.filter((c) => c.change === 'new').length;
+  if (changedCount > 0) {
+    console.log(`[CourseAccordion] Module "${module.id}" has ${changedCount} badge item(s):`, {
+      moduleTitle: module.title,
+      moduleChanges,
+      itemIds: items.map((i) => i.id),
+      changesMap: changes,
+    });
+  }
   const completedCount = items.filter((item) =>
     item.type === 'lab'
       ? completedLabIds.includes(item.id)

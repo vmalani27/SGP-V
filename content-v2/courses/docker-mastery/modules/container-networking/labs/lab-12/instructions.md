@@ -1,39 +1,69 @@
-# Lab 12: Container Networking
-
-## What You're Doing and Why
-
-In production, applications rarely run as a single container. A web application talks to a database. A backend talks to a cache. Containers that need to communicate with each other must be connected to the same network. This lab teaches you how Docker networking works and how to connect containers so they can find each other by name.
-
-## Background
-
-Docker creates a default bridge network for all containers. Containers on the default bridge can communicate by IP address but not by name. When you create a user-defined bridge network, Docker provides automatic DNS resolution so containers can reach each other using their container name as a hostname. This is the correct approach for any multi-container setup.
-
-## Command Reference
-
-### `docker network create <name>`
-
-Creates a new user-defined bridge network.
-
-### `docker network ls`
-
-Lists all Docker networks.
-
-### `docker run --network <name> --name <alias> <image>`
-
-Starts a container connected to the specified network with the given name, which will also serve as its DNS hostname.
-
-### `docker network inspect <name>`
-
-Shows which containers are connected to a network and their assigned IP addresses.
+# Lab 12: Network Segmentation & Perimeter Security Assessment
 
 ## Scenario
 
-Run a Flask application and a Redis container on the same user-defined network. The Flask application reads and writes a counter to Redis. Verify that the application can reach Redis using its container name as the hostname.
+You are tasked with designing the container network architecture for a multi-tier microservice stack. The security policy mandates perimeter network isolation: external web traffic must never have direct packet-level access to the internal data persistence layer.
 
-## Objective
+Your assignment is to provision isolated network tiers, position services strictly according to security boundaries, deploy a dual-homed application gateway to bridge tiers, and prove that perimeter isolation prevents unauthorized lateral network access.
 
-Create a network, start two containers on it, and confirm that one container can reach the other by name. Access the Flask application from your browser and verify it increments the counter.
+This is an independent assessment. You are given operational constraints and acceptance criteria; you must determine the appropriate Docker commands and configurations to achieve the desired state.
 
-## Reflection
+---
 
-Open a shell inside the Flask container and run `ping redis`. Because both containers are on the same user-defined network, Redis resolves by name. Now remove the Flask container from the network using `docker network disconnect` and try again. Observe that name resolution fails immediately.
+## Target Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ dmz-net (Ingress Tier)                                      │
+│   [ web-proxy (nginx) ] ──────► [ app-gateway ]             │
+└────────────────────────────────────┬────────────────────────┘
+                                     │  Connected to BOTH tiers
+┌────────────────────────────────────┴────────────────────────┐
+│ data-net (Persistence Tier)                                 │
+│   [ app-gateway ] ────────────► [ cache-db (redis) ]        │
+└─────────────────────────────────────────────────────────────┘
+(web-proxy must NOT be able to resolve or communicate with cache-db)
+```
+
+---
+
+## Operational Specifications & Contract
+
+### 1. Network Tier Provisioning
+- Create two user-defined bridge networks:
+  - `dmz-net`: Reserved for public ingress and gateway routing.
+  - `data-net`: Reserved for internal data storage and caching.
+- Both networks must use the standard `bridge` driver.
+
+### 2. Perimeter Service Deployment
+- **Web Proxy (`web-proxy`)**:
+  - Image: `nginx:alpine`.
+  - Network: Connected strictly to `dmz-net`.
+  - Port Publishing: Map host port 8080 to container port 80.
+- **Cache Store (`cache-db`)**:
+  - Image: `redis:alpine`.
+  - Network: Connected strictly to `data-net`.
+  - Port Publishing: Must **not** publish any host ports.
+
+### 3. Dual-Homed Application Gateway
+- **Application Gateway (`app-gateway`)**:
+  - Image: `alpine:latest`.
+  - Configuration: Must remain actively running in the background.
+  - Network Attachment: Must be simultaneously attached to both `dmz-net` and `data-net`.
+
+### 4. Network Isolation & Service Discovery Contract
+- `app-gateway` must be capable of resolving and communicating with `cache-db` on port 6379 and `web-proxy` on port 80 using standard service discovery.
+- `web-proxy` must be strictly isolated from `data-net`. Any attempt from `web-proxy` to resolve or transmit packets to `cache-db` must fail.
+
+---
+
+## Acceptance Criteria
+
+| Contract Requirement | Verification Check |
+| :--- | :--- |
+| **Network Tiers** | `dmz-net` and `data-net` exist as user-defined bridge networks. |
+| **Proxy Deployment** | `web-proxy` runs exclusively on `dmz-net` with port 8080 mapped to port 80. |
+| **Cache Deployment** | `cache-db` runs exclusively on `data-net` with 0 host ports exposed. |
+| **Dual-Homed Gateway** | `app-gateway` is actively running and connected to both `dmz-net` and `data-net`. |
+| **Inter-Service Routing** | `app-gateway` reaches `cache-db:6379` and `web-proxy:80`. |
+| **Perimeter Defense** | `web-proxy` cannot resolve or reach `cache-db`. |

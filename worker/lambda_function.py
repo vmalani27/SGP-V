@@ -16,6 +16,7 @@ logger.setLevel(logging.INFO)
 
 
 BUCKET_TO_ENV = {
+    "my-content-bucket": "DEV",
     "content-dev-586177432842-ap-south-1-an": "DEV",
     "content-beta-586177432842-ap-south-1-an": "BETA",
     "content-prod-586177432842-ap-south-1-an": "PROD",
@@ -28,11 +29,11 @@ def get_firestore_client(env: str):
         return db_clients[env]
 
     env_var = f"FIREBASE_CREDS_JSON_{env}"
-    creds_json = os.environ.get(env_var)
+    creds_json = os.environ.get(env_var) or os.environ.get("FIREBASE_CREDENTIALS_JSON")
 
     if not creds_json:
         raise ValueError(
-            f"Missing Lambda environment variable: {env_var}"
+            f"Missing Lambda environment variable: {env_var} or FIREBASE_CREDENTIALS_JSON"
         )
 
     creds_dict = json.loads(creds_json)
@@ -93,6 +94,20 @@ def lambda_handler(event, context):
     logger.info("Downloading content tarball: %s", tar_key)
     tar_obj = s3.get_object(Bucket=bucket, Key=tar_key)
     tar_bytes = tar_obj["Body"].read()
+
+    # Fetch manifest.json for version change detection
+    manifest_key = f"published/{version}/manifest.json"
+    logger.info("Fetching manifest: %s", manifest_key)
+    manifest = get_s3_json(s3, bucket, manifest_key)
+    new_files = manifest.get("files", [])
+
+    db = get_firestore_client(env=env)
+
+    # Import domain logic from seeder.py
+    from seeder import record_content_changes, sync_courses
+
+    # Record diffs in content_changes collection before updating course docs
+    record_content_changes(db, s3, bucket, version, new_files)
     
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -101,12 +116,12 @@ def lambda_handler(event, context):
             tar.extractall(path=tmp_path, filter='data')
             
         logger.info("Extracted content to %s. Syncing courses...", tmp_path)
-        
-        # Import the domain logic from seeder.py
-        from seeder import sync_courses
-        
-        db = get_firestore_client(env=env)
-        result = sync_courses(db, content_dir=tmp_path, content_version=version)
+        result = sync_courses(
+            db,
+            content_dir=tmp_path,
+            content_version=version,
+            artifact_sha256=latest.get("artifact_sha256"),
+        )
         
         logger.info("Sync complete. Result: %s", result)
 

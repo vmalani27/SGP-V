@@ -5,13 +5,16 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
-import { api, type CourseMeta } from '@/lib/api';
+import { api, getBaseUrl, getOrchestratorUrl, type CourseMeta } from '@/lib/api';
+
+type RuntimeStatus = 'checking' | 'ready' | 'degraded';
 
 export default function DashboardPage() {
   const { user, isAuthenticated, loading, logout, enrolledCourses, enrollments, refreshEnrollments } = useAuth();
   const router = useRouter();
   const [courses, setCourses] = useState<CourseMeta[]>([]);
   const [fetching, setFetching] = useState(true);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>('checking');
 
   useEffect(() => {
     if (loading) return;
@@ -26,6 +29,15 @@ export default function DashboardPage() {
       })
       .catch((err) => console.error('[Dashboard] Fetch failed:', err))
       .finally(() => setFetching(false));
+
+    Promise.all([
+      fetch(`${getOrchestratorUrl()}/health`, { cache: 'no-store' }),
+      fetch(`${getBaseUrl()}/healthz`, { cache: 'no-store' }),
+    ])
+      .then((responses) => {
+        setRuntimeStatus(responses.every((response) => response.ok) ? 'ready' : 'degraded');
+      })
+      .catch(() => setRuntimeStatus('degraded'));
   }, [isAuthenticated, loading, router]);
 
   const handleEnroll = async (courseId: string) => {
@@ -64,12 +76,17 @@ export default function DashboardPage() {
       <Navbar />
 
       <div className="mx-auto max-w-5xl px-6 py-10 pt-20">
-        <h1 className="hero-font text-2xl font-bold tracking-tight text-text md:text-3xl">
-          Welcome back, {user?.displayName?.replace(/\b\w/g, c => c.toUpperCase()) || 'Developer'}
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          {enrolledList.length > 0 ? 'Pick up where you left off.' : 'Enroll in a course to get started.'}
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="hero-font text-2xl font-bold tracking-tight text-text md:text-3xl">
+              Welcome back, {user?.displayName?.replace(/\b\w/g, c => c.toUpperCase()) || 'Developer'}
+            </h1>
+            <p className="mt-1 text-sm text-muted">
+              {enrolledList.length > 0 ? 'Pick up where you left off.' : 'Enroll in a course to get started.'}
+            </p>
+          </div>
+          <RuntimeHealth status={runtimeStatus} />
+        </div>
 
         {enrolledList.length > 0 && (
           <section className="mt-12">
@@ -149,6 +166,25 @@ export default function DashboardPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function RuntimeHealth({ status }: { status: RuntimeStatus }) {
+  const label = status === 'checking'
+    ? 'Checking local services'
+    : status === 'ready'
+      ? 'Local services ready'
+      : 'Local service unavailable';
+  const color = status === 'ready' ? 'bg-emerald-400' : status === 'degraded' ? 'bg-amber-400' : 'bg-muted';
+
+  return (
+    <div
+      className="flex items-center gap-2 border border-line bg-panel/30 px-3 py-2 font-mono text-[11px] text-muted"
+      title="Backend and orchestrator health"
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${color} ${status === 'checking' ? 'animate-pulse' : ''}`} />
+      <span>{label}</span>
+    </div>
   );
 }
 

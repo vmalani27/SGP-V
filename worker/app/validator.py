@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -63,6 +64,27 @@ def _read_yaml(path: Path) -> dict | None:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
     except (yaml.YAMLError, OSError):
         return None
+
+
+def _embedded_python_error(command: object) -> str | None:
+    """Return a diagnostic when a validation command embeds invalid Python."""
+    if not isinstance(command, str) or not re.match(r"^\s*python3\s+-c(?:\s|$)", command):
+        return None
+
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError as exc:
+        return f"Could not parse embedded Python command: {exc}"
+
+    if len(tokens) < 3 or tokens[0] != "python3" or tokens[1] != "-c":
+        return "Embedded Python command must provide a script after python3 -c"
+
+    try:
+        compile(tokens[2], "<validation command>", "exec")
+    except SyntaxError as exc:
+        location = f"line {exc.lineno}" if exc.lineno else "unknown line"
+        return f"Embedded Python validation has invalid syntax at {location}: {exc.msg}"
+    return None
 
 
 def _scan_demo_ids(markdown: str) -> list[str]:
@@ -447,6 +469,9 @@ def validate_lab_yaml(content_dir: Path, course_id: str, module_id: str, lab_id:
         if not isinstance(validation, dict):
             result.add(label, f"{tprefix}.validation", "Missing or invalid 'validation'")
             continue
+        python_error = _embedded_python_error(validation.get("command"))
+        if python_error:
+            result.add(label, f"{tprefix}.validation.command", python_error)
         task_type = task.get("type", "")
         if task_type == "file_check":
             if "path" not in validation:

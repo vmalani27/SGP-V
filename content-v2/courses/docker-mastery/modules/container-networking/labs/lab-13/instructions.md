@@ -1,31 +1,74 @@
-# Lab 13: Composing Multi-Container Apps
-
-## What You're Doing and Why
-
-A compiled application needs a build environment with compilers, headers, and build tools. But none of those tools are needed at runtime. Shipping a production image that includes a full compiler toolchain wastes disk space and increases the attack surface. Multi-stage builds let you use a heavy build environment to compile the application and then copy only the compiled artifacts into a minimal runtime image.
-
-## Background
-
-A multi-stage Dockerfile uses multiple `FROM` instructions, each starting a new stage. You can name stages with `AS` and then reference them in later `COPY` instructions using `--from=stagename`. Docker builds every stage but only includes the final stage in the output image. Intermediate stages are used during the build and then discarded. The result is a production image that contains only what is needed to run the application.
-
-## Command Reference
-
-### `FROM <image> AS builder`
-
-Starts a named build stage. Later stages can copy from this stage using `--from=builder`.
-
-### `COPY --from=builder /path/in/builder /path/in/final`
-
-Copies a file from a previous stage into the current stage.
+# Lab 13: Capstone Assessment — Composing Resilient Multi-Tier Applications
 
 ## Scenario
 
-A Go application has been provided. Write a multi-stage Dockerfile that compiles the application in a `golang` image and copies only the compiled binary into a minimal `alpine` or `scratch` image. Compare the sizes of the single-stage and multi-stage images.
+You are responsible for orchestrating a microservice architecture consisting of a public reverse proxy, an application backend, and an in-memory cache.
 
-## Objective
+Manual container commands have created operational friction and deployment failures due to race conditions during container boot. You must declare the entire multi-tier system as code in a single Compose file, enforce perimeter network segmentation, and guarantee deterministic startup ordering using container health checks.
 
-Build two images: one using a single stage and one using a multi-stage build. Run `docker images` and compare their sizes. Verify that both images run the application correctly.
+This is an independent assessment. You are provided the operational specifications and acceptance criteria; you must author the configuration and execute the deployment without guided instruction.
 
-## Reflection
+---
 
-A single-stage Go image built on `golang:1.21` is typically over 800 megabytes. A multi-stage build that copies only the compiled binary into a `scratch` image is typically under 10 megabytes. That is a reduction of more than 98 percent. In a production environment with hundreds of deployments per day, that difference in image size has a meaningful impact on pull times, registry storage costs, and container startup speed.
+## Target Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ frontend-tier                                               │
+│   [ proxy (nginx) ] ────────► [ api (backend) ]             │
+└──────────────────────────────────────┬──────────────────────┘
+                                       │  Connected to BOTH tiers
+┌──────────────────────────────────────┴──────────────────────┐
+│ backend-tier                                                │
+│   [ api (backend) ] ────────► [ cache (redis: healthy) ]    │
+└─────────────────────────────────────────────────────────────┘
+(proxy must NOT be able to resolve or route packets to cache)
+```
+
+---
+
+## Operational Specifications & Contract
+
+### 1. Workspace & Specification File
+- Implement the deployment specification in `~/order-stack/compose.yaml`.
+
+### 2. Network Tier Definitions
+- Define two user-defined bridge networks:
+  - `frontend-tier`: Public ingress communication between the proxy and API backend.
+  - `backend-tier`: Private internal network for backend data persistence.
+
+### 3. Service Declarations
+
+- **`cache`**:
+  - Image: `redis:alpine`.
+  - Network: Connected strictly to `backend-tier`.
+  - Port Publishing: Must **not** publish any ports to the host machine.
+  - Healthcheck: Must verify Redis service readiness using `redis-cli ping`.
+- **`api`**:
+  - Image: `alpine:latest`.
+  - Networks: Attached to both `frontend-tier` and `backend-tier`.
+  - Process: Must maintain an active process to remain continuously running.
+  - Startup Coordination: Must declare a dependency on `cache` with `condition: service_healthy` to prevent startup before the cache is responsive.
+- **`proxy`**:
+  - Image: `nginx:alpine`.
+  - Network: Connected strictly to `frontend-tier`.
+  - Port Publishing: Map host port `8080` to container port `80`.
+
+### 4. Runtime & Verification Contract
+- The entire stack must be launched and managed in detached mode via Docker Compose.
+- All three services must report `running` status, with `cache` specifically reporting `healthy`.
+- Public HTTP traffic on `http://localhost:8080` must return HTTP 200 from the proxy.
+- Perimeter security must be maintained: attempts by the proxy container to communicate with `cache` must be blocked by network isolation.
+
+---
+
+## Acceptance Criteria
+
+| Contract Requirement | Verification Check |
+| :--- | :--- |
+| **Compose Syntax** | `compose.yaml` validates against the Docker Compose specification. |
+| **Network Segmentation** | Services are placed on `frontend-tier` and `backend-tier` according to least privilege. |
+| **Healthcheck Gating** | `api` startup is conditioned on `cache` achieving `service_healthy`. |
+| **Ingress Publishing** | `proxy` serves traffic on host port 8080; `cache` exposes 0 host ports. |
+| **Stack Health** | All containers run in detached mode with healthy status. |
+| **Perimeter Isolation** | Network isolation prevents `proxy` from reaching `cache`. |

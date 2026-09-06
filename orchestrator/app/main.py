@@ -157,7 +157,13 @@ app = FastAPI(title="SGP Orchestrator", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -166,7 +172,7 @@ app.add_middleware(
 from app.utils.auth import verify_orchestrator_secret
 
 app.include_router(health_router)
-app.include_router(labs_router, dependencies=[Depends(verify_orchestrator_secret)])
+app.include_router(labs_router)
 app.include_router(demos_router)
 app.include_router(schemas_router, dependencies=[Depends(verify_orchestrator_secret)])
 app.include_router(terminal_router)

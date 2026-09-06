@@ -4,13 +4,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import LAB_PREFIX, LABEL_LAB_ID, LABEL_USER_ID, LABEL_COURSE_ID
 from app.models.session import LabSession, LabStatus, parse_created_at
 from app.services.docker_service import DockerService, get_docker_service, lab_id_to_number
+from app.utils.auth import verify_orchestrator_secret
 
 
 SCHEMA_HELP = {
@@ -89,7 +90,7 @@ class ExecRequest(BaseModel):
     user: str = "student"
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(verify_orchestrator_secret)])
 def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_docker_service)):
     lab_number = lab_id_to_number(req.lab_id)
 
@@ -174,7 +175,7 @@ def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_dock
         return session
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(verify_orchestrator_secret)])
 def list_labs(docker_svc: DockerService = Depends(get_docker_service)):
     containers = docker_svc.list_labs()
     result = []
@@ -191,7 +192,7 @@ def list_labs(docker_svc: DockerService = Depends(get_docker_service)):
     return {"labs": result, "active_sessions": len(sessions)}
 
 
-@router.get("/by_key")
+@router.get("/by_key", dependencies=[Depends(verify_orchestrator_secret)])
 def get_lab_by_key(
     user_id: str,
     lab_id: str,
@@ -228,7 +229,7 @@ def get_lab_by_key(
     )
 
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", dependencies=[Depends(verify_orchestrator_secret)])
 def get_lab(session_id: str):
     session = sessions.get(session_id)
     if not session:
@@ -236,7 +237,7 @@ def get_lab(session_id: str):
     return session
 
 
-@router.post("/{session_id}/activate")
+@router.post("/{session_id}/activate", dependencies=[Depends(verify_orchestrator_secret)])
 def activate_lab(session_id: str, req: ActivateLabRequest, docker_svc: DockerService = Depends(get_docker_service)):
     session = sessions.get(session_id)
     if not session:
@@ -256,7 +257,7 @@ def activate_lab(session_id: str, req: ActivateLabRequest, docker_svc: DockerSer
     return session
 
 
-@router.post("/{session_id}/stop")
+@router.post("/{session_id}/stop", dependencies=[Depends(verify_orchestrator_secret)])
 def stop_lab(session_id: str, docker_svc: DockerService = Depends(get_docker_service)):
     session = sessions.get(session_id)
     if not session:
@@ -274,7 +275,7 @@ def stop_lab(session_id: str, docker_svc: DockerService = Depends(get_docker_ser
     return session
 
 
-@router.post("/{session_id}/resume")
+@router.post("/{session_id}/resume", dependencies=[Depends(verify_orchestrator_secret)])
 def resume_lab(session_id: str, docker_svc: DockerService = Depends(get_docker_service)):
     session = sessions.get(session_id)
     if not session:
@@ -290,7 +291,7 @@ def resume_lab(session_id: str, docker_svc: DockerService = Depends(get_docker_s
     return session
 
 
-@router.delete("/{session_id}")
+@router.delete("/{session_id}", dependencies=[Depends(verify_orchestrator_secret)])
 def destroy_lab(session_id: str, docker_svc: DockerService = Depends(get_docker_service)):
     session = sessions.get(session_id)
     if not session:
@@ -305,7 +306,7 @@ def destroy_lab(session_id: str, docker_svc: DockerService = Depends(get_docker_
     return {"detail": f"Lab '{session_id}' destroyed"}
 
 
-@router.post("/{session_id}/validate")
+@router.post("/{session_id}/validate", dependencies=[Depends(verify_orchestrator_secret)])
 def validate_lab(session_id: str, docker_svc: DockerService = Depends(get_docker_service)):
     session = sessions.get(session_id)
     if not session:
@@ -334,7 +335,7 @@ def validate_lab(session_id: str, docker_svc: DockerService = Depends(get_docker
     return result
 
 
-@router.post("/{session_id}/inspect")
+@router.post("/{session_id}/inspect", dependencies=[Depends(verify_orchestrator_secret)])
 def inspect_file(
     session_id: str,
     request: InspectRequest,
@@ -387,7 +388,7 @@ def inspect_file(
         })
 
 
-@router.post("/{session_id}/exec")
+@router.post("/{session_id}/exec", dependencies=[Depends(verify_orchestrator_secret)])
 def exec_command(
     session_id: str,
     request: ExecRequest,
@@ -419,3 +420,262 @@ def exec_command(
         "exit_code": exit_code,
         "output": output,
     }
+
+
+def _resolve_lab_container_and_ip(session_id: str, docker_svc: DockerService):
+    session = sessions.get(session_id)
+    container_name = f"{LAB_PREFIX}-{session_id}" if not session_id.startswith(f"{LAB_PREFIX}-") else session_id
+    raw_session_id = session_id[len(LAB_PREFIX) + 1:] if session_id.startswith(f"{LAB_PREFIX}-") else session_id
+
+    container = None
+    try:
+        container = docker_svc._get_container(container_name)
+    except RuntimeError:
+        pass
+
+    if not container:
+        containers = docker_svc.list_labs()
+        for c in containers:
+            if c.get("name") == container_name or c.get("id") == session_id:
+                try:
+                    container = docker_svc._get_container(c.get("name"))
+                    break
+                except RuntimeError:
+                    pass
+
+    if not container:
+        raise HTTPException(status_code=404, detail=f"Lab container for session '{session_id}' not found")
+
+    if not session:
+        session = _session_from_container(docker_svc._container_info(container))
+        if session:
+            sessions[session.session_id] = session
+        else:
+            session = LabSession(
+                session_id=raw_session_id,
+                lab_type="custom",
+                container_id=container.short_id,
+                container_name=container_name,
+                status=LabStatus.RUNNING if container.status == "running" else LabStatus.STOPPED,
+                created_at=parse_created_at(container.attrs.get("Created")),
+            )
+            sessions[raw_session_id] = session
+
+    networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+    ip = None
+    for _, net_conf in networks.items():
+        if net_conf.get("IPAddress"):
+            ip = net_conf["IPAddress"]
+            break
+    if not ip:
+        ip = container.attrs.get("NetworkSettings", {}).get("IPAddress")
+
+    host_target = ip or container_name
+    return session, container, host_target
+
+
+@router.get("/{session_id}/ports/{port}", dependencies=[Depends(verify_orchestrator_secret)])
+def check_lab_port(
+    session_id: str,
+    port: int,
+    docker_svc: DockerService = Depends(get_docker_service),
+):
+    """Check if a TCP port is open and accepting connections inside the lab container."""
+    import socket
+
+    try:
+        session, container, host_target = _resolve_lab_container_and_ip(session_id, docker_svc)
+    except HTTPException:
+        return {"open": False, "port": port}
+
+    if container.status != "running":
+        return {"open": False, "port": port}
+
+    # Check inner docker published ports first
+    try:
+        exit_code, ps_ports = docker_svc.exec_command(
+            session.container_name,
+            ["docker", "ps", "--format", "{{.Ports}}"],
+            user="root",
+        )
+        if exit_code == 0 and ps_ports and f":{port}->" in ps_ports:
+            return {"open": True, "port": port, "container": session.container_name}
+    except Exception:
+        pass
+
+    targets_to_probe = [host_target]
+    if session.container_name not in targets_to_probe:
+        targets_to_probe.append(session.container_name)
+
+    is_open = False
+    for target in targets_to_probe:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                if s.connect_ex((target, port)) == 0:
+                    is_open = True
+                    break
+        except Exception:
+            pass
+
+    return {"open": is_open, "port": port, "container": session.container_name}
+
+
+@router.get("/{session_id}/open-ports", dependencies=[Depends(verify_orchestrator_secret)])
+def get_open_ports(
+    session_id: str,
+    docker_svc: DockerService = Depends(get_docker_service),
+):
+    """Detect and return all open TCP/HTTP listening ports inside the lab container."""
+    import re
+    import socket
+
+    try:
+        session, container, host_target = _resolve_lab_container_and_ip(session_id, docker_svc)
+    except HTTPException:
+        return {"open_ports": [], "session_id": session_id}
+
+    if container.status != "running":
+        return {"open_ports": [], "session_id": session_id}
+
+    candidate_ports: set[int] = {80, 443, 3000, 3001, 4000, 5000, 5173, 8000, 8080, 8081, 8888, 9000, 9090, 9091}
+    discovered_docker_ports: set[int] = set()
+
+    # Discover published ports from inner docker daemon (e.g. 0.0.0.0:3000->3000/tcp)
+    try:
+        exit_code, ps_ports = docker_svc.exec_command(
+            session.container_name,
+            ["docker", "ps", "--format", "{{.Ports}}"],
+            user="root",
+        )
+        if exit_code == 0 and ps_ports:
+            for m in re.finditer(r":(\d+)->", ps_ports):
+                try:
+                    p = int(m.group(1))
+                    if 1 <= p <= 65535:
+                        discovered_docker_ports.add(p)
+                        candidate_ports.add(p)
+                except ValueError:
+                    pass
+    except Exception as e:
+        logger.debug(f"Failed to inspect docker ports for {session_id}: {e}")
+
+    # Discover additional listening ports from /proc/net/tcp and /proc/net/tcp6
+    try:
+        exit_code, tcp_data = docker_svc.exec_command(
+            session.container_name,
+            ["cat", "/proc/net/tcp", "/proc/net/tcp6"],
+            user="root",
+        )
+        if exit_code == 0 and tcp_data:
+            for line in tcp_data.splitlines():
+                parts = line.strip().split()
+                # Line format: sl local_address rem_address st ... (st == 0A is LISTEN)
+                if len(parts) >= 4 and parts[3] == "0A":
+                    local_addr = parts[1]
+                    if ":" in local_addr:
+                        hex_port = local_addr.split(":")[1]
+                        try:
+                            port_num = int(hex_port, 16)
+                            # Exclude internal / system daemon ports
+                            if port_num not in (22, 2375, 2376, 12000) and 1 <= port_num <= 65535:
+                                candidate_ports.add(port_num)
+                        except ValueError:
+                            pass
+    except Exception as e:
+        logger.debug(f"Failed to read /proc/net/tcp for {session_id}: {e}")
+
+    targets_to_probe = [host_target]
+    if session.container_name not in targets_to_probe:
+        targets_to_probe.append(session.container_name)
+
+    open_ports_set: set[int] = set(discovered_docker_ports)
+    for port in sorted(candidate_ports):
+        if port in open_ports_set:
+            continue
+        for target in targets_to_probe:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.5)
+                    if s.connect_ex((target, port)) == 0:
+                        open_ports_set.add(port)
+                        break
+            except Exception:
+                pass
+
+    open_ports = sorted(open_ports_set)
+    if open_ports:
+        logger.info(
+            f"Detected open listening port(s) {open_ports} in lab container '{session.container_name}' (session: {session_id})"
+        )
+
+    return {"open_ports": open_ports, "session_id": session_id, "container": session.container_name}
+
+
+@router.api_route("/{session_id}/proxy/{port}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+@router.api_route("/{session_id}/proxy/{port}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+async def proxy_lab_port(
+    session_id: str,
+    port: int,
+    path: str = "",
+    request: Request = None,
+    docker_svc: DockerService = Depends(get_docker_service),
+):
+    """Dynamically proxy HTTP requests to a web server running inside the lab container."""
+    import asyncio
+    import urllib.error
+    import urllib.request
+    from fastapi import Response
+
+    session, container, host_target = _resolve_lab_container_and_ip(session_id, docker_svc)
+
+    clean_path = path.lstrip("/") if path else ""
+    target_url = f"http://{host_target}:{port}/{clean_path}"
+    if request and request.url.query:
+        target_url += f"?{request.url.query}"
+
+    logger.info(
+        f"Proxying {request.method if request else 'GET'} request to {target_url} for lab '{session.container_name}'"
+    )
+
+    body = await request.body() if request else None
+    headers = dict(request.headers) if request else {}
+    headers.pop("host", None)
+
+    req = urllib.request.Request(
+        target_url,
+        data=body if body else None,
+        headers=headers,
+        method=request.method if request else "GET",
+    )
+
+    loop = asyncio.get_running_loop()
+
+    def _fetch():
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.getcode(), dict(resp.headers), resp.read()
+        except urllib.error.HTTPError as he:
+            return he.code, dict(he.headers), he.read()
+        except urllib.error.URLError as ue:
+            return (
+                502,
+                {"content-type": "application/json"},
+                f'{{"error": "Could not connect to port {port} inside lab container ({ue.reason}). Ensure your service is running and published on port {port}."}}'.encode(),
+            )
+        except Exception as e:
+            return 500, {"content-type": "application/json"}, f'{{"error": "{str(e)}"}}'.encode()
+
+    status_code, resp_headers, content = await loop.run_in_executor(None, _fetch)
+
+    safe_headers = {}
+    for k, v in resp_headers.items():
+        if k.lower() not in ("transfer-encoding", "content-length", "connection"):
+            safe_headers[k] = v
+
+    return Response(
+        content=content,
+        status_code=status_code,
+        headers=safe_headers,
+        media_type=safe_headers.get("content-type", "text/html"),
+    )

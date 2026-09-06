@@ -16,6 +16,11 @@ export interface TerminalDemoSpec {
   id: string;
   image?: string;
   pre_pull?: string[];
+  /** Optional port to expose for live Web Preview in the browser. */
+  port?: number;
+  /** Optional destination subpath (e.g. /health, /api/status) for web preview. */
+  destination_url?: string;
+  preview_path?: string;
   /** Ordered, guided steps the learner works through. */
   steps: DemoStep[];
   /** Optional free-form commands for exploration (no stepper ordering). */
@@ -70,9 +75,15 @@ function normalizeTerminalSpec(raw: unknown): TerminalDemoSpec | null {
         }
       : undefined;
 
+  const portVal = typeof obj.port === 'number' ? obj.port : typeof obj.port === 'string' ? parseInt(obj.port, 10) : undefined;
+  const destinationUrl = typeof obj.destination_url === 'string' && obj.destination_url.trim() ? obj.destination_url.trim() : typeof obj.preview_path === 'string' && obj.preview_path.trim() ? obj.preview_path.trim() : undefined;
+
   return {
     id,
     steps,
+    port: portVal && !isNaN(portVal) ? portVal : undefined,
+    destination_url: destinationUrl,
+    preview_path: destinationUrl,
     examples: examples.length > 0 ? examples : undefined,
     state: state && state.command ? state : undefined,
     image: typeof obj.image === 'string' && obj.image ? obj.image : undefined,

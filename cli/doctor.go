@@ -257,24 +257,119 @@ func CheckHypervisorInstalled() (hasVirtualBox bool, hasVMware bool) {
 
 	return hasVirtualBox, hasVMware
 }
+// ListWSLDistros returns available WSL Linux distributions (excluding docker-desktop internal distros).
+func ListWSLDistros() []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	cmd := exec.Command("wsl.exe", "-l", "-q")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	// wsl.exe outputs UTF-16LE, which contains 0x00 bytes when read as ASCII
+	cleaned := strings.ReplaceAll(string(out), "\x00", "")
+	lines := strings.Split(cleaned, "\n")
+	var distros []string
+	for _, line := range lines {
+		d := strings.TrimSpace(line)
+		if d == "" {
+			continue
+		}
+		lower := strings.ToLower(d)
+		if strings.HasPrefix(lower, "docker-desktop") {
+			continue
+		}
+		distros = append(distros, d)
+	}
+	return distros
+}
+
+func parseWSLConfSystemd(content string) bool {
+	lines := strings.Split(content, "\n")
+	inBoot := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			inBoot = strings.EqualFold(line, "[boot]")
+			continue
+		}
+		if inBoot && strings.HasPrefix(strings.ToLower(line), "systemd=") {
+			val := strings.TrimSpace(strings.SplitN(line, "=", 2)[1])
+			if strings.EqualFold(val, "true") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// CheckWSL2Systemd checks if /etc/wsl.conf contains systemd=true in WSL2.
+// Returns (systemdEnabled, distroName, error).
+func CheckWSL2Systemd() (bool, string, error) {
+	if runtime.GOOS == "linux" {
+		data, err := os.ReadFile("/etc/wsl.conf")
+		if err != nil {
+			return false, "", err
+		}
+		return parseWSLConfSystemd(string(data)), "native", nil
+	}
+
+	if runtime.GOOS != "windows" {
+		return false, "", nil
+	}
+
+	distros := ListWSLDistros()
+	if preferred := strings.TrimSpace(os.Getenv("LABOPS_WSL_DISTRO")); preferred != "" {
+		distros = append([]string{preferred}, distros...)
+	}
+
+	if len(distros) == 0 {
+		return false, "", fmt.Errorf("no WSL2 Linux distributions found")
+	}
+
+	// First pass: look for a distribution with systemd=true
+	for _, distro := range distros {
+		cmd := exec.Command("wsl.exe", "-d", distro, "cat", "/etc/wsl.conf")
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		if err := cmd.Run(); err == nil {
+			if parseWSLConfSystemd(out.String()) {
+				return true, distro, nil
+			}
+		}
+	}
+
+	return false, distros[0], nil
+}
+
+// CheckPort80Availability tries to bind to 0.0.0.0:80 to see if it's free.
+func CheckPort80Availability() (bool, int) {
+	port := 80
+	if !CheckPortAvailable(port) {
+		// fallback to 8080
+		port = 8080
+		if !CheckPortAvailable(port) {
+			return false, 0
+		}
+	}
+	return true, port
+}
 
 // RunDoctor runs all hardware and software diagnostics.
 func RunDoctor() bool {
 	fmt.Println("Running LabOps Diagnostics & Preflight Checks...")
 	fmt.Println("==================================================")
-	allPassed := true
 
 	// 1. Virtualization
 	fmt.Print("Hardware Virtualization (VT-x/AMD-V): ")
 	virt, err := CheckVirtualization()
 	if err != nil {
 		fmt.Printf("FAILED to detect (%v)\n", err)
-		allPassed = false
 	} else if virt {
 		fmt.Println("OK")
 	} else {
 		fmt.Println("FAILED (Enable Virtualization/VT-x/AMD-V in your BIOS/UEFI firmware)")
-		allPassed = false
 	}
 
 	// 2. RAM check
@@ -289,7 +384,6 @@ func RunDoctor() bool {
 			fmt.Printf("WARNING: %.2f GB (Minimum required is 4GB; 8GB recommended for smoother experience)\n", ram)
 		} else {
 			fmt.Printf("FAILED: %.2f GB (Insufficient! Minimum required is 4GB)\n", ram)
-			allPassed = false
 		}
 	}
 
@@ -305,19 +399,101 @@ func RunDoctor() bool {
 			fmt.Printf("WARNING: %.2f GB (Low disk space; at least 15-20GB recommended to download VM boxes)\n", disk)
 		} else {
 			fmt.Printf("FAILED: %.2f GB (Insufficient! Less than 10GB free space)\n", disk)
-			allPassed = false
 		}
 	}
 
+	// Systemd enabled (WSL2):
+	fmt.Print("Systemd enabled (WSL2): ")
+	sysd, sysdDistro, err := CheckWSL2Systemd()
+	if err != nil || !sysd {
+		if sysdDistro != "" {
+			fmt.Printf("✖ (systemd not enabled in %s) - add '[boot]\\nsystemd=true' to /etc/wsl.conf and restart WSL2\n", sysdDistro)
+		} else {
+			fmt.Println("✖ (systemd not enabled) - add '[boot]\\nsystemd=true' to /etc/wsl.conf and restart WSL2")
+		}
+	} else {
+		if sysdDistro == "native" {
+			fmt.Println("✔")
+		} else {
+			fmt.Printf("✔ (distro: %s)\n", sysdDistro)
+		}
+	}
+
+	// Port 80 availability:
+	fmt.Print("Port 80 availability: ")
+	ok, port := CheckPort80Availability()
+	if ok {
+		if port == 80 {
+			fmt.Println("✔ (free)")
+		} else {
+			fmt.Printf("✔ (80 busy, using fallback %d)\n", port)
+		}
+		os.Setenv("NGINX_PORT", fmt.Sprintf("%d", port))
+	} else {
+		fmt.Println("✖ (both 80 and 8080 occupied) - manual configuration required")
+	}
+
 	// 4. Dependencies
-	fmt.Println("\nPrerequisite Software:")
-	
+	fmt.Println("\nRuntime Software Diagnostics:")
+
+	dockerCliPassed := CheckDependency("docker")
+	dockerDaemonRunning := false
+	if dockerCliPassed {
+		cmd := exec.Command("docker", "info")
+		if cmd.Run() == nil {
+			dockerDaemonRunning = true
+			fmt.Println("  - Docker CLI & Daemon: OK (Running on host)")
+		}
+	}
+
+	wslDockerRunning := false
+	wslSysboxDetected := false
+	if runtime.GOOS == "windows" && sysd && sysdDistro != "" {
+		cmd := exec.Command("wsl.exe", "-d", sysdDistro, "docker", "info")
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		if cmd.Run() == nil {
+			wslDockerRunning = true
+			if strings.Contains(strings.ToLower(out.String()), "sysbox-runc") {
+				wslSysboxDetected = true
+			}
+		}
+	}
+
+	if !dockerDaemonRunning {
+		if wslDockerRunning {
+			fmt.Printf("  - Docker Engine: OK (Running inside WSL2: %s)\n", sysdDistro)
+		} else if dockerCliPassed {
+			fmt.Println("  - Docker CLI: OK (Daemon not running — start Docker Desktop or start Docker in WSL2)")
+		} else {
+			fmt.Println("  - Docker CLI: MISSING (Install Docker Desktop or Docker inside WSL2)")
+		}
+	}
+
+	composePassed := false
+	if dockerCliPassed {
+		cmd := exec.Command("docker", "compose", "version")
+		if cmd.Run() == nil {
+			composePassed = true
+			fmt.Println("  - Docker Compose v2: OK (Host)")
+		}
+	}
+	if !composePassed && wslDockerRunning {
+		cmd := exec.Command("wsl.exe", "-d", sysdDistro, "docker", "compose", "version")
+		if cmd.Run() == nil {
+			composePassed = true
+			fmt.Printf("  - Docker Compose: OK (Inside WSL2: %s)\n", sysdDistro)
+		}
+	}
+	if !composePassed {
+		fmt.Println("  - Docker Compose: MISSING")
+	}
+
 	vagrantPassed := CheckDependency("vagrant")
 	if vagrantPassed {
 		fmt.Println("  - Vagrant: OK")
 	} else {
-		fmt.Println("  - Vagrant: MISSING (Run 'labops setup' or install from hashicorp.com/vagrant)")
-		allPassed = false
+		fmt.Println("  - Vagrant: NOT INSTALLED (Optional fallback)")
 	}
 
 	// Check for a hypervisor: vboxmanage (VirtualBox) or vmware (VMware)
@@ -326,16 +502,54 @@ func RunDoctor() bool {
 	if hypervisorPassed {
 		fmt.Println("  - Hypervisor (VirtualBox/VMware): OK")
 	} else {
-		fmt.Println("  - Hypervisor (VirtualBox/VMware): MISSING (Install VirtualBox or VMware Player/Workstation)")
-		allPassed = false
+		fmt.Println("  - Hypervisor (VirtualBox/VMware): NOT INSTALLED (Optional fallback)")
+	}
+
+	// Check for sysbox-runc in Docker info
+	hasSysbox := false
+	if dockerDaemonRunning {
+		cmd := exec.Command("docker", "info")
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		if cmd.Run() == nil && strings.Contains(strings.ToLower(out.String()), "sysbox-runc") {
+			hasSysbox = true
+			fmt.Println("  - Sysbox Runtime (sysbox-runc): OK (Detected on host)")
+		}
+	} else if wslSysboxDetected {
+		hasSysbox = true
+		fmt.Printf("  - Sysbox Runtime (sysbox-runc): OK (Detected in WSL2: %s)\n", sysdDistro)
+	}
+
+	dockerModeReady := dockerCliPassed && dockerDaemonRunning && composePassed
+	vmModeReady := vagrantPassed && hypervisorPassed
+
+	fmt.Println("==================================================")
+	fmt.Println("Runtime Mode Readiness:")
+	if hasSysbox {
+		if sysdDistro != "" && sysdDistro != "native" {
+			fmt.Printf("  [✔] Native Sysbox Mode (WSL2: %s) : READY (Production-Identical, Fastest)\n", sysdDistro)
+		} else {
+			fmt.Println("  [✔] Native Sysbox Mode (Linux)        : READY (Production-Identical, Fastest)")
+		}
+	}
+	if dockerModeReady {
+		fmt.Println("  [✔] Docker Desktop Mode               : READY (Standard Dev Mode)")
+	} else {
+		fmt.Println("  [✖] Docker Desktop Mode               : NOT READY (Requires running Docker Engine)")
+	}
+
+	if vmModeReady {
+		fmt.Println("  [✔] Vagrant VM Mode (Fallback)        : READY")
+	} else {
+		fmt.Println("  [✖] Vagrant VM Mode (Fallback)        : NOT CONFIGURED (Optional)")
 	}
 
 	fmt.Println("==================================================")
-	if allPassed {
-		fmt.Println("All preflight checks passed! Your system is ready for LabOps.")
-	} else {
-		fmt.Println("Some checks failed. Please address the errors above before starting.")
+	if hasSysbox || dockerModeReady || vmModeReady {
+		fmt.Println("System is ready! Run 'labops start' to launch.")
+		return true
 	}
 
-	return allPassed
+	fmt.Println("Please install Docker Desktop or enable Docker inside WSL2/Linux to run LabOps.")
+	return false
 }

@@ -38,6 +38,7 @@ export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
   const [expandedExpect, setExpandedExpect] = useState<Set<string>>(new Set());
   const [showDoneSteps, setShowDoneSteps] = useState(false);
   const [containerState, setContainerState] = useState<string | null>(null);
+  const [isPortOpen, setIsPortOpen] = useState(false);
   const terminalRef = useRef<LabTerminalHandle>(null);
   const mounted = useRef(true);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -113,6 +114,29 @@ export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
     };
   }, [phase, spec.id, stateCmd]);
 
+  // Live port-detection: poll port status so the Preview button appears ONLY when the port is open
+  useEffect(() => {
+    if (phase !== 'ready' || !spec.port) {
+      setIsPortOpen(false);
+      return;
+    }
+    let cancelled = false;
+    const pollPort = async () => {
+      try {
+        const res = await api.demos.checkPort(spec.id, spec.port!);
+        if (!cancelled) setIsPortOpen(Boolean(res?.open));
+      } catch {
+        if (!cancelled) setIsPortOpen(false);
+      }
+    };
+    pollPort();
+    const timer = setInterval(pollPort, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [phase, spec.id, spec.port]);
+
   // Focus the terminal as soon as it's ready so the keyboard is live without
   // the learner needing to click inside it. Re-arms on Reset.
   useEffect(() => {
@@ -157,6 +181,7 @@ export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
     setExpandedExpect(new Set());
     setShowDoneSteps(false);
     setContainerState(null);
+    setIsPortOpen(false);
     focusedOnce.current = false;
     try {
       await api.demos.reset(spec.id);
@@ -434,16 +459,40 @@ export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
           )}
         </div>
 
-        {phase !== 'idle' && (
-          <button
-            onClick={handleReset}
-            disabled={phase === 'starting'}
-            className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-muted transition enabled:hover:text-text disabled:opacity-50"
-            title="Destroy this demo environment and start a fresh one"
-          >
-            Reset
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {spec.port && isPortOpen && phase === 'ready' && (() => {
+            const destPath = (spec.destination_url || spec.preview_path || '').replace(/^\/+/, '');
+            const previewUrl = `http://localhost:8001/demos/${spec.id}/proxy/${spec.port}/${destPath}`;
+            return (
+              <a
+                href={previewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 transition animate-in fade-in duration-300 hover:bg-emerald-500/20 hover:text-emerald-300"
+                title={`Port ${spec.port} is live! Click to open web preview in a new tab${destPath ? ` (${destPath})` : ''}`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                </svg>
+                <span>Preview :{spec.port}</span>
+              </a>
+            );
+          })()}
+          {phase !== 'idle' && (
+            <button
+              onClick={handleReset}
+              disabled={phase === 'starting'}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-muted transition enabled:hover:text-text disabled:opacity-50"
+              title="Destroy this demo environment and start a fresh one"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
 
       {allDone && !showSidebar && (

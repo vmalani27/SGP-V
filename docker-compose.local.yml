@@ -67,9 +67,34 @@ services:
     - NEXT_TELEMETRY_DISABLED=1
     - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
     - BACKEND_API_URL=http://backend:8000
+    - NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8001
+    - NEXT_PUBLIC_ORCHESTRATOR_SECRET=local-dev-super-secret
     - CONTENT_LOCAL_DIR=/app/.content
     depends_on:
     - backend
+    - orchestrator
+    restart: unless-stopped
+  orchestrator:
+    build:
+      context: ./orchestrator
+      target: ${ORCHESTRATOR_TARGET:-dev}
+    container_name: labops-orchestrator
+    privileged: true
+    user: "0:0"
+    ports:
+    - 8001:8000
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ./orchestrator/app:/app/app
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      LAB_PREFIX: labops-lab
+      DEMO_PREFIX: labops-demo
+      LAB_TIMEOUT_MINUTES: '40'
+      DEMO_TIMEOUT_MINUTES: '30'
+      CONTAINER_RUNTIME_MODE: privileged
+      ORCHESTRATOR_SECRET: ${ORCHESTRATOR_SECRET:-local-dev-super-secret}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-in-production}
     restart: unless-stopped
 volumes:
   frontend_node_modules: null

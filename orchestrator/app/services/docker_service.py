@@ -13,18 +13,25 @@ IMAGE_ALIASES = {
     "sgp-lab-ubuntu:latest": "labops-ubuntu:latest",
     "sgp-lab-docker:latest": "labops-docker:latest",
     "sgp-lab-docker-fundamentals:latest": "labops-docker-fundamentals:latest",
+    "sgp-lab-docker-build:latest": "labops-docker-build:latest",
     "sgp-lab-ubuntu": "labops-ubuntu:latest",
     "sgp-lab-docker": "labops-docker:latest",
     "sgp-lab-docker-fundamentals": "labops-docker-fundamentals:latest",
+    "sgp-lab-docker-build": "labops-docker-build:latest",
+    "docker-build": "labops-docker-build:latest",
+    "docker": "labops-docker:latest",
+    "ubuntu": "labops-ubuntu:latest",
 }
 
 REMOTE_IMAGE_MAP = {
     "labops-ubuntu:latest": "ghcr.io/vmalani27/sgp-v/lab-ubuntu:dev",
     "labops-docker:latest": "ghcr.io/vmalani27/sgp-v/lab-docker:dev",
     "labops-docker-fundamentals:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-fundamentals:dev",
+    "labops-docker-build:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-build:dev",
     "sgp-lab-ubuntu:latest": "ghcr.io/vmalani27/sgp-v/lab-ubuntu:dev",
     "sgp-lab-docker:latest": "ghcr.io/vmalani27/sgp-v/lab-docker:dev",
     "sgp-lab-docker-fundamentals:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-fundamentals:dev",
+    "sgp-lab-docker-build:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-build:dev",
 }
 
 

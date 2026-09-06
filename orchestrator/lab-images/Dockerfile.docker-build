@@ -12,8 +12,13 @@
 ARG BASE_IMAGE=labops-docker:latest
 FROM ${BASE_IMAGE}
 
-# Ensure git and curl are explicitly present for repository inspection in labs
-RUN apt-get update && apt-get install -y --no-install-recommends git curl && rm -rf /var/lib/apt/lists/*
+# Ensure git, curl, and Node.js 20 are present for repository inspection & local testing in labs
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
 # Pre-populate chapter fixtures into /home/student
 COPY fixtures/ /home/student/

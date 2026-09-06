@@ -369,6 +369,63 @@ def _store_content_changes(db, diff: dict) -> None:
                 diff["version"], len(diff["changes"]))
 
 
+def record_content_changes(db: firestore.Client, s3_client, bucket: str, new_version: str, new_files: list[dict]) -> None:
+    """Compute and store file changes between the previous and new version."""
+    changes_ref = db.collection("content_changes").document(new_version)
+    existing = changes_ref.get()
+    if existing.exists:
+        logger.info("Changelog for version %s already exists in Firestore", new_version)
+        return
+
+    previous_version = _seeded_content_version(db)
+    old_files = []
+
+    if previous_version and previous_version != new_version:
+        prev_key = f"published/{previous_version}/manifest.json"
+        try:
+            prev_resp = s3_client.get_object(Bucket=bucket, Key=prev_key)
+            prev_manifest = json.loads(prev_resp["Body"].read().decode("utf-8"))
+            old_files = prev_manifest.get("files", [])
+        except Exception as e:
+            logger.warning("Failed to fetch previous manifest for %s: %s", previous_version, e)
+    else:
+        # Check S3 for the most recent prior manifest if previous_version matches new_version
+        try:
+            resp = s3_client.list_objects_v2(Bucket=bucket, Prefix="published/", Delimiter="/")
+            prefixes = [p["Prefix"] for p in resp.get("CommonPrefixes", [])]
+            prior_versions = [
+                p.replace("published/", "").strip("/")
+                for p in prefixes
+                if p.replace("published/", "").strip("/") != new_version
+            ]
+            if prior_versions:
+                last_ver = prior_versions[-1]
+                prev_resp = s3_client.get_object(Bucket=bucket, Key=f"published/{last_ver}/manifest.json")
+                prev_manifest = json.loads(prev_resp["Body"].read().decode("utf-8"))
+                old_files = prev_manifest.get("files", [])
+                previous_version = last_ver
+        except Exception as e:
+            logger.info("No prior versions discovered in S3: %s", e)
+
+    if old_files:
+        diff = _diff_manifests(previous_version or "initial", new_version, old_files, new_files)
+        _store_content_changes(db, diff)
+    else:
+        # Initial publish or fresh bucket: mark all content items as new
+        changes = [
+            {"path": f["path"], "change": "new"}
+            for f in (new_files or [])
+            if isinstance(f, dict) and f.get("path")
+        ]
+        diff = {
+            "version": new_version,
+            "from_version": None,
+            "changes": changes,
+            "updatedAt": datetime.utcnow(),
+        }
+        _store_content_changes(db, diff)
+
+
 class ContentNotPublished(Exception):
     """Raised when the bucket is reachable but nothing has been published yet."""
 

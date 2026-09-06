@@ -255,6 +255,16 @@ export const api = {
         ws_token: JSON.stringify({ token: getOrchestratorSecret(), session_id: sessionId, kind: "lab" }),
         ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`
       }),
+    checkPort: async (sessionId: string, port: number) => {
+      return orchestratorFetch<{ open: boolean; port: number }>(
+        `/labs/${sessionId}/ports/${port}`
+      );
+    },
+    getOpenPorts: async (sessionId: string) => {
+      return orchestratorFetch<{ open_ports: number[]; session_id: string }>(
+        `/labs/${sessionId}/open-ports`
+      );
+    },
     tasks: async (courseId: string, labId: string, tasks: unknown[]) => {
       return localFetch<TaskListResponse>(`/api/local-content/labs/${courseId}/${labId}/tasks`);
     },
@@ -405,12 +415,25 @@ export const api = {
           await recordAfterSuccess(execUser);
         }
 
-        const debugInfo = `(Debug - cmd: ${validation.command} | out: '${outputStr}' | exp: '${validation.expected_output}' | type: '${validation.match_type}')`;
+        let dynamicError: string | undefined = undefined;
+        if (!correct) {
+          const trimmedOutput = outputStr.trim();
+          if (trimmedOutput && trimmedOutput !== String(validation.expected_output || '').trim()) {
+            dynamicError = trimmedOutput;
+          } else if (task.error_message) {
+            dynamicError = task.error_message;
+          } else {
+            dynamicError = 'Task verification failed. Check your configuration and try again.';
+          }
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('[Lab Validation]', { command: validation.command, output: outputStr, expected: validation.expected_output });
+          }
+        }
 
         return {
           correct: correct,
           output: outputStr,
-          error: correct ? undefined : ((task.error_message ? task.error_message + " " : "") + debugInfo),
+          error: dynamicError,
           hint: task.hint || undefined,
         };
       } catch (err: any) {
@@ -454,6 +477,12 @@ export const api = {
       return orchestratorFetch<{ exit_code: number; output: string }>(
         `/demos/${demoId}/exec`,
         { method: 'POST', body: JSON.stringify({ user_id: userId, command }) }
+      );
+    },
+    checkPort: async (demoId: string, port: number) => {
+      const userId = await getUserId();
+      return orchestratorFetch<{ open: boolean; port: number }>(
+        `/demos/${demoId}/ports/${port}?user_id=${userId}`
       );
     },
     reset: async (demoId: string) => {

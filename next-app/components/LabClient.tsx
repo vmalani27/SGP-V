@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, getOrchestratorUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { itemHref } from '@/lib/content-server';
 import type { LabMeta, TaskStatus, TaskProgressData, LabTask } from '@/lib/task-types';
@@ -79,9 +79,14 @@ function envConfigFrom(labConfig: Record<string, unknown> | null): {
   pre_pull: string[];
   setup: unknown[];
 } {
-  const env = (labConfig?.environment as Record<string, unknown> | undefined) ?? {};
+  const envRaw = labConfig?.environment;
+  const env = (typeof envRaw === 'object' && envRaw !== null ? envRaw : {}) as Record<string, unknown>;
+  const baseImage =
+    (env.base_image as string | undefined) ??
+    (typeof envRaw === 'string' ? envRaw : '');
+
   return {
-    image: (env.base_image as string | undefined) ?? '',
+    image: baseImage,
     apt_packages: Array.isArray(env.apt_packages) ? (env.apt_packages as string[]) : [],
     pre_pull: Array.isArray(env.pre_pull) ? (env.pre_pull as string[]) : [],
     setup: Array.isArray(labConfig?.setup) ? (labConfig.setup as unknown[]) : [],
@@ -108,6 +113,78 @@ function labStateFrom(res: {
   };
 }
 
+function resolveLabPreviewPath(labConfig: Record<string, unknown> | null, port: number): string {
+  if (!labConfig) return '';
+
+  const normalize = (val: unknown): string | null => {
+    if (typeof val !== 'string') return null;
+    val = val.trim();
+    if (!val) return null;
+    if (val.startsWith('http://') || val.startsWith('https://')) {
+      try {
+        const u = new URL(val);
+        if (u.port && parseInt(u.port, 10) !== port) {
+          return null;
+        }
+        return (u.pathname + (u.search || '')).replace(/^\/+/, '');
+      } catch {
+        return null;
+      }
+    }
+    return val.replace(/^\/+/, '');
+  };
+
+  // 1. Check top-level preview object: preview: { port: 3000, path: '/api/health' } or preview: { 3000: '/api/health' }
+  const previewObj = labConfig.preview as Record<string, unknown> | undefined;
+  if (previewObj && typeof previewObj === 'object') {
+    if (typeof previewObj.path === 'string' && (!previewObj.port || Number(previewObj.port) === port)) {
+      const p = normalize(previewObj.path);
+      if (p !== null) return p;
+    }
+    if (previewObj[port] || previewObj[String(port)]) {
+      const p = normalize(previewObj[port] || previewObj[String(port)]);
+      if (p !== null) return p;
+    }
+  }
+
+  // 2. Check top-level destination_url / destinationUrl / preview_path / preview_url
+  const destUrl =
+    labConfig.destination_url ??
+    labConfig.destinationUrl ??
+    labConfig.preview_path ??
+    labConfig.preview_url;
+  if (typeof destUrl === 'string') {
+    const p = normalize(destUrl);
+    if (p !== null) return p;
+  } else if (destUrl && typeof destUrl === 'object') {
+    const map = destUrl as Record<string, unknown>;
+    const p = normalize(map[port] || map[String(port)]);
+    if (p !== null) return p;
+  }
+
+  // 3. Check tasks in labConfig
+  const tasks = labConfig.tasks as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(tasks)) {
+    for (const task of tasks) {
+      const taskDest =
+        task.destination_url ??
+        task.destinationUrl ??
+        task.preview_path ??
+        task.preview_url;
+      if (typeof taskDest === 'string') {
+        const p = normalize(taskDest);
+        if (p !== null) return p;
+      } else if (taskDest && typeof taskDest === 'object') {
+        const map = taskDest as Record<string, unknown>;
+        const p = normalize(map[port] || map[String(port)]);
+        if (p !== null) return p;
+      }
+    }
+  }
+
+  return '';
+}
+
 export default function LabClient({
   courseId,
   labId,
@@ -121,7 +198,7 @@ export default function LabClient({
 }) {
   const router = useRouter();
   const { isAuthenticated, loading: authLoading, refreshEnrollments, getEnrollment } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [labInfo, setLabInfo] = useState<LabInfo | null>(null);
   const [labMeta, setLabMeta] = useState<LabMeta | null>(null);
@@ -142,6 +219,8 @@ export default function LabClient({
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [openPorts, setOpenPorts] = useState<number[]>([]);
+  const [lastPolledAt, setLastPolledAt] = useState<Date | null>(null);
   const celebrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskProgressRef = useRef<TaskProgressData | null>(null);
   const initialCheckDone = useRef(false);
@@ -227,6 +306,7 @@ export default function LabClient({
   };
 
   const provisionLab = useCallback(async () => {
+    setSidebarOpen(false);
     setPhase('provisioning');
     setError(null);
     setTaskProgress(null);
@@ -442,6 +522,64 @@ export default function LabClient({
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Live port-detection: poll open ports so Preview buttons appear whenever web services are listening
+  useEffect(() => {
+    if (phase !== 'running' || !labState || labState.status !== 'running') {
+      setOpenPorts([]);
+      return;
+    }
+    let cancelled = false;
+    const pollPorts = async () => {
+      try {
+        const res = await api.labs.getOpenPorts(labState.sessionId);
+        if (!cancelled && Array.isArray(res?.open_ports)) {
+          const detected = new Set<number>(res.open_ports);
+
+          // Also check any explicitly configured port(s) from lab config
+          const explicitPorts: number[] = [];
+          if (typeof labConfig?.port === 'number') explicitPorts.push(labConfig.port);
+          if (typeof labConfig?.port === 'string' && !isNaN(Number(labConfig.port))) explicitPorts.push(Number(labConfig.port));
+          if (Array.isArray(labConfig?.ports)) {
+            for (const p of labConfig.ports) {
+              const num = Number(p);
+              if (!isNaN(num)) explicitPorts.push(num);
+            }
+          }
+
+          for (const p of explicitPorts) {
+            if (!detected.has(p)) {
+              try {
+                const portCheck = await api.labs.checkPort(labState.sessionId, p);
+                if (portCheck?.open) detected.add(p);
+              } catch {}
+            }
+          }
+
+          if (!cancelled) {
+            setLastPolledAt(new Date());
+            const nextPorts = Array.from(detected).sort((a, b) => a - b);
+            setOpenPorts((prev) => {
+              if (prev.length !== nextPorts.length || prev.some((v, i) => v !== nextPorts[i])) {
+                console.log('[LabClient] Detected open listening ports:', nextPorts);
+                return nextPorts;
+              }
+              return prev;
+            });
+          }
+        }
+      } catch (err) {
+        if (!cancelled) setLastPolledAt(new Date());
+        // Lab container might be mid-restart or stopping
+      }
+    };
+    pollPorts();
+    const timer = setInterval(pollPorts, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [phase, labState?.sessionId, labState?.status, labConfig]);
+
   const handleValidate = useCallback(async (taskId: string, answer?: string) => {
     if (!labState) return;
     setValidating(true);
@@ -498,7 +636,6 @@ export default function LabClient({
     <main className="flex h-screen flex-col overflow-hidden bg-bg text-text antialiased">
       <Navbar
         breadcrumb={[
-          { label: 'Dashboard', href: '/dashboard' },
           { label: course.title, href: `/courses/${courseId}` },
           { label: moduleTitle || 'Course' },
         ]}
@@ -593,8 +730,36 @@ export default function LabClient({
                     )}
                   </div>
 
-                  {/* Right: Compact Environment Actions */}
+                  {/* Right: Preview button + Compact Environment Actions */}
                   <div className="flex items-center gap-2">
+                    {openPorts.length > 0 && labState.status === 'running' && (
+                      <div className="flex items-center gap-1.5 mr-2">
+                        {openPorts.map((port) => {
+                          const destPath = resolveLabPreviewPath(labConfig, port);
+                          const previewUrl = `${getOrchestratorUrl()}/labs/${labState.sessionId}/proxy/${port}/${destPath}`;
+                          return (
+                            <a
+                              key={port}
+                              href={previewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 transition animate-in fade-in duration-300 hover:bg-emerald-500/20 hover:text-emerald-300"
+                              title={`Port ${port} is live! Click to open web preview in a new tab${destPath ? ` (/${destPath})` : ''}`}
+                            >
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                              </span>
+                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                              </svg>
+                              <span>Preview :{port}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {labState.status === 'running' && (
                       <button
                         onClick={handleStop}

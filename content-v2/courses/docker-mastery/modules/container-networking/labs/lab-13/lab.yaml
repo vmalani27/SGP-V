@@ -1,20 +1,150 @@
 id: lab-13
-title: Docker Compose
+title: Capstone - Composing Resilient Multi-Tier Applications
 difficulty: intermediate
-estimated_time: 25
-xp: 125
-tags:
-  - docker
-  - compose
 environment: docker-basic
 
 setup:
   - command: "usermod -aG docker student"
+  - command: |
+      docker compose -f /home/student/order-stack/compose.yaml down -v 2>/dev/null || true
+      rm -rf /home/student/order-stack
+      mkdir -p /home/student/order-stack
+      chown -R student:student /home/student/order-stack
 
 objectives:
-  - Define multi-service apps with Docker Compose
-  - Use docker-compose.yml
-  - Start and stop composed services
+  - Declaratively compose a production multi-tier architecture
+  - Implement deterministic startup ordering with container health checks
+  - Enforce perimeter network segmentation across service tiers in Compose
+  - Publish public ingress while securing private backend persistence
+  - Operate and verify container stacks with the Docker Compose CLI
 
-completion:
-  required_tasks: all
+tasks:
+  - id: compose-production-stack
+    summary: Orchestrate and harden a multi-tier application stack using Docker Compose.
+    prompt: >-
+      In `~/order-stack`, author a `compose.yaml` specification and deploy a hardened
+      three-tier application stack adhering to strict operational requirements:
+
+      1. Network Tiers:
+         - Define two user-defined bridge networks: `frontend-tier` and `backend-tier`.
+      2. Service Declarations:
+         - `cache`: Uses `redis:alpine`. Connected strictly to `backend-tier` with no host ports published. Must define a healthcheck that verifies Redis availability using `redis-cli ping`.
+         - `api`: Uses `alpine:latest`. Connected to both `frontend-tier` and `backend-tier`. Must run an active background process (e.g. sleep or server loop) to remain running. Must depend on `cache` with `condition: service_healthy`.
+         - `proxy`: Uses `nginx:alpine`. Connected strictly to `frontend-tier`. Must publish host port 8080 to container port 80.
+      3. Deployment & Health:
+         - Launch the stack in detached mode using Docker Compose.
+         - All services must be active, `cache` must report healthy, and `proxy` must respond on host port 8080.
+         - Security boundaries must be preserved: `proxy` must not be able to reach `cache`.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import os, subprocess, urllib.request, json, sys
+
+        stack_dir = '/home/student/order-stack'
+        compose_file = None
+        for name in ['compose.yaml', 'docker-compose.yml', 'compose.yml']:
+            p = os.path.join(stack_dir, name)
+            if os.path.isfile(p):
+                compose_file = p
+                break
+
+        if not compose_file:
+            print('Compose specification file is missing in ~/order-stack.')
+            sys.exit(0)
+
+        # 1. Validate config canonical syntax
+        r_cfg = subprocess.run(['docker', 'compose', '-f', compose_file, 'config', '--format', 'json'], capture_output=True)
+        if r_cfg.returncode != 0:
+            print('Compose specification failed syntax validation.')
+            sys.exit(0)
+
+        cfg = json.loads(r_cfg.stdout.decode('utf-8'))
+        services = cfg.get('services', {})
+        networks = cfg.get('networks', {})
+
+        if not all(s in services for s in ['cache', 'api', 'proxy']):
+            print('Required services (cache, api, proxy) are missing.')
+            sys.exit(0)
+
+        if not all(n in networks for n in ['frontend-tier', 'backend-tier']):
+            print('Required network tiers (frontend-tier, backend-tier) are missing.')
+            sys.exit(0)
+
+        # 2. Check cache healthcheck and network
+        cache_svc = services['cache']
+        if 'healthcheck' not in cache_svc:
+            print('Cache service lacks healthcheck definition.')
+            sys.exit(0)
+        if 'backend-tier' not in cache_svc.get('networks', {}) or 'frontend-tier' in cache_svc.get('networks', {}):
+            print('Cache service network placement invalid.')
+            sys.exit(0)
+        if cache_svc.get('ports'):
+            print('Cache service must not expose host ports.')
+            sys.exit(0)
+
+        # 3. Check api dependencies and dual-homing
+        api_svc = services['api']
+        if 'frontend-tier' not in api_svc.get('networks', {}) or 'backend-tier' not in api_svc.get('networks', {}):
+            print('API service must connect to both frontend-tier and backend-tier.')
+            sys.exit(0)
+        dep = api_svc.get('depends_on', {})
+        if not isinstance(dep, dict) or 'cache' not in dep or dep['cache'].get('condition') != 'service_healthy':
+            print('API service must depend on cache with condition: service_healthy.')
+            sys.exit(0)
+
+        # 4. Check proxy port mapping
+        proxy_svc = services['proxy']
+        ports = proxy_svc.get('ports', [])
+        if not any(isinstance(p, dict) and p.get('published') in [8080, '8080'] and p.get('target') in [80, '80'] for p in ports):
+            print('Proxy service must publish host port 8080 to container port 80.')
+            sys.exit(0)
+
+        # 5. Check running containers and health status
+        r_ps = subprocess.run(['docker', 'compose', '-f', compose_file, 'ps', '--format', 'json'], capture_output=True)
+        if r_ps.returncode != 0:
+            print('Failed to inspect running Compose services.')
+            sys.exit(0)
+
+        ps_lines = [l for l in r_ps.stdout.decode('utf-8').splitlines() if l.strip()]
+        running_services = {}
+        for l in ps_lines:
+            try:
+                c = json.loads(l)
+                running_services[c.get('Service')] = c
+            except Exception:
+                pass
+
+        if not all(s in running_services for s in ['cache', 'api', 'proxy']):
+            print('One or more Compose services are not currently running.')
+            sys.exit(0)
+
+        cache_container = running_services['cache']
+        if 'healthy' not in cache_container.get('Health', '').lower():
+            print('Cache service is not in healthy state.')
+            sys.exit(0)
+
+        # 6. Verify HTTP ingress on port 8080
+        try:
+            req = urllib.request.urlopen('http://localhost:8080', timeout=5)
+            if req.status != 200:
+                print('Proxy returned non-200 status.')
+                sys.exit(0)
+        except Exception:
+            print('Proxy failed to respond on port 8080.')
+            sys.exit(0)
+
+        # 7. Verify security isolation: proxy cannot reach cache
+        proxy_name = running_services['proxy'].get('Name')
+        r_iso = subprocess.run(['docker', 'exec', proxy_name, 'ping', '-c', '1', '-W', '2', 'cache'], capture_output=True)
+        if r_iso.returncode == 0:
+            print('Perimeter security violated: proxy can reach cache.')
+            sys.exit(0)
+
+        print('COMPOSE_CAPSTONE_PASSED')
+        "
+      match_type: exact
+      expected_output: COMPOSE_CAPSTONE_PASSED
+    error_message: >-
+      The multi-tier Compose deployment does not satisfy the required service
+      configuration, network isolation, or health constraints.

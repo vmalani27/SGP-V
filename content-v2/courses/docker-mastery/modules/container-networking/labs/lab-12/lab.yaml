@@ -1,20 +1,186 @@
 id: lab-12
-title: Container Networking
+title: Network Segmentation & Perimeter Security
 difficulty: intermediate
-estimated_time: 20
-xp: 100
-tags:
-  - docker
-  - networking
 environment: docker-basic
 
 setup:
   - command: "usermod -aG docker student"
+  - command: |
+      docker rm -f web-proxy app-gateway cache-db 2>/dev/null || true
+      docker network rm dmz-net data-net 2>/dev/null || true
 
 objectives:
-  - Create custom bridge networks
-  - Connect containers to networks
-  - Verify container-to-container communication
+  - Provision isolated user-defined bridge network tiers
+  - Enforce perimeter defense by restricting internal database services to private networks
+  - Bridge distinct network tiers using dual-homed service containers
+  - Verify packet routing and prove network isolation boundaries
+  - Evaluate automatic DNS resolution and embedded resolver mechanics
 
-completion:
-  required_tasks: all
+tasks:
+  - id: create-network-tiers
+    summary: Provision isolated network tiers for ingress and data persistence.
+    prompt: >-
+      Create two isolated user-defined bridge networks: `dmz-net` for public ingress
+      routing and `data-net` for internal data services. Both networks must utilize
+      the standard bridge driver.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+
+        r1 = subprocess.run(['docker', 'network', 'inspect', 'dmz-net'], capture_output=True)
+        r2 = subprocess.run(['docker', 'network', 'inspect', 'data-net'], capture_output=True)
+
+        if r1.returncode != 0 or r2.returncode != 0:
+            print('Missing networks.')
+            sys.exit(0)
+
+        print('TIERS_OK')
+        "
+      match_type: exact
+      expected_output: TIERS_OK
+    error_message: >-
+      The required network tiers 'dmz-net' and 'data-net' do not exist with the bridge driver.
+
+  - id: deploy-perimeter-services
+    summary: Deploy the public web proxy and isolated cache services.
+    prompt: >-
+      Deploy the perimeter services meeting these operational requirements:
+      - Run a container named `web-proxy` using `nginx:alpine` attached strictly to `dmz-net`. Publish host port 8080 to container port 80.
+      - Run a container named `cache-db` using `redis:alpine` attached strictly to `data-net`. Do not publish any ports to the host machine.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r_proxy = subprocess.run(['docker', 'inspect', 'web-proxy'], capture_output=True)
+        r_cache = subprocess.run(['docker', 'inspect', 'cache-db'], capture_output=True)
+
+        if r_proxy.returncode != 0 or r_cache.returncode != 0:
+            print('Containers not found.')
+            sys.exit(0)
+
+        proxy_data = json.loads(r_proxy.stdout.decode('utf-8'))[0]
+        cache_data = json.loads(r_cache.stdout.decode('utf-8'))[0]
+
+        if not proxy_data['State']['Running'] or not cache_data['State']['Running']:
+            print('Containers not running.')
+            sys.exit(0)
+
+        proxy_nets = proxy_data['NetworkSettings']['Networks']
+        cache_nets = cache_data['NetworkSettings']['Networks']
+
+        if 'dmz-net' not in proxy_nets or 'data-net' in proxy_nets:
+            print('Proxy network placement invalid.')
+            sys.exit(0)
+
+        if 'data-net' not in cache_nets or 'dmz-net' in cache_nets:
+            print('Cache network placement invalid.')
+            sys.exit(0)
+
+        # Check port publishing
+        ports = proxy_data['NetworkSettings']['Ports'].get('80/tcp')
+        if not ports or not any(p.get('HostPort') == '8080' for p in ports):
+            print('Proxy port 8080 not published.')
+            sys.exit(0)
+
+        cache_ports = cache_data['NetworkSettings']['Ports'].get('6379/tcp')
+        if cache_ports:
+            print('Cache port must not be published to host.')
+            sys.exit(0)
+
+        print('SERVICES_DEPLOYED')
+        "
+      match_type: exact
+      expected_output: SERVICES_DEPLOYED
+    error_message: >-
+      Perimeter services do not meet the network attachment or port publishing specifications.
+
+  - id: deploy-dual-homed-gateway
+    summary: Deploy the dual-homed application gateway bridging both network tiers.
+    prompt: >-
+      Deploy a service container named `app-gateway` using `alpine:latest` configured
+      to remain active. The container must be attached to both `dmz-net` and `data-net`
+      simultaneously, serving as the trusted communication bridge between tiers.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'inspect', 'app-gateway'], capture_output=True)
+        if r.returncode != 0:
+            print('Container not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if not data['State']['Running']:
+            print('Container not running.')
+            sys.exit(0)
+
+        nets = data['NetworkSettings']['Networks']
+        if 'dmz-net' not in nets or 'data-net' not in nets:
+            print('Gateway not dual-homed.')
+            sys.exit(0)
+
+        print('GATEWAY_BRIDGED')
+        "
+      match_type: exact
+      expected_output: GATEWAY_BRIDGED
+    error_message: >-
+      The 'app-gateway' container is not running or is not connected to both network tiers.
+
+  - id: verify-network-isolation
+    summary: Verify inter-service routing and perimeter security boundaries.
+    prompt: >-
+      Validate the network routing and security boundaries across all tiers:
+      - `app-gateway` must be able to resolve and reach `cache-db` on port 6379 and `web-proxy` on port 80.
+      - `web-proxy` must be strictly blocked from resolving or routing packets to `cache-db`, proving perimeter defense.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+
+        # 1. Gateway -> cache-db:6379
+        r_gw_cache = subprocess.run(['docker', 'exec', 'app-gateway', 'nc', '-z', '-w', '2', 'cache-db', '6379'], capture_output=True)
+        if r_gw_cache.returncode != 0:
+            print('Gateway cannot reach cache-db.')
+            sys.exit(0)
+
+        # 2. Gateway -> web-proxy:80
+        r_gw_proxy = subprocess.run(['docker', 'exec', 'app-gateway', 'nc', '-z', '-w', '2', 'web-proxy', '80'], capture_output=True)
+        if r_gw_proxy.returncode != 0:
+            print('Gateway cannot reach web-proxy.')
+            sys.exit(0)
+
+        # 3. Web-proxy -> cache-db must fail (no route / resolution)
+        r_proxy_cache = subprocess.run(['docker', 'exec', 'web-proxy', 'ping', '-c', '1', '-W', '2', 'cache-db'], capture_output=True)
+        if r_proxy_cache.returncode == 0:
+            print('Security isolation failed: web-proxy can reach cache-db.')
+            sys.exit(0)
+
+        print('ISOLATION_VERIFIED')
+        "
+      match_type: exact
+      expected_output: ISOLATION_VERIFIED
+    error_message: >-
+      Perimeter network isolation or inter-service reachability failed verification.
+
+  - id: evaluate-dns-mechanics
+    summary: Evaluate automatic service discovery and DNS resolution mechanics.
+    prompt: >-
+      Why does automatic DNS service discovery by container name succeed on user-defined
+      bridge networks but fail by default on the default bridge (`docker0`)?
+    type: multiple_choice
+    options:
+      - "User-defined bridge networks route DNS queries to Docker's embedded DNS server (127.0.0.11), whereas the default bridge lacks an embedded DNS resolver."
+      - "The default bridge operates at the data link layer (Layer 2) and cannot transmit IP packets."
+      - "User-defined bridge networks disable host port forwarding to reserve bandwidth for DNS lookups."
+      - "The Linux kernel automatically assigns public DNS records to user-defined bridges through DHCP."
+    validation:
+      expected_answer: "User-defined bridge networks route DNS queries to Docker's embedded DNS server (127.0.0.11), whereas the default bridge lacks an embedded DNS resolver."
+    error_message: >-
+      The selected answer does not correctly explain the mechanics of Docker's embedded DNS resolver.

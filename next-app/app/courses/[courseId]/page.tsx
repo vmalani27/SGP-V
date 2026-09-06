@@ -21,12 +21,12 @@ export default async function CoursePage({
   const firstItemHref = firstItem ? itemHref(courseId, firstItem) : '#';
 
   const changes = await getCourseChanges(courseId);
+  console.log(`[CoursePage] courseId="${courseId}" resolved changes:`, changes);
 
   return (
     <main className="min-h-screen bg-bg text-text">
       <Navbar
         breadcrumb={[
-          { label: 'Dashboard', href: '/dashboard' },
           { label: course.title },
         ]}
       />

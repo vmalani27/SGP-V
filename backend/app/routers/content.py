@@ -28,9 +28,13 @@ def get_presigned_download_url(base_url: str, version: str) -> str:
     try:
         parsed = urllib.parse.urlparse(base_url)
         hostname = parsed.hostname or ""
+        # If running locally or on floci / custom non-AWS host, return direct URL
+        if any(h in hostname for h in ("localhost", "127.0.0.1", "floci")) or parsed.port == 4566:
+            return f"{base_url.rstrip('/')}/published/{version}/content.tar.gz"
+
         parts = hostname.split(".")
-        if not parts:
-            return f"{base_url}/published/{version}/content.tar.gz"
+        if not parts or len(parts) < 3 or "amazonaws" not in hostname:
+            return f"{base_url.rstrip('/')}/published/{version}/content.tar.gz"
 
         bucket = parts[0]
         region = "ap-south-1"  # fallback default
@@ -113,7 +117,7 @@ async def content_version() -> dict:
                 "artifact_sha256": data.get("artifact_sha256", ""),
                 "from_version": from_version,
                 "changes": changes,
-                "updatedAt": updated_at,
+                "updatedAt": updated_at or _serialize_timestamp(data.get("updatedAt")),
             }
 
     raise HTTPException(status_code=404, detail="No published content yet")

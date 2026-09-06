@@ -38,6 +38,11 @@ services:
     - 3000:3000
     volumes:
     - frontend_content:/app/.content
+    env_file:
+    - ./environments/dev/frontend/.env.dev
+    environment:
+    - BACKEND_API_URL=${BACKEND_API_URL:-https://labops-dev.onrender.com}
+    - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-https://labops-dev.onrender.com}
     depends_on:
     - backend
     restart: unless-stopped
@@ -53,6 +58,7 @@ services:
     - 8001:8000
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
+    - ./orchestrator/app:/app/app
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
       LAB_PREFIX: labops-lab

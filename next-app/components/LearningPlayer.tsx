@@ -26,7 +26,7 @@ export default function LearningPlayer({
 }) {
   const { getEnrollment } = useAuth();
   const enrollment = getEnrollment(courseId);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const completedChapterIds: string[] = [];
   if (enrollment?.progress) {
@@ -43,7 +43,6 @@ export default function LearningPlayer({
     <main className="flex h-screen flex-col bg-bg text-text">
       <Navbar
         breadcrumb={[
-          { label: 'Dashboard', href: '/dashboard' },
           { label: course.title, href: `/courses/${courseId}` },
           { label: currentItem.title },
         ]}

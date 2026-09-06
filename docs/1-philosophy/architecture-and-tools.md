@@ -15,8 +15,11 @@ Teaching Docker means students need to run commands like `docker run`, `docker p
 - It properly isolates cgroups, `/proc`, and `/sys`.
 - **Result:** We can run systemd and the Docker Engine securely *inside* an unprivileged container. To the student, it feels identical to an isolated VM.
 
-### Why Vagrant?
-Sysbox requires specific Linux kernel features and doesn't run natively on macOS or Windows (Docker Desktop VMs abstract away the runtime). By packaging the orchestrator inside a Vagrant Ubuntu 22.04 VM, we ensure that **any developer on any OS** can spin up an identical, Sysbox-ready host with a single `vagrant up`.
+### Deployment & Runtime Hierarchy
+1. **Tier 1 — Native Linux (Production):** Direct Sysbox CE on Ubuntu 22.04 / Debian. Native rootless userns and system container execution.
+2. **Tier 2 — Windows + WSL2 (Validated Dev/Test):** Sysbox CE 0.7.0 runs natively inside WSL2 (Ubuntu 22.04, kernel $\ge$ 5.12) when configured with `"time-namespaces": false` in `/etc/docker/daemon.json`. This provides near bare-metal performance on Windows without needing a heavy VM.
+3. **Tier 3 — Docker Desktop Mode (`CONTAINER_RUNTIME_MODE=privileged`):** For fast local testing on Windows/macOS where the WSL2 utility VM acts as the hardware virtualization security boundary.
+4. **Tier 4 — Vagrant VM (Universal Fallback):** Packaging the orchestrator inside a Vagrant Ubuntu 22.04 VM (`vagrant up`) ensures that any developer on any OS can spin up an identical, isolated environment if native host/WSL2 Sysbox is unavailable.
 
 ## 2. Next.js (The Frontend)
 

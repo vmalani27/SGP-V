@@ -182,7 +182,8 @@ jobs:
       - name: Materialize .env.production
         run: |
           cat << 'EOF' > next-app/.env.production
-          NEXT_PUBLIC_API_BASE_URL=${{ vars.NEXT_PUBLIC_API_BASE_URL || secrets.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000' }}
+          BACKEND_API_URL=${{ secrets.BACKEND_API_URL || vars.BACKEND_API_URL || 'https://labops-dev.onrender.com' }}
+          NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL || vars.NEXT_PUBLIC_API_BASE_URL || secrets.BACKEND_API_URL || vars.BACKEND_API_URL || 'https://labops-dev.onrender.com' }}
           NEXT_PUBLIC_ORCHESTRATOR_URL=${{ vars.NEXT_PUBLIC_ORCHESTRATOR_URL || secrets.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8001' }}
           NEXT_PUBLIC_ORCHESTRATOR_SECRET=${{ vars.NEXT_PUBLIC_ORCHESTRATOR_SECRET || secrets.NEXT_PUBLIC_ORCHESTRATOR_SECRET || 'local-dev-super-secret' }}
           NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY || secrets.FIREBASE_API_KEY || vars.NEXT_PUBLIC_FIREBASE_API_KEY || vars.FIREBASE_API_KEY }}

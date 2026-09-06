@@ -18,14 +18,27 @@ class LabStatus(str, Enum):
 def parse_created_at(value: str | None) -> datetime:
     """Parse a Docker container 'Created' timestamp into an aware datetime.
 
-    Docker emits ISO-8601 with a trailing 'Z'. Falls back to "now" so a
-    missing/invalid value never crashes session recovery.
+    Docker emits ISO-8601 with a trailing 'Z' and nanosecond precision. Truncates
+    fractional seconds to 6 digits (microseconds) for robust fromisoformat parsing.
+    Falls back to "now" so a missing/invalid value never crashes session recovery.
     """
     if not value:
         return datetime.now(timezone.utc)
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
+        val = value.replace("Z", "+00:00")
+        if "." in val:
+            prefix, rest = val.split(".", 1)
+            # rest has e.g. 560579102+00:00
+            if "+" in rest:
+                frac, tz = rest.split("+", 1)
+                val = f"{prefix}.{frac[:6]}+{tz}"
+            elif "-" in rest:
+                frac, tz = rest.split("-", 1)
+                val = f"{prefix}.{frac[:6]}-{tz}"
+            else:
+                val = f"{prefix}.{rest[:6]}"
+        return datetime.fromisoformat(val)
+    except Exception:
         return datetime.now(timezone.utc)
 
 
