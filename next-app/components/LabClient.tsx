@@ -116,9 +116,9 @@ function labStateFrom(res: {
 function resolveLabPreviewPath(labConfig: Record<string, unknown> | null, port: number): string {
   if (!labConfig) return '';
 
-  const normalize = (val: unknown): string | null => {
-    if (typeof val !== 'string') return null;
-    val = val.trim();
+  const normalize = (rawVal: unknown): string | null => {
+    if (typeof rawVal !== 'string') return null;
+    const val = rawVal.trim();
     if (!val) return null;
     if (val.startsWith('http://') || val.startsWith('https://')) {
       try {
