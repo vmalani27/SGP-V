@@ -1,119 +1,127 @@
-# Chapter 15: Production Storage Patterns
+# Chapter 15: Production Storage Operations, Backups & Disaster Recovery
 
 ## In this chapter, you will
 
-- Choose the right volume strategy for different data types
-- Back up and restore container data
-- Handle secrets securely in containers
+- Execute automated volume backups using ephemeral utility containers
+- Run disaster recovery procedures to restore production data from compressed archives
+- Resolve the non-root Host UID/GID permission trap on mounted storage
+- Prevent data leakage by isolating sensitive runtime tokens in volatile RAM (`tmpfs`)
 
-## What Needs to Persist
+---
 
-Not all data is the same. Here is how to think about what needs storage:
+## The Ephemeral Utility Container Pattern
 
-| Data Type | Strategy | Why |
-|-----------|----------|-----|
-| Database files | Named volume | Must survive container restarts, performance matters |
-| User uploads | Named volume or external storage | Critical data, needs backups |
-| Application logs | Bind mount or logging driver | Need to be accessible on the host |
-| Configuration files | Bind mount or env vars | Changes frequently, should not be baked into images |
-| Secrets | Environment variables or Docker secrets | Never in volumes, never in images |
+A common anti-pattern is installing backup utilities (`tar`, `gzip`, `aws-cli`, `rclone`) directly inside application container images. Bloating application images with backup tooling expands attack surface and violates single-responsibility principles.
 
-## Backing Up Volumes
+The industry-standard Docker pattern is the **Ephemeral Utility Container**:
+1. Run a lightweight, minimal container (`alpine:latest`) with the `--rm` flag.
+2. Mount the production volume as **read-only** (`readonly`).
+3. Bind mount a host backup directory.
+4. Execute the archive command and immediately terminate. The utility container disappears, leaving a clean archive on the host.
 
-Docker volumes are just directories on your host machine. To back up a volume, you can run a temporary container that mounts the volume and copies its contents:
-
+```text
+┌────────────────────────────────────────────────────────────┐
+│ EPHEMERAL BACKUP RUNBOOK                                   │
+│                                                            │
+│   Named Volume: [ db-data ] (Production State)             │
+│        │                                                   │
+│        ▼ (read-only mount)                                 │
+│   ┌──────────────────────────────────────────────┐         │
+│   │ Ephemeral Container: alpine (docker run --rm)│         │
+│   │   tar czf /backup/snapshot.tar.gz -C /data . │         │
+│   └──────────────────────┬───────────────────────┘         │
+│                          ▼ (write mount)                   │
+│   Host Backup Storage: /var/backups/snapshot.tar.gz        │
+└────────────────────────────────────────────────────────────┘
 ```
+
+### Executing an Automated Snapshot
+```bash
 docker run --rm \
-  -v pgdata:/source:ro \
-  -v $(pwd):/backup \
-  alpine \
-  tar czf /backup/pgdata-backup.tar.gz -C /source .
+  --mount type=volume,source=db-data,target=/source,readonly \
+  --mount type=bind,source=/var/backups,target=/backup \
+  alpine:latest \
+  tar czf /backup/db-data-$(date +%Y%m%d).tar.gz -C /source .
 ```
 
-This creates a compressed archive of the volume's contents in your current directory. The `:ro` flag mounts the volume as read-only — the backup container does not modify your data.
+Key principles of this command:
+- `--rm`: Automatically removes the container filesystem upon completion.
+- `readonly`: Ensures the backup process cannot write, corrupt, or alter production data during the archive operation.
+- `-C /source .`: Strips absolute directory prefixes so the archive unpacks cleanly into any destination root.
 
-To restore from a backup:
+---
 
-```
+## Disaster Recovery & Volume Restoration
+
+When a volume suffers corruption or an administrator accidentally purges storage, the disaster recovery runbook restores the dataset into a fresh volume before attaching it to a replacement service:
+
+```bash
+# 1. Provision a clean, empty target volume
+docker volume create db-data-restored
+
+# 2. Extract the archive into the target volume using an ephemeral worker
 docker run --rm \
-  -v pgdata:/target \
-  -v $(pwd):/backup \
-  alpine \
-  tar xzf /backup/pgdata-backup.tar.gz -C /target
+  --mount type=volume,source=db-data-restored,target=/target \
+  --mount type=bind,source=/var/backups,target=/backup,readonly \
+  alpine:latest \
+  tar xzf /backup/db-data-snapshot.tar.gz -C /target
+
+# 3. Attach the restored volume to the new service container
+docker run -d --name db-service \
+  --mount type=volume,source=db-data-restored,target=/var/lib/postgresql/data \
+  postgres:16-alpine
 ```
 
-> **Tip:** Automate volume backups with a cron job or a scheduled task. Database volumes should be backed up regularly, not just when you remember to do it.
+---
 
-## Handling Secrets
+## The Non-Root Host UID/GID Permission Trap
 
-Secrets are sensitive values — database passwords, API keys, encryption keys. Never hardcode them in Dockerfiles, never commit them to version control, and never bake them into images.
+In Chapter 10, you learned that production containers must run as a non-root user (e.g., `USER 10001:10001`). However, non-root execution creates a notorious operational failure when combined with host bind mounts:
 
-### Environment Variables (Development)
-
-```
-docker run -e DATABASE_URL=postgresql://user:pass@db:5432/myapp my-app
-```
-
-Simple but not perfectly secure — environment variables are visible in `docker inspect` output and in `/proc/*/environ` inside the container.
-
-### Docker Secrets (Swarm Mode)
-
-Docker Swarm provides a built-in secrets mechanism:
-
-```
-echo "my-secret-password" | docker secret create db_password -
+```text
+Host Directory: /home/student/logs (Owned by UID 1000:1000, 0755)
+                                ▲
+                                │ Bind Mount
+                                ▼
+Container Process: appuser (UID 10001) ──► Attempts to write /var/log/app.log
+Result: EACCES: Permission Denied!
 ```
 
-Secrets are stored encrypted and mounted as files into containers only when needed. They are never exposed as environment variables.
+### Why This Happens
+The Linux kernel enforces file permissions based on the numeric **UID** and **GID** making the syscall. Because containers share the host kernel:
+- If a host directory is owned by UID `1000` with permissions `rwxr-xr-x`, a process running as UID `10001` inside the container is classified as "others" and cannot write to it.
 
-### `.env` Files with Compose (Development)
+### How to Resolve It
+1. **Pre-assign ownership on the host:**
+   ```bash
+   mkdir -p ./logs
+   sudo chown -R 10001:10001 ./logs
+   ```
+2. **Leverage Docker Named Volumes:**
+   When a named volume is mounted into a container for the first time, Docker automatically initializes directory ownership to match the container's `USER` directive! This is a primary reason named volumes are vastly preferred over bind mounts in production.
 
-Create a `.env` file in your project root:
+---
 
-```
-POSTGRES_PASSWORD=secret123
-REDIS_PASSWORD=redis456
-```
+## Ephemeral In-Memory Storage (`tmpfs`)
 
-Reference the variables in your `docker-compose.yml`:
+For sensitive data (API credentials, temporary decryption keys) or high-throughput scratch files that should never persist on physical storage:
 
-```yaml
-services:
-  db:
-    image: postgres
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-```
-
-Docker Compose reads `.env` automatically. Keep this file in `.gitignore`.
-
-> **Warning:** `.env` files are not encrypted. They are plain text on your disk. Treat them like passwords — do not share them, do not commit them, and do not include them in Docker images.
-
-## Production Checklist
-
-Before deploying containers to production, verify:
-
-1. **Volumes for persistent data** — databases, uploads, any data that must survive restarts
-2. **Backup strategy** — automated, tested, and regularly verified
-3. **Secrets management** — no hardcoded passwords, no secrets in images
-4. **Resource limits** — set memory and CPU limits to prevent one container from starving others:
-
-```
-docker run -d --memory 512m --cpus 1.0 my-app
+```bash
+docker run -d --name api-worker \
+  --mount type=tmpfs,target=/app/secure-tokens,tmpfs-size=32m,tmpfs-mode=0700 \
+  alpine:latest sleep 300
 ```
 
-5. **Health checks** — tell Docker how to verify your application is healthy:
+- Data exists exclusively in the host kernel's virtual memory page cache.
+- The instant the container terminates, all data is destroyed without leaving residual blocks on NVMe or SSD disks.
 
-```
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD curl -f http://localhost:3000/health || exit 1
-```
+---
 
-> **Try This:** Create a Docker Compose file with a PostgreSQL service using a named volume. Add a `healthcheck` that verifies PostgreSQL is accepting connections. Add a second service that depends on the healthy database. Use `docker compose up` and watch the health status change from "starting" to "healthy".
+## Summary Checklist
 
-## Key Takeaways
-
-- Match your storage strategy to your data type — volumes for databases, bind mounts for development
-- Back up volumes regularly using temporary containers that archive the data
-- Use `.env` files for development secrets; Docker secrets for production
-- Set resource limits and health checks on production containers
+| Objective | Production Best Practice |
+|:---|:---|
+| **Backups** | Use ephemeral utility containers with `readonly` source volume mounts. |
+| **Restore** | Unpack archives into a newly provisioned volume before starting the application service. |
+| **Security** | Run as non-root (`10001`) and ensure volume/host directory ownership matches the numeric UID. |
+| **Secrets** | Mount sensitive session state and ephemeral tokens into `tmpfs` RAM mounts. |

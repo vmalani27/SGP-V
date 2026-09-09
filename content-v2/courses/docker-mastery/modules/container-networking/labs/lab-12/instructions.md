@@ -65,5 +65,5 @@ This is an independent assessment. You are given operational constraints and acc
 | **Proxy Deployment** | `web-proxy` runs exclusively on `dmz-net` with port 8080 mapped to port 80. |
 | **Cache Deployment** | `cache-db` runs exclusively on `data-net` with 0 host ports exposed. |
 | **Dual-Homed Gateway** | `app-gateway` is actively running and connected to both `dmz-net` and `data-net`. |
-| **Inter-Service Routing** | `app-gateway` reaches `cache-db:6379` and `web-proxy:80`. |
-| **Perimeter Defense** | `web-proxy` cannot resolve or reach `cache-db`. |
+| **Reachability Diagnostic** | Identify the exact command to test Layer 4 TCP reachability from `app-gateway` to `cache-db:6379`. |
+| **DNS Mechanics** | Evaluate why automatic DNS resolution operates on user-defined bridges versus the default bridge. |

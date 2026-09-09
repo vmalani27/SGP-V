@@ -133,41 +133,21 @@ tasks:
       The 'app-gateway' container is not running or is not connected to both network tiers.
 
   - id: verify-network-isolation
-    summary: Verify inter-service routing and perimeter security boundaries.
+    summary: Identify the command to verify inter-service reachability across network tiers.
     prompt: >-
-      Validate the network routing and security boundaries across all tiers:
-      - `app-gateway` must be able to resolve and reach `cache-db` on port 6379 and `web-proxy` on port 80.
-      - `web-proxy` must be strictly blocked from resolving or routing packets to `cache-db`, proving perimeter defense.
-    type: terminal_action
+      To confirm from the host terminal that `app-gateway` can resolve and establish
+      a TCP connection to `cache-db` on its service port (6379) across the internal
+      `data-net` tier without exposing ports to the host, which command should you run?
+    type: multiple_choice
+    options:
+      - "docker exec app-gateway nc -zv localhost 6379"
+      - "docker exec app-gateway nc -zv cache-db 6379"
+      - "docker exec app-gateway nc -p 6379 cache-db"
+      - "docker exec app-gateway ping -c 1 -p 6379 cache-db"
     validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys
-
-        # 1. Gateway -> cache-db:6379
-        r_gw_cache = subprocess.run(['docker', 'exec', 'app-gateway', 'nc', '-z', '-w', '2', 'cache-db', '6379'], capture_output=True)
-        if r_gw_cache.returncode != 0:
-            print('Gateway cannot reach cache-db.')
-            sys.exit(0)
-
-        # 2. Gateway -> web-proxy:80
-        r_gw_proxy = subprocess.run(['docker', 'exec', 'app-gateway', 'nc', '-z', '-w', '2', 'web-proxy', '80'], capture_output=True)
-        if r_gw_proxy.returncode != 0:
-            print('Gateway cannot reach web-proxy.')
-            sys.exit(0)
-
-        # 3. Web-proxy -> cache-db must fail (no route / resolution)
-        r_proxy_cache = subprocess.run(['docker', 'exec', 'web-proxy', 'ping', '-c', '1', '-W', '2', 'cache-db'], capture_output=True)
-        if r_proxy_cache.returncode == 0:
-            print('Security isolation failed: web-proxy can reach cache-db.')
-            sys.exit(0)
-
-        print('ISOLATION_VERIFIED')
-        "
-      match_type: exact
-      expected_output: ISOLATION_VERIFIED
+      expected_answer: "docker exec app-gateway nc -zv cache-db 6379"
     error_message: >-
-      Perimeter network isolation or inter-service reachability failed verification.
+      The selected command does not correctly verify Layer 4 TCP connectivity across Docker's bridge network namespace.
 
   - id: evaluate-dns-mechanics
     summary: Evaluate automatic service discovery and DNS resolution mechanics.

@@ -1,97 +1,155 @@
-# Chapter 14: Why Data Dies When Containers Stop
+# Chapter 14: Storage Architecture: Writable Layers, Named Volumes & tmpfs
 
 ## In this chapter, you will
 
-- Understand why containers lose data
-- Use volumes to persist data across container restarts
-- Know when to use volumes vs. bind mounts
+- Master the four Docker storage mechanisms: Writable Layers, Named Volumes, Bind Mounts, and `tmpfs`
+- Understand the performance cost of the `overlay2` storage driver vs native volume I/O
+- Manage the complete lifecycle of Docker volumes using CLI inspection tools
+- Adopt modern `--mount` syntax over legacy `-v` flags for production safety
+- Isolate sensitive ephemeral state into RAM using `tmpfs` mounts
 
-## The Core Problem
+---
 
-Remember Chapter 4? You ran an Alpine container, created a file inside it, removed the container, and started a fresh one from the same image — the file was gone.
+## The Four Storage Mechanisms
 
-This is not a bug. It is by design. Containers are ephemeral. The writable layer on top of the image is temporary. When the container is removed, that layer goes with it.
+Every container has access to four distinct types of storage, each designed for a specific operational lifecycle:
 
-But databases need to store data. File uploads need to survive. Logs need to be preserved. You need a way to keep data alive after the container is gone.
-
-## Volumes: Persistent Storage
-
-A **volume** is a storage area managed by Docker that exists independently of any container. You mount a volume into a container, and everything written to that mount point persists.
-
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ HOST MACHINE                                                           │
+│                                                                        │
+│  ┌───────────────────────┐              ┌───────────────────────────┐  │
+│  │ Docker Engine         │              │ Host Filesystem           │  │
+│  │                       │              │                           │  │
+│  │  ┌─────────────────┐  │              │  ┌─────────────────────┐  │  │
+│  │  │ Container       │  │              │  │ /var/lib/docker/    │  │  │
+│  │  │                 │  │              │  │   volumes/my-vol/   │  │  │
+│  │  │ 1. Writable     │  │              │  └──────────┬──────────┘  │  │
+│  │  │    Layer (CoW)  │  │                            │             │  │
+│  │  │                 │  │  2. Named Volume Mount     │             │  │
+│  │  │ /var/data ◄─────┼──┼────────────────────────────┘             │  │
+│  │  │                 │  │                                          │  │
+│  │  │ 3. Bind Mount   │  │  4. In-Memory tmpfs                      │  │
+│  │  │ /app/src ◄──────┼──┼───────────────┐     ┌─────────────────┐  │  │
+│  │  │ /tmp/cache ◄────┼──┼─────────────┐ │     │ Host RAM        │  │  │
+│  │  └─────────────────┘  │             │ │     │ (non-persistent)│  │  │
+│  └───────────────────────┘             │ │     └────────┬────────┘  │  │
+│                                        │ │              │           │  │
+│  ┌─────────────────────────────────────┴─┴──────────┐   │           │  │
+│  │ /home/developer/project/src (Local Host Dir)     │   │           │  │
+│  └──────────────────────────────────────────────────┘   │           │  │
+│                                                         │           │  │
+└─────────────────────────────────────────────────────────┼───────────┘
+                                                          ▼
 ```
+
+| Storage Type | Location | Persistence | Primary Use Case |
+|:---|:---|:---|:---|
+| **Writable Layer** | `/var/lib/docker/overlay2` | Tied to container lifecycle | Temporary process scratch files. |
+| **Named Volume** | `/var/lib/docker/volumes` | Survives container deletion | Production databases, uploads, stateful state. |
+| **Bind Mount** | Arbitrary host directory | Independent of Docker | Local source code mounting for hot reloading. |
+| **`tmpfs`** | Host system RAM | Wiped on container stop | High-speed cache, sensitive tokens/keys. |
+
+---
+
+## Why Databases Cannot Run on the Writable Layer
+
+In Chapter 4, you saw that the writable layer is ephemeral. However, there is a second, critical engineering reason why production databases (PostgreSQL, MySQL, MongoDB, Redis) must never write directly to the container root filesystem: **I/O performance overhead**.
+
+The `overlay2` storage driver uses a union filesystem:
+1. When a database performs a write or updates an existing file block, the storage driver must search through the read-only image layers, copy the entire file into the upper writable layer, and apply the modification (**Copy-on-Write write amplification**).
+2. For random read/write workloads (like B-Tree index updates and write-ahead logs), this adds significant latency and CPU overhead.
+
+**Docker Volumes completely bypass the storage driver.** A volume is an un-unionized directory on the host filesystem managed by the Docker daemon. Read and write operations to a volume execute at **native bare-metal disk speeds**.
+
+---
+
+## Named Volumes: Mechanics & Lifecycle
+
+A named volume is a storage entity with an independent lifecycle:
+
+```bash
+# 1. Create a dedicated volume
+docker volume create pg-data
+
+# 2. Inspect volume metadata and host mountpoint
+docker volume inspect pg-data
+```
+
+The inspect output reveals the physical directory managed by Docker:
+```json
+[
+  {
+    "CreatedAt": "2026-09-09T01:00:00Z",
+    "Driver": "local",
+    "Labels": {},
+    "Mountpoint": "/var/lib/docker/volumes/pg-data/_data",
+    "Name": "pg-data",
+    "Scope": "local"
+  }
+]
+```
+
+### Volume Lifecycle Management
+- **List volumes:** `docker volume ls`
+- **Audit disk usage:** `docker system df -v`
+- **Delete an unused volume:** `docker volume rm <volume-name>`
+- **Prune unattached volumes:** `docker volume prune -f`
+
+---
+
+## Modern Syntax: `--mount` vs Legacy `-v`
+
+In early Docker versions, volumes and bind mounts were mounted exclusively via the `-v` / `--volume` flag:
+
+```bash
+# Legacy syntax:
+docker run -d -v pg-data:/var/lib/postgresql/data postgres:16-alpine
+```
+
+While concise, `-v` has significant pitfalls:
+- If the source volume or directory does not exist, Docker silently creates an empty host directory instead of failing.
+- Options like `:ro` or `:cached` are appended in a comma-separated trailing string that is difficult to parse or validate in automated scripts.
+
+The modern standard is the explicit `--mount` flag:
+
+```bash
+# Modern, production-grade syntax:
 docker run -d \
-  -e POSTGRES_PASSWORD=secret \
-  -v pgdata:/var/lib/postgresql/data \
-  -p 5432:5432 \
-  postgres
+  --name db-service \
+  --mount type=volume,source=pg-data,target=/var/lib/postgresql/data \
+  postgres:16-alpine
 ```
 
-The `-v pgdata:/var/lib/postgresql/data` flag creates a named volume called `pgdata` and mounts it at `/var/lib/postgresql/data` inside the container. PostgreSQL writes its data files there.
+Key attributes of `--mount`:
+- `type`: `volume`, `bind`, or `tmpfs`.
+- `source`: Volume name (for volumes) or absolute path (for bind mounts).
+- `target`: Mount destination path inside the container namespace.
+- `readonly`: Optional boolean flag (`readonly` or `ro`) to prevent write access.
 
-Now if you remove the container:
+---
 
-```
-docker rm -f <container-id>
-```
+## In-Memory Ephemeral Mounts (`tmpfs`)
 
-The volume still exists. Start a new container with the same volume:
+Applications frequently generate sensitive artifacts (decrypted TLS certificates, session tokens) or high-volume temporary caches (Redis dump files, test socket descriptors) that must **never** be flushed to permanent disk storage.
 
-```
+The `tmpfs` mount allocates storage directly in the host's Linux kernel virtual memory:
+
+```bash
 docker run -d \
-  -e POSTGRES_PASSWORD=secret \
-  -v pgdata:/var/lib/postgresql/data \
-  -p 5432:5432 \
-  postgres
+  --name secure-worker \
+  --mount type=tmpfs,target=/app/secure-cache,tmpfs-size=64m,tmpfs-mode=1777 \
+  alpine:latest sleep 300
 ```
 
-Your data is back. The new container reads from the same volume.
+- When the container stops, the RAM is returned to the kernel. No bits remain on physical NVMe/SSD storage.
+- File operations inside `/app/secure-cache` achieve ultra-low latency RAM throughput.
 
-## Managing Volumes
-
-| Command | Purpose |
-|---------|---------|
-| `docker volume ls` | List all volumes |
-| `docker volume inspect pgdata` | See details (mount point, driver, labels) |
-| `docker volume rm pgdata` | Delete a volume |
-| `docker volume prune` | Remove all unused volumes |
-
-## Bind Mounts: Linking to Your Filesystem
-
-A **bind mount** maps a specific directory on your host machine into the container. Instead of Docker managing the storage, you are pointing at a real path on your disk.
-
-```
-docker run -d \
-  -v /home/you/my-app:/app \
-  -p 3000:3000 \
-  node:20-alpine \
-  node /app/server.js
-```
-
-The `-v /home/you/my-app:/app` flag maps your local project directory into the container at `/app`. Any changes you make to files on your machine are immediately visible inside the container, and vice versa.
-
-This is extremely useful for development. Edit code on your machine, see the changes running inside the container — no rebuild required.
-
-## Volumes vs. Bind Mounts
-
-| | Volumes | Bind Mounts |
-|---|---------|------------|
-| **Managed by Docker** | Yes | No |
-| **Storage location** | Docker's storage directory | Your filesystem |
-| **Use case** | Production data (databases, uploads) | Development (live code reload) |
-| **Performance** | Good on Linux, okay on Mac/Windows | Depends on the host filesystem |
-| **Backup** | `docker volume` commands | Copy the directory directly |
-
-**Rule of thumb:** Use volumes for data that needs to survive container restarts in production. Use bind mounts for development where you want live file access.
-
-> **Tip:** In Docker Compose, volumes are defined at the bottom of the file and referenced in each service. This keeps your volume configuration centralized and easy to manage.
-
-> **Warning:** Bind mounts give the container access to your host filesystem. Be careful about what you mount. Mounting `/` or your home directory into a container is a security risk — the container can read and write any file you have access to.
-
-> **Try This:** Start a PostgreSQL container with a named volume. Create a table and insert data. Remove the container. Start a new container with the same volume name. Connect and verify your data survived. Then try the same thing but without a volume — your data will be gone.
+---
 
 ## Key Takeaways
 
-- Container data is ephemeral — it is lost when the container is removed
-- **Volumes** are Docker-managed storage that persists independently of containers
-- **Bind mounts** map a host directory into the container — useful for development
-- Use volumes for production data, bind mounts for development workflows
+1. **Decouple state from execution:** Containers should be stateless and disposable; state must live in named volumes.
+2. **Raw I/O performance:** Always mount database directories into named volumes to avoid `overlay2` storage driver penalties.
+3. **Favor `--mount`:** Use explicit `type=volume,source=...,target=...` syntax in production automation.
+4. **Use `tmpfs` for secrets:** Never write temporary credentials or ephemeral tokens to disk.

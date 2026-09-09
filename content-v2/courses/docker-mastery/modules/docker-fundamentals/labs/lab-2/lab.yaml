@@ -1,5 +1,5 @@
 id: lab-2
-title: Inspecting Containers
+title: Inspecting & Managing Containers
 difficulty: beginner
 environment: docker-basic
 
@@ -13,191 +13,142 @@ setup:
   - command: "docker run --name expired alpine:latest echo setup complete"
 
 objectives:
-  - Identify a running container with docker ps
-  - Distinguish docker ps from docker ps -a
-  - Read a container's configuration with docker inspect
-  - Identify the image, environment variables, and command of a container
-  - View a container's logs with docker logs
-  - Stop and start a container without recreating it
-  - Remove a container
+  - Differentiate active from terminated container instances
+  - Query container configuration and runtime state via docker inspect
+  - Capture container log output for diagnostic triage
+  - Execute container lifecycle transitions (stop and resume)
+  - Perform clean container removal and process namespace teardown
 
 tasks:
-  - id: find-running
+  - id: differentiate-container-states
+    summary: Identify the command to list all containers regardless of status.
     prompt: >-
-      A container is already running in this environment — the lab started it
-      for you before your session began. Run `docker ps` and identify it.
-      What is its name?
+      Two containers (`mystery` and `expired`) currently exist in the environment.
+      Which command lists all containers on the host, including those that have terminated?
     type: multiple_choice
     options:
-      - mystery
-      - expired
-      - web
-      - nginx
+      - "docker ps -a"
+      - "docker ps --running"
+      - "docker inspect --all"
+      - "docker container status"
     validation:
-      expected_answer: mystery
+      expected_answer: "docker ps -a"
     error_message: >-
-      Run `docker ps` and read the NAMES column. The lab's container has been
-      running since before your session started.
-    hints:
-      - "Which command lists the containers currently running on this system?"
-      - "Run `docker ps` — every running container appears with a NAME in the last column."
-      - "One container has been running since before your session began. The other was created, ran once, and already exited."
+      The selected command does not list both running and exited containers.
 
-  - id: count-all
+  - id: inspect-runtime-metadata
+    summary: Extract the base image name of the mystery container into a file.
     prompt: >-
-      Run `docker ps -a` to list every container on this system, including the
-      ones that have exited. How many containers exist in total?
-    type: multiple_choice
-    options:
-      - "1"
-      - "2"
-      - "3"
-      - "4"
-    validation:
-      expected_answer: "2"
-    error_message: >-
-      `docker ps` only shows running containers. Use `docker ps -a` to include
-      containers that have exited, then count them.
-    hints:
-      - "`docker ps` only shows running containers. How do you list containers that have exited too?"
-      - "`docker ps -a` shows every container on this system, stopped or running. Count the lines."
-      - "Two containers were created for you: one is still running, and one finished its work and exited."
-
-  - id: find-image
-    prompt: >-
-      Every container was created from an image. Inspect the `mystery`
-      container and determine which image it was started from.
-    type: multiple_choice
-    options:
-      - alpine:latest
-      - nginx:alpine
-      - ubuntu:latest
-      - busybox:latest
-    validation:
-      expected_answer: alpine:latest
-    error_message: >-
-      Read the Config.Image field of `docker inspect mystery` — it records the
-      image the container was started from.
-    hints:
-      - "Every container was created from an image. How do you read a container's full configuration?"
-      - "`docker inspect mystery` prints the container's configuration as JSON."
-      - "The image is recorded in the Config section, in the Image field."
-
-  - id: find-env
-    prompt: >-
-      The `mystery` container carries configuration in environment variables.
-      Inspect it and find the value of `MYSTERY_FLAVOR`.
-    type: multiple_choice
-    options:
-      - vanilla
-      - chocolate
-      - strawberry
-      - mint
-    validation:
-      expected_answer: vanilla
-    error_message: >-
-      Look at the Config.Env section of `docker inspect mystery` — it lists the
-      environment variables the container was started with, one KEY=value per
-      line.
-    hints:
-      - "A container receives configuration through environment variables. Inspect the mystery container."
-      - "Environment variables live in the Config.Env section of `docker inspect mystery`, one KEY=value per line."
-      - "Find the entry for MYSTERY_FLAVOR and read its value."
-
-  - id: find-cmd
-    prompt: >-
-      Every container runs a command when it starts. Inspect the `mystery`
-      container to find out which command it is running.
-    type: multiple_choice
-    options:
-      - sleep 3600
-      - nginx
-      - sh
-      - echo setup complete
-    validation:
-      expected_answer: sleep 3600
-    error_message: >-
-      Look at the Config.Cmd field of `docker inspect mystery` — it lists the
-      command the container runs at startup.
-    hints:
-      - "A container runs a command when it starts. Inspect mystery to see which one."
-      - "The command is recorded in the Config.Cmd section of `docker inspect mystery`."
-      - "mystery was started with `sleep 3600` — it is simply holding itself open so you can inspect it."
-
-  - id: view-logs
-    prompt: >-
-      The `expired` container ran a short command and exited. Look at its logs
-      and find what it printed.
-    type: multiple_choice
-    options:
-      - "setup complete"
-      - "mystery online"
-      - "hello world"
-      - "starting container"
-    validation:
-      expected_answer: "setup complete"
-    error_message: >-
-      Run `docker logs expired` to read what the container wrote to its output
-      streams before it exited.
-    hints:
-      - "Which command shows what a container has written to its output?"
-      - "`docker logs expired` prints everything the container wrote."
-      - "The expired container ran one command at startup and exited — its logs show exactly what it printed."
-
-  - id: stop-container
-    prompt: >-
-      Stop the `mystery` container. It should no longer be running — but it
-      must still exist on this system.
+      Inspect the running `mystery` container to determine the base image from which
+      it was created. Save the exact image name (e.g. `alpine:latest`) into a file
+      named `~/mystery-image.txt`.
     type: terminal_action
     validation:
-      command: "docker inspect mystery --format '{{.State.Status}}' 2>/dev/null | grep -qx exited && echo MYSTERY_STOPPED"
-      match_type: exact
-      expected_output: MYSTERY_STOPPED
-    error_message: >-
-      The mystery container is still running. Stopping and removing are two
-      different operations — you only need to stop it here. Verify with
-      `docker ps -a`.
-    hints:
-      - "Which command tells a running container to stop? It sends SIGTERM and gives the process time to shut down."
-      - "Stopping a container does not delete it — stopping and removing are separate operations."
-      - "Verify with `docker ps -a`: mystery should show a status of Exited, not Running."
-    solution:
-      command: "docker stop mystery"
+      command: |-
+        python3 -c "
+        import os, sys
 
-  - id: start-container
+        path = os.path.expanduser('~/mystery-image.txt')
+        if not os.path.isfile(path):
+            print('File missing.')
+            sys.exit(0)
+
+        with open(path) as f:
+            content = f.read().strip()
+
+        if content in ('alpine', 'alpine:latest'):
+            print('IMAGE_EXTRACTED')
+        else:
+            print('Incorrect image name.')
+        "
+      match_type: exact
+      expected_output: IMAGE_EXTRACTED
+    error_message: >-
+      The file ~/mystery-image.txt is missing or does not contain the base image of container 'mystery'.
+
+  - id: triage-container-logs
+    summary: Extract the standard output logs of the expired container.
     prompt: >-
-      Start the `mystery` container again so it is running once more. This is
-      the same container you stopped — do not create a new one.
+      The container `expired` ran a short task and terminated. Capture its complete
+      standard output logs and write them to a file named `~/expired.log`.
     type: terminal_action
     validation:
-      command: "docker inspect mystery --format '{{.State.Status}}' 2>/dev/null | grep -qx running && echo MYSTERY_RUNNING"
-      match_type: exact
-      expected_output: MYSTERY_RUNNING
-    error_message: >-
-      The mystery container is not running. This is not `docker run` — the
-      container already exists, so you are resuming the existing object.
-    hints:
-      - "Which command resumes a stopped container?"
-      - "This is not `docker run` — the container already exists and is only paused. You are restarting the existing object."
-      - "Verify with `docker ps`: mystery should be back in the running list."
-    solution:
-      command: "docker start mystery"
+      command: |-
+        python3 -c "
+        import os, sys
 
-  - id: remove-container
+        path = os.path.expanduser('~/expired.log')
+        if not os.path.isfile(path):
+            print('File missing.')
+            sys.exit(0)
+
+        with open(path) as f:
+            content = f.read().strip()
+
+        if 'setup complete' in content:
+            print('LOGS_EXTRACTED')
+        else:
+            print('Incorrect logs.')
+        "
+      match_type: exact
+      expected_output: LOGS_EXTRACTED
+    error_message: >-
+      The file ~/expired.log is missing or does not contain the output logs from container 'expired'.
+
+  - id: execute-lifecycle-transitions
+    summary: Stop and resume the existing mystery container entity.
     prompt: >-
-      Remove the `mystery` container from this system entirely. It should no
-      longer exist — not even in `docker ps -a`.
+      Perform the following lifecycle transition on `mystery`:
+      1. Stop the running `mystery` container gracefully.
+      2. Verify it is stopped, then start the container again.
+      3. The container must end in an active running state without having been recreated.
     type: terminal_action
     validation:
-      command: "docker inspect mystery >/dev/null 2>&1 || echo MYSTERY_REMOVED"
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'inspect', 'mystery'], capture_output=True)
+        if r.returncode != 0:
+            print('Container not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if not data['State']['Running']:
+            print('Container is not running.')
+            sys.exit(0)
+
+        if data['RestartCount'] == 0 and data['State']['FinishedAt'] == '0001-01-01T00:00:00Z':
+            print('Container was never stopped.')
+            sys.exit(0)
+
+        print('LIFECYCLE_OK')
+        "
       match_type: exact
-      expected_output: MYSTERY_REMOVED
+      expected_output: LIFECYCLE_OK
     error_message: >-
-      The mystery container still exists. A running container must be stopped
-      first, then deleted. Verify it's gone with `docker ps -a`.
-    hints:
-      - "Which command deletes a container? A running container must be stopped before it can be deleted."
-      - "Removing a container destroys it along with its writable layer — everything it wrote that was not in a volume."
-      - "Verify with `docker ps -a` — mystery should be gone completely."
-    solution:
-      command: "docker stop mystery && docker rm mystery"
+      The container 'mystery' is not running or was not stopped and restarted.
+
+  - id: teardown-container
+    summary: Completely remove all container instances from the host.
+    prompt: >-
+      Clean up the environment by stopping and removing both `mystery` and `expired`
+      so that zero container instances remain on the system (even in exited status).
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+
+        r = subprocess.run(['docker', 'ps', '-aq'], capture_output=True)
+        out = r.stdout.decode('utf-8').strip()
+        if out != '':
+            print('Containers still exist.')
+            sys.exit(0)
+
+        print('TEARDOWN_OK')
+        "
+      match_type: exact
+      expected_output: TEARDOWN_OK
+    error_message: >-
+      One or more container instances still exist on the host system.

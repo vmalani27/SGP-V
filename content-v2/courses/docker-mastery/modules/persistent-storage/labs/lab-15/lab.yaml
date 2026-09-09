@@ -1,21 +1,189 @@
 id: lab-15
-title: Production Workflow
+title: Automated Backup & Disaster Recovery Operations
 difficulty: advanced
-estimated_time: 20
-xp: 100
-tags:
-  - docker
-  - production
-  - healthchecks
 environment: docker-basic
 
 setup:
   - command: "usermod -aG docker student"
+  - command: |
+      docker rm -f secure-cache 2>/dev/null || true
+      docker volume rm prod-records restored-records 2>/dev/null || true
+      rm -rf ~/backups && mkdir -p ~/backups
 
 objectives:
-  - Add HEALTHCHECK to a Dockerfile
-  - Configure restart policies
-  - Implement backup strategies
+  - Seed stateful production volumes with structured transactional datasets
+  - Execute automated, non-destructive volume backups using ephemeral utility containers
+  - Simulate storage corruption and execute disaster recovery restoration procedures
+  - Validate restored dataset integrity and checksums
+  - Configure volatile in-memory tmpfs mounts for sensitive runtime state
 
-completion:
-  required_tasks: all
+tasks:
+  - id: seed-production-volume
+    summary: Provision and seed the primary production volume with dataset records.
+    prompt: >-
+      Create a named volume called `prod-records`. Populate the volume with a file named
+      `data.csv` containing the exact text:
+      ```text
+      id,name,balance
+      1,alpha,500
+      2,beta,1200
+      ```
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+
+        r_v = subprocess.run(['docker', 'volume', 'inspect', 'prod-records'], capture_output=True)
+        if r_v.returncode != 0:
+            print('Volume prod-records not found.')
+            sys.exit(0)
+
+        # Inspect content via one-shot alpine container
+        r_cat = subprocess.run([
+            'docker', 'run', '--rm',
+            '-v', 'prod-records:/data:ro',
+            'alpine:latest',
+            'cat', '/data/data.csv'
+        ], capture_output=True)
+
+        expected = b'id,name,balance\n1,alpha,500\n2,beta,1200'
+        if expected not in r_cat.stdout:
+            print('data.csv content mismatch or missing.')
+            sys.exit(0)
+
+        print('VOLUME_SEEDED')
+        "
+      match_type: exact
+      expected_output: VOLUME_SEEDED
+    error_message: >-
+      The volume 'prod-records' does not exist or does not contain the required data.csv payload.
+
+  - id: execute-ephemeral-backup
+    summary: Archive the production volume to a host snapshot using an ephemeral container.
+    prompt: >-
+      Archive the entire contents of `prod-records` into a compressed archive located on the
+      host at `~/backups/prod-records-backup.tar.gz`. The backup must be executed via an
+      ephemeral utility container mounting the source volume as read-only.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, os, sys
+
+        path = os.path.expanduser('~/backups/prod-records-backup.tar.gz')
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            print('Archive missing or empty.')
+            sys.exit(0)
+
+        r_tar = subprocess.run(['tar', '-tzf', path], capture_output=True)
+        if b'data.csv' not in r_tar.stdout:
+            print('Archive does not contain data.csv.')
+            sys.exit(0)
+
+        print('BACKUP_OK')
+        "
+      match_type: exact
+      expected_output: BACKUP_OK
+    error_message: >-
+      The backup archive ~/backups/prod-records-backup.tar.gz does not exist or does not contain data.csv.
+
+  - id: simulate-catastrophic-loss
+    summary: Simulate catastrophic disaster by deleting the production volume.
+    prompt: >-
+      Simulate a catastrophic hardware loss by completely purging the `prod-records` volume
+      from the host Docker engine.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+
+        r = subprocess.run(['docker', 'volume', 'inspect', 'prod-records'], capture_output=True)
+        if r.returncode == 0:
+            print('Volume prod-records still exists.')
+            sys.exit(0)
+
+        print('DISASTER_SIMULATED')
+        "
+      match_type: exact
+      expected_output: DISASTER_SIMULATED
+    error_message: >-
+      The volume 'prod-records' still exists on the Docker engine.
+
+  - id: execute-disaster-restore
+    summary: Restore the dataset into a fresh volume from the backup archive.
+    prompt: >-
+      Execute the disaster recovery procedure:
+      1. Create a fresh named volume called `restored-records`.
+      2. Extract the archive `~/backups/prod-records-backup.tar.gz` into the new volume using an ephemeral utility container.
+      3. Verify the restored volume contains `data.csv` with original content.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+
+        r_v = subprocess.run(['docker', 'volume', 'inspect', 'restored-records'], capture_output=True)
+        if r_v.returncode != 0:
+            print('Volume restored-records not found.')
+            sys.exit(0)
+
+        r_cat = subprocess.run([
+            'docker', 'run', '--rm',
+            '-v', 'restored-records:/data:ro',
+            'alpine:latest',
+            'cat', '/data/data.csv'
+        ], capture_output=True)
+
+        expected = b'id,name,balance\n1,alpha,500\n2,beta,1200'
+        if expected not in r_cat.stdout:
+            print('Restored data.csv content mismatch or missing.')
+            sys.exit(0)
+
+        print('RESTORE_OK')
+        "
+      match_type: exact
+      expected_output: RESTORE_OK
+    error_message: >-
+      The volume 'restored-records' does not exist or its data.csv does not match the original dataset.
+
+  - id: configure-tmpfs-security
+    summary: Deploy a container with an in-memory tmpfs mount for volatile state.
+    prompt: >-
+      Deploy a background container named `secure-cache` using `alpine:latest` running `sleep 300`.
+      Attach a `tmpfs` in-memory mount at container path `/app/secrets` with a maximum size
+      limit of `32m` to ensure temporary secrets never write to host storage.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'inspect', 'secure-cache'], capture_output=True)
+        if r.returncode != 0:
+            print('Container not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if not data['State']['Running']:
+            print('Container not running.')
+            sys.exit(0)
+
+        mounts = data.get('Mounts', [])
+        valid_tmpfs = False
+        for m in mounts:
+            if m.get('Type') == 'tmpfs' and m.get('Destination') == '/app/secrets':
+                valid_tmpfs = True
+                break
+
+        if not valid_tmpfs:
+            print('Missing tmpfs mount at /app/secrets.')
+            sys.exit(0)
+
+        print('TMPFS_OK')
+        "
+      match_type: exact
+      expected_output: TMPFS_OK
+    error_message: >-
+      The container 'secure-cache' is not running or does not have a tmpfs mount at '/app/secrets'.

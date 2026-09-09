@@ -1,21 +1,184 @@
 id: lab-14
-title: Volume Publishing
+title: Stateful Database Persistence & Volume Operations
 difficulty: intermediate
-estimated_time: 15
-xp: 75
-tags:
-  - docker
-  - storage
-  - volumes
 environment: docker-basic
 
 setup:
   - command: "usermod -aG docker student"
+  - command: |
+      docker rm -f db-primary db-recovery 2>/dev/null || true
+      docker volume rm inventory-db-data 2>/dev/null || true
 
 objectives:
-  - Create Docker volumes
-  - Mount volumes into containers
-  - Persist data across container restarts
+  - Provision named Docker volumes with independent lifecycles
+  - Attach persistent storage volumes to database services
+  - Commit transactional state to persistent volume mounts
+  - Evaluate data survival across container destruction and recovery
 
-completion:
-  required_tasks: all
+tasks:
+  - id: provision-named-volume
+    summary: Provision a named volume for persistent database storage.
+    prompt: >-
+      Create a named Docker volume called `inventory-db-data` using the standard `local` driver.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'volume', 'inspect', 'inventory-db-data'], capture_output=True)
+        if r.returncode != 0:
+            print('Volume not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if data.get('Driver') != 'local':
+            print('Invalid driver.')
+            sys.exit(0)
+
+        print('VOLUME_OK')
+        "
+      match_type: exact
+      expected_output: VOLUME_OK
+    error_message: >-
+      The volume 'inventory-db-data' does not exist or does not use the 'local' driver.
+
+  - id: deploy-stateful-persistence
+    summary: Deploy a Redis service mounting the persistent volume at /data.
+    prompt: >-
+      Deploy a background database container meeting these operational requirements:
+      - Name: `db-primary`
+      - Base Image: `redis:alpine`
+      - Storage Mount: Attach the named volume `inventory-db-data` to the container destination path `/data`.
+      - Lifecycle: Must remain actively running in the background.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'inspect', 'db-primary'], capture_output=True)
+        if r.returncode != 0:
+            print('Container not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if not data['State']['Running']:
+            print('Container not running.')
+            sys.exit(0)
+
+        mounts = data.get('Mounts', [])
+        valid_mount = False
+        for m in mounts:
+            if m.get('Type') == 'volume' and m.get('Name') == 'inventory-db-data' and m.get('Destination') == '/data':
+                valid_mount = True
+                break
+
+        if not valid_mount:
+            print('Volume mount invalid.')
+            sys.exit(0)
+
+        print('DB_DEPLOYED')
+        "
+      match_type: exact
+      expected_output: DB_DEPLOYED
+    error_message: >-
+      The container 'db-primary' is not running or does not have 'inventory-db-data' mounted at '/data'.
+
+  - id: commit-transactional-state
+    summary: Commit persistent key-value data to the database service.
+    prompt: >-
+      Connect to `db-primary` and store a key-value record:
+      - Key: `SYS_CHECK`
+      - Value: `PERSISTENCE_ACTIVE_2026`
+      Ensure the dataset is persisted to disk using Redis persistence commands.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+
+        r = subprocess.run(['docker', 'exec', 'db-primary', 'redis-cli', 'get', 'SYS_CHECK'], capture_output=True)
+        out = r.stdout.decode('utf-8').strip()
+
+        if out == 'PERSISTENCE_ACTIVE_2026':
+            print('STATE_COMMITTED')
+        else:
+            print(f'Unexpected value: {out}')
+        "
+      match_type: exact
+      expected_output: STATE_COMMITTED
+    error_message: >-
+      The key 'SYS_CHECK' in 'db-primary' does not contain 'PERSISTENCE_ACTIVE_2026'.
+
+  - id: simulate-catastrophic-destruction
+    summary: Destroy the primary database container while retaining the volume.
+    prompt: >-
+      Simulate a catastrophic node failure by forcefully removing the `db-primary` container.
+      The container must be completely removed from the host, but the `inventory-db-data` volume
+      must remain intact.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys
+
+        r_c = subprocess.run(['docker', 'inspect', 'db-primary'], capture_output=True)
+        if r_c.returncode == 0:
+            print('Container db-primary still exists.')
+            sys.exit(0)
+
+        r_v = subprocess.run(['docker', 'volume', 'inspect', 'inventory-db-data'], capture_output=True)
+        if r_v.returncode != 0:
+            print('Volume inventory-db-data was deleted.')
+            sys.exit(0)
+
+        print('DESTRUCTION_SIMULATED')
+        "
+      match_type: exact
+      expected_output: DESTRUCTION_SIMULATED
+    error_message: >-
+      The container 'db-primary' was not deleted or the volume 'inventory-db-data' was removed.
+
+  - id: recover-stateful-service
+    summary: Deploy a recovery service and verify transactional data survival.
+    prompt: >-
+      Recover the service by launching a fresh container meeting these specifications:
+      - Name: `db-recovery`
+      - Base Image: `redis:alpine`
+      - Storage Mount: Attach the existing `inventory-db-data` volume to `/data`.
+      - Lifecycle: Must remain actively running in the background.
+      Verify that querying `SYS_CHECK` successfully returns `PERSISTENCE_ACTIVE_2026`.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'inspect', 'db-recovery'], capture_output=True)
+        if r.returncode != 0:
+            print('Container db-recovery not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if not data['State']['Running']:
+            print('Container not running.')
+            sys.exit(0)
+
+        mounts = data.get('Mounts', [])
+        valid_mount = any(m.get('Name') == 'inventory-db-data' and m.get('Destination') == '/data' for m in mounts)
+        if not valid_mount:
+            print('Volume not mounted at /data.')
+            sys.exit(0)
+
+        r_get = subprocess.run(['docker', 'exec', 'db-recovery', 'redis-cli', 'get', 'SYS_CHECK'], capture_output=True)
+        if r_get.stdout.decode('utf-8').strip() != 'PERSISTENCE_ACTIVE_2026':
+            print('Data was not persisted across container recreation.')
+            sys.exit(0)
+
+        print('PERSISTENCE_RECOVERED')
+        "
+      match_type: exact
+      expected_output: PERSISTENCE_RECOVERED
+    error_message: >-
+      The container 'db-recovery' is not running, does not mount 'inventory-db-data', or the key 'SYS_CHECK' was lost.

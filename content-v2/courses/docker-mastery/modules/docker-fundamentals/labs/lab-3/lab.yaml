@@ -1,93 +1,136 @@
 id: lab-3
-title: Configuring Containers
+title: Runtime Configuration & Port Publishing
 difficulty: beginner
 environment: docker-basic
 
 setup:
   - command: "usermod -aG docker student"
+  - command: "docker rm -f runtime-config ingress-proxy custom-worker 2>/dev/null || true"
 
 objectives:
-  - Create a container from an image with docker run
-  - Pass configuration to a container with environment variables
-  - Publish a container port to the host with a port mapping
-  - Override the command a container runs at startup
-  - Name containers so they can be managed by name
+  - Inject runtime environment variables into container processes
+  - Bind and publish container ports to host network interfaces
+  - Override default container command specifications at instantiation
+  - Understand Linux iptables and user-space proxy routing mechanics
 
 tasks:
-  - id: set-env
+  - id: configure-environment-variables
+    summary: Launch a container with specified runtime environment variables.
     prompt: >-
-      Create a container named `greet` from the `alpine` image. Give it an
-      environment variable `GREETING` set to `hello`, and have it print the
-      value of `GREETING` when it starts. The container should finish its work
-      and exit, but remain on this system so its output can be examined.
+      Launch a container named `runtime-config` using `alpine:latest` that executes and exits.
+      The container must be configured with two environment variables:
+      - `APP_ENV=production`
+      - `SERVICE_PORT=8080`
+      Configure the container to print the value of `APP_ENV` to stdout upon launch.
     type: terminal_action
     validation:
-      command: >-
-        docker inspect greet --format '{{.Config.Image}}' 2>/dev/null |
-        grep -qE '^alpine(:latest)?$' &&
-        docker inspect greet --format '{{.State.Status}}' 2>/dev/null |
-        grep -qx exited &&
-        docker logs greet 2>/dev/null | grep -qx hello && echo ENV_OK
-      match_type: exact
-      expected_output: ENV_OK
-    error_message: >-
-      The `greet` container should exist, have finished and exited, and its
-      logs should contain `hello`. Run `docker ps -a` and `docker logs greet`
-      to see what happened.
-    hints:
-      - "Which command creates a container from an image and starts it? You used it in Lab 2."
-      - "Configuration is passed at runtime with the `-e` flag: `-e GREETING=hello`."
-      - "Have it print the value — `printenv GREETING` as the command (or `sh -c 'echo $GREETING'`). Name it `greet` so you can examine it afterwards."
-    solution:
-      command: "docker run --name greet -e GREETING=hello alpine printenv GREETING"
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
 
-  - id: map-port
-    prompt: >-
-      Launch a web server named `web` from the `nginx:alpine` image so it
-      keeps running in the background and is reachable from your environment
-      on host port `9090`.
-    type: terminal_action
-    validation:
-      command: >-
-        docker inspect web --format '{{.State.Status}}' 2>/dev/null |
-        grep -qx running &&
-        docker inspect web --format '{{.Config.Image}}' 2>/dev/null |
-        grep -qE '^nginx(:alpine)?$' &&
-        docker port web 2>/dev/null | grep -q ':9090' && echo PORT_OK
-      match_type: exact
-      expected_output: PORT_OK
-    error_message: >-
-      The `web` container should be running from `nginx:alpine` with host port
-      9090 mapped to container port 80. Check with `docker ps` and
-      `docker port web`.
-    hints:
-      - "nginx listens on port 80 inside the container by default. To reach it from outside you must publish a host port."
-      - "`-p HOST:CONTAINER` maps a host port to a container port: `-p 9090:80`."
-      - "A server should keep running — use detached mode (`-d`) so it runs in the background, and name it `web`. Verify the mapping with `docker port web`."
-    solution:
-      command: "docker run -d --name web -p 9090:80 nginx:alpine"
+        r = subprocess.run(['docker', 'inspect', 'runtime-config'], capture_output=True)
+        if r.returncode != 0:
+            print('Container not found.')
+            sys.exit(0)
 
-  - id: override-cmd
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        env = data['Config']['Env']
+
+        has_env = 'APP_ENV=production' in env and 'SERVICE_PORT=8080' in env
+        if not has_env:
+            print('Missing required environment variables.')
+            sys.exit(0)
+
+        logs = subprocess.run(['docker', 'logs', 'runtime-config'], capture_output=True)
+        if b'production' not in logs.stdout:
+            print('Did not print APP_ENV value.')
+            sys.exit(0)
+
+        print('ENV_CONFIG_OK')
+        "
+      match_type: exact
+      expected_output: ENV_CONFIG_OK
+    error_message: >-
+      The container 'runtime-config' does not have the specified environment variables or did not print APP_ENV.
+
+  - id: publish-ingress-ports
+    summary: Deploy a web server container with host port binding.
     prompt: >-
-      Create a container named `cmd-demo` from the `alpine` image that runs
-      the `echo` command with the message `lab-3 complete` and then exits.
-      Leave it in place so its output can be examined.
+      Deploy a detached web service named `ingress-proxy` using `nginx:alpine`.
+      Publish host port `8080` to container port `80`. The container must remain actively running.
     type: terminal_action
     validation:
-      command: >-
-        docker inspect cmd-demo --format '{{.State.Status}}' 2>/dev/null |
-        grep -qx exited &&
-        docker logs cmd-demo 2>/dev/null | grep -qx 'lab-3 complete' &&
-        echo CMD_OK
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'inspect', 'ingress-proxy'], capture_output=True)
+        if r.returncode != 0:
+            print('Container not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if not data['State']['Running']:
+            print('Container not running.')
+            sys.exit(0)
+
+        ports = data['NetworkSettings']['Ports'].get('80/tcp')
+        if not ports or not any(p.get('HostPort') == '8080' for p in ports):
+            print('Port 8080 not mapped to 80.')
+            sys.exit(0)
+
+        print('PORT_BINDING_OK')
+        "
       match_type: exact
-      expected_output: CMD_OK
+      expected_output: PORT_BINDING_OK
     error_message: >-
-      The `cmd-demo` container should have finished and exited, and its logs
-      should contain `lab-3 complete`. Run `docker ps -a` and
-      `docker logs cmd-demo` to see what happened.
-    hints:
-      - "The command you write after the image name replaces the image's default command."
-      - "`docker run <image> echo <message>` runs the echo command with your message instead of the image's default command."
-      - "Name it `cmd-demo` and let it exit on its own — its output is saved in its logs. Check with `docker logs cmd-demo`."
-    solution:
-      command: "docker run --name cmd-demo alpine echo lab-3 complete"
+      The container 'ingress-proxy' is not running with host port 8080 mapped to container port 80.
+
+  - id: override-startup-command
+    summary: Override default image execution command at runtime.
+    prompt: >-
+      Deploy a container named `custom-worker` using `alpine:latest` that overrides the default
+      image command to output `SYSTEM_INITIALIZED` to stdout and terminates cleanly.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'inspect', 'custom-worker'], capture_output=True)
+        if r.returncode != 0:
+            print('Container not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if data['State']['Status'] != 'exited':
+            print('Container not exited.')
+            sys.exit(0)
+
+        logs = subprocess.run(['docker', 'logs', 'custom-worker'], capture_output=True)
+        if b'SYSTEM_INITIALIZED' not in logs.stdout:
+            print('Incorrect output.')
+            sys.exit(0)
+
+        print('CMD_OVERRIDE_OK')
+        "
+      match_type: exact
+      expected_output: CMD_OVERRIDE_OK
+    error_message: >-
+      The container 'custom-worker' was not found, did not exit cleanly, or did not output 'SYSTEM_INITIALIZED'.
+
+  - id: evaluate-port-mapping-mechanics
+    summary: Evaluate the host networking mechanics behind port publishing.
+    prompt: >-
+      When you publish a port using `-p 8080:80`, what does the Docker daemon configure on the Linux host
+      to direct external traffic into the container's private network namespace?
+    type: multiple_choice
+    options:
+      - "Docker configures host iptables/nftables NAT rules and runs a `docker-proxy` process listening on host port 8080 to route packets into the container namespace."
+      - "Docker edits the host's `/etc/hosts` file to remap localhost:8080 to the container's virtual IP."
+      - "Docker creates a systemd socket activation unit that wraps the container standard input."
+      - "Docker alters the host physical network adapter firmware to inject raw Ethernet frames into the bridge."
+    validation:
+      expected_answer: "Docker configures host iptables/nftables NAT rules and runs a `docker-proxy` process listening on host port 8080 to route packets into the container namespace."
+    error_message: >-
+      The selected answer does not correctly describe Docker's host port forwarding architecture.

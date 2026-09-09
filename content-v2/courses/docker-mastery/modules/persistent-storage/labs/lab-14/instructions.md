@@ -1,39 +1,52 @@
-# Lab 14: Persistent Storage
-
-## What You're Doing and Why
-
-An image that exists only on your machine is useful only to you. Publishing it to a registry makes it available to teammates, deployment pipelines, and production servers. This lab teaches you to tag images correctly and push them to Docker Hub, the default public registry.
-
-## Background
-
-An image tag follows the format `username/repository:tag`. If you omit the tag, Docker defaults to `latest`, but relying on `latest` in production is a common antipattern because it makes deployments non-deterministic. Best practice is to tag images with a specific version, the Git commit hash, or the build number from your CI pipeline. Multiple tags can point to the same image. Tagging an image does not copy it; it just creates a new pointer.
-
-## Command Reference
-
-### `docker login`
-
-Authenticates with Docker Hub using your account credentials.
-
-### `docker tag <image> <username>/<repo>:<tag>`
-
-Creates a new tag for an existing image.
-
-### `docker push <username>/<repo>:<tag>`
-
-Uploads the image to the registry.
-
-### `docker pull <username>/<repo>:<tag>`
-
-Downloads the image from the registry.
+# Lab 14: Stateful Database Persistence & Volume Operations Assessment
 
 ## Scenario
 
-You have built the Flask application image from Lab 6. Tag it with a version number and push it to your Docker Hub account. Simulate a deployment by removing the local image and pulling it back from the registry.
+You are tasked with deploying a stateful caching tier for an inventory microservice. Unlike stateless application containers, stateful databases require deterministic persistence: transactional writes must survive container crashes, planned redeployments, and host restarts.
 
-## Objective
+Your assignment is to provision an isolated named Docker volume, attach it to a database container, commit critical transactional state, simulate catastrophic container destruction, and prove complete data recovery using a newly deployed container instance.
 
-Tag the image with version `1.0.0` and push it. Remove the local image using `docker image rm`. Pull it back from Docker Hub. Run a container from the pulled image and verify it works.
+This is an independent assessment. You are given operational constraints and acceptance criteria; you must determine the appropriate Docker CLI commands, mount syntax, and database commands to satisfy the contract.
 
-## Reflection
+---
 
-Every image you push is public by default on Docker Hub. For private images, Docker Hub offers private repositories on paid plans, and alternatives like GitHub Container Registry, AWS ECR, and Google Artifact Registry provide private registries with tighter integration into their respective ecosystems.
+## Operational Specifications & Contract
+
+### 1. Volume Provisioning
+- Volume Name: `inventory-db-data`
+- Driver: Standard `local` volume driver.
+
+### 2. Primary Database Service
+- Container Name: `db-primary`
+- Base Image: `redis:alpine`
+- Lifecycle: Must run in detached mode (`-d`) and remain active in the background.
+- Storage Mount: The named volume `inventory-db-data` must be mounted at container path `/data`.
+
+### 3. Transactional State Commitment
+- Key-Value Record:
+  - Key: `SYS_CHECK`
+  - Value: `PERSISTENCE_ACTIVE_2026`
+- Persistence: The state must be committed to disk storage within the volume.
+
+### 4. Destruction Drill
+- Terminate and forcefully delete `db-primary`.
+- Verify the container no longer exists on the engine while preserving the `inventory-db-data` volume.
+
+### 5. Service Recovery & Verification
+- Container Name: `db-recovery`
+- Base Image: `redis:alpine`
+- Lifecycle: Must run in detached mode (`-d`) and remain active in the background.
+- Storage Mount: Attach the existing `inventory-db-data` volume at `/data`.
+- Verification: Querying the key `SYS_CHECK` must successfully retrieve `PERSISTENCE_ACTIVE_2026`.
+
+---
+
+## Acceptance Criteria
+
+| Contract Requirement | Verification Check |
+| :--- | :--- |
+| **Volume Creation** | `inventory-db-data` exists as a local Docker volume. |
+| **Primary Deployment** | `db-primary` is running with `inventory-db-data` mounted at `/data`. |
+| **State Persistence** | Key `SYS_CHECK` holds `PERSISTENCE_ACTIVE_2026` inside the database. |
+| **Disaster Simulation** | `db-primary` is deleted while `inventory-db-data` is preserved. |
+| **State Recovery** | `db-recovery` mounts `inventory-db-data` and successfully returns the stored record. |
