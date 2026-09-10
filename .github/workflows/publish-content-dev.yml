@@ -1,13 +1,13 @@
 name: publish-content-dev
 
-on:
+'on':
   push:
     branches: [dev]
     paths:
       - 'content-v2/**'
       - 'scripts/**'
       - '.github/workflows/publish-content-dev.yml'
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
