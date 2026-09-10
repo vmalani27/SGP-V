@@ -110,10 +110,13 @@ jobs:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
 
       - name: Invalidate CloudFront
-        if: ${{ secrets.CLOUDFRONT_DIST_ID != '' }}
         run: |
-          aws cloudfront create-invalidation \
-            --distribution-id "$CLOUDFRONT_DIST_ID" \
-            --paths "/latest.json" "/catalog.json"
+          if [ -n "$CLOUDFRONT_DIST_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$CLOUDFRONT_DIST_ID" \
+              --paths "/latest.json" "/catalog.json"
+          else
+            echo "CLOUDFRONT_DIST_ID is not set; skipping invalidation."
+          fi
         env:
           CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
