@@ -9,9 +9,9 @@ tags:
 environment: linux-basic
 
 objectives:
-  - Verify Git is installed
-  - Configure your Git identity
-  - Understand why Git needs your name and email
+  - Verify the installed Git version
+  - Configure your global Git username
+  - Configure your global Git email address
 
 tasks:
   - id: check-version
