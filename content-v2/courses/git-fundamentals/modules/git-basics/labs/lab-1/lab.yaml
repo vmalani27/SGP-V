@@ -9,43 +9,68 @@ tags:
 environment: linux-basic
 
 objectives:
-  - Verify the installed Git version
-  - Configure your global Git username
-  - Configure your global Git email address
+  - Set your global Git username
+  - Set your global Git email
+  - Change default branch name to 'main'
+  - Create a test repo to confirm settings
 
 tasks:
-  - id: check-version
-    title: Check the installed Git version
-    prompt: Check the installed Git version.
+  - id: set-global-username
+    title: Set your global Git username
+    prompt: >-
+      Set your global Git username to 'Alex Chen'. Every commit you make on this system will use this name.
     type: terminal_action
     validation:
-      command: "git --version"
-      match_type: contains
-      expected_output: "git version"
-    error_message: Git does not appear to be installed.
-    hint: What command shows the installed version of a program?
-
-  - id: set-user-name
-    title: Configure your Git user name
-    prompt: Configure your Git user name to 'Student'.
-    type: terminal_action
-    validation:
-      command: "git config --global user.name"
+      command: git config --global user.name
       match_type: exact
-      expected_output: "Student"
-    error_message: Git user name is not set to 'Student'.
-    hint: Use git config --global user.name to set it.
+      expected_output: "Alex Chen"
+    error_message: >-
+      Global username is not set to 'Alex Chen'.
+    hint: >-
+      Check the user.name setting using Git's global configuration flag.
 
-  - id: set-user-email
-    title: Configure your Git user email
-    prompt: Configure your Git email to 'student@example.com'.
+  - id: set-global-email
+    title: Set your global Git email
+    prompt: >-
+      Set your global Git email to 'alex.chen@engineering.local'.
     type: terminal_action
     validation:
-      command: "git config --global user.email"
+      command: git config --global user.email
       match_type: exact
-      expected_output: "student@example.com"
-    error_message: Git email is not set correctly.
-    hint: Use git config --global user.email to set it.
+      expected_output: "alex.chen@engineering.local"
+    error_message: >-
+      Global email is not set to 'alex.chen@engineering.local'.
+    hint: >-
+      Check the user.email setting in your global configuration.
+
+  - id: change-default-branch
+    title: Change your default branch to 'main'
+    prompt: >-
+      Tell Git to name the starting branch 'main' whenever you initialize a new repo.
+    type: terminal_action
+    validation:
+      command: git config --global init.defaultBranch
+      match_type: exact
+      expected_output: "main"
+    error_message: >-
+      Default branch name is not set to 'main'.
+    hint: >-
+      Git has an init setting to pick the starting branch name.
+
+  - id: create-test-repo
+    title: Create a test repo to confirm settings
+    prompt: >-
+      Make a new directory at '~/workspace/verification-project' and initialize a Git repo inside it.
+    type: terminal_action
+    validation:
+      command: >-
+        test -d ~/workspace/verification-project/.git && grep -q 'refs/heads/main' ~/workspace/verification-project/.git/HEAD && echo READY
+      match_type: exact
+      expected_output: "READY"
+    error_message: >-
+      Repo was not created at ~/workspace/verification-project with branch 'main'.
+    hint: >-
+      Create the folder first and run Git initialization inside it.
 
 completion:
   required_tasks: all

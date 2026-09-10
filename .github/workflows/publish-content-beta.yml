@@ -94,9 +94,24 @@ jobs:
         run: |
           aws s3 cp out/published/ \
             "s3://${S3_BUCKET}/published/" \
-            --recursive
+            --recursive \
+            --cache-control "public, max-age=31536000, immutable"
+
+          aws s3 cp out/catalog.json \
+            "s3://${S3_BUCKET}/catalog.json" \
+            --cache-control "public, max-age=60, s-maxage=60"
 
           aws s3 cp out/latest.json \
-            "s3://${S3_BUCKET}/latest.json"
+            "s3://${S3_BUCKET}/latest.json" \
+            --cache-control "public, max-age=60, s-maxage=60"
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
+
+      - name: Invalidate CloudFront
+        if: ${{ secrets.CLOUDFRONT_DIST_ID != '' }}
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DIST_ID" \
+            --paths "/latest.json" "/catalog.json"
+        env:
+          CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}

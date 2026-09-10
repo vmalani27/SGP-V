@@ -1,0 +1,171 @@
+name: build-and-release-cli
+
+on:
+  push:
+    branches:
+      - main
+      - beta
+      - dev
+    paths:
+      - 'cli/**'
+      - '.github/workflows/build-cli.yml'
+  pull_request:
+    branches:
+      - main
+      - beta
+      - dev
+    paths:
+      - 'cli/**'
+      - '.github/workflows/build-cli.yml'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel / environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - beta
+          - prod
+        default: dev
+      backend_url:
+        description: 'Override Backend API URL (leave empty for channel default)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-cli-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. RESOLVE ENVIRONMENT & METADATA ───────────────────────────
+  setup-env:
+    name: Resolve Target Environment
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.resolve.outputs.channel }}
+      backend_url: ${{ steps.resolve.outputs.backend_url }}
+    steps:
+      - name: Determine Channel and Backend URL
+        id: resolve
+        run: |
+          # 1. Determine Channel
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CHANNEL="${{ github.event.inputs.channel }}"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            CHANNEL="prod"
+          elif [ "${{ github.ref_name }}" = "beta" ]; then
+            CHANNEL="beta"
+          else
+            CHANNEL="dev"
+          fi
+
+          # 2. Determine Backend URL
+          CUSTOM_URL="${{ github.event.inputs.backend_url }}"
+          if [ -n "$CUSTOM_URL" ]; then
+            BACKEND_URL="$CUSTOM_URL"
+          elif [ "$CHANNEL" = "beta" ]; then
+            BACKEND_URL="${{ secrets.BETA_BACKEND_API_URL || 'https://labops-beta.onrender.com' }}"
+          elif [ "$CHANNEL" = "prod" ]; then
+            BACKEND_URL="${{ secrets.PROD_BACKEND_API_URL || 'https://api.labops.dev' }}"
+          else
+            BACKEND_URL="${{ secrets.DEV_BACKEND_API_URL || 'https://labops-dev.onrender.com' }}"
+          fi
+
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "backend_url=$BACKEND_URL" >> $GITHUB_OUTPUT
+
+          echo "Target Channel: $CHANNEL"
+          echo "Target Backend: $BACKEND_URL"
+
+  # ── 2. CROSS-COMPILE BINARIES ───────────────────────────────────
+  compile:
+    name: Compile (${{ matrix.os }}/${{ matrix.arch }})
+    needs: setup-env
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            binary: labops-linux-amd64
+          - os: linux
+            arch: arm64
+            binary: labops-linux-arm64
+          - os: darwin
+            arch: amd64
+            binary: labops-darwin-amd64
+          - os: darwin
+            arch: arm64
+            binary: labops-darwin-arm64
+          - os: windows
+            arch: amd64
+            binary: labops-windows-amd64.exe
+          - os: windows
+            arch: arm64
+            binary: labops-windows-arm64.exe
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          check-latest: true
+
+      - name: Compile Binary
+        working-directory: ./cli
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CHANNEL: ${{ needs.setup-env.outputs.channel }}
+          BACKEND_URL: ${{ needs.setup-env.outputs.backend_url }}
+        run: |
+          echo "Building ${{ matrix.binary }} for ${{ matrix.os }}/${{ matrix.arch }} (channel: $CHANNEL, backend: $BACKEND_URL)..."
+          go build \
+            -ldflags="-s -w -X main.defaultChannel=${CHANNEL} -X main.defaultBackendURL=${BACKEND_URL}" \
+            -trimpath \
+            -o "${{ matrix.binary }}" .
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}-${{ needs.setup-env.outputs.channel }}
+          path: ./cli/${{ matrix.binary }}
+          retention-days: 14
+
+  # ── 3. BUNDLE & CHECKSUM ────────────────────────────────────────
+  package-bundle:
+    name: Package Release Bundle & Checksums
+    needs: [setup-env, compile]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Compiled Binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: ./binaries
+          pattern: "labops-*-${{ needs.setup-env.outputs.channel }}"
+          merge-multiple: true
+
+      - name: Generate Checksums
+        working-directory: ./binaries
+        run: |
+          chmod +x labops-linux-* labops-darwin-* 2>/dev/null || true
+          sha256sum labops-* > SHA256SUMS.txt
+          echo "=== Generated Checksums ==="
+          cat SHA256SUMS.txt
+
+      - name: Upload Unified Bundle Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: labops-cli-all-${{ needs.setup-env.outputs.channel }}
+          path: ./binaries/
+          retention-days: 30
