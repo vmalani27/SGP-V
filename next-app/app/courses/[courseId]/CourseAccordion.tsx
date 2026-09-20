@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import type { ContentModule, CourseChanges, CourseItem, ItemChange } from '@/lib/content-types';
-import { getModuleItems, itemHref } from '@/lib/content-server';
+import { getModuleItems, itemHref } from '@/lib/content-utils';
 
 function ClipIcon({ className }: { className?: string }) {
   return (
@@ -142,7 +142,9 @@ export default function CourseAccordion({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-text">{module.title}</h3>
+            <span className="text-xs font-medium text-zinc-400">
+              Module {moduleIndex + 1} · {module.title}
+            </span>
             {changedCount > 0 && (
               <span
                 title={`${newCount} new, ${changedCount - newCount} updated in the latest content release`}

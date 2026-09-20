@@ -39,9 +39,9 @@ export default function LoginPage() {
       await login(email, password);
       router.push('/onboarding');
     } catch (err: unknown) {
-      const firebaseError = err as { code?: string };
-      if (firebaseError.code) {
-        setError(getAuthErrorMessage(firebaseError.code));
+      const authError = err as { code?: string };
+      if (authError.code) {
+        setError(getAuthErrorMessage(authError.code));
       } else {
         setError(err instanceof Error ? err.message : 'Login failed');
       }

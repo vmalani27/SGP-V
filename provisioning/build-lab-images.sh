@@ -4,7 +4,7 @@
 # ──────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REGISTRY_REPO="ghcr.io/vmalani27/sgp-v"
+REGISTRY="${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27}"
 TAG="${1:-dev}"
 ORCHESTRATOR_DIR="/opt/sgp/orchestrator"
 LAB_IMAGES_DIR="$ORCHESTRATOR_DIR/lab-images"
@@ -26,10 +26,10 @@ pull_or_build() {
   fi
 }
 
-pull_or_build "$REGISTRY_REPO/lab-ubuntu:$TAG" "labops-ubuntu:latest" "Dockerfile.ubuntu"
-pull_or_build "$REGISTRY_REPO/lab-docker:$TAG" "labops-docker:latest" "Dockerfile.docker"
-pull_or_build "$REGISTRY_REPO/lab-docker-fundamentals:$TAG" "labops-docker-fundamentals:latest" "Dockerfile.docker-fundamentals"
-pull_or_build "$REGISTRY_REPO/lab-docker-build:$TAG" "labops-docker-build:latest" "Dockerfile.docker-build"
+pull_or_build "$REGISTRY/labops-base:$TAG" "labops-ubuntu:latest" "Dockerfile.ubuntu"
+pull_or_build "$REGISTRY/labops-labs:docker-$TAG" "labops-docker:latest" "Dockerfile.docker"
+pull_or_build "$REGISTRY/labops-labs:docker-fundamentals-$TAG" "labops-docker-fundamentals:latest" "Dockerfile.docker-fundamentals"
+pull_or_build "$REGISTRY/labops-labs:docker-build-$TAG" "labops-docker-build:latest" "Dockerfile.docker-build"
 
 echo "==> All lab images ready:"
 echo "    - labops-ubuntu:latest"

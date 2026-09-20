@@ -229,10 +229,10 @@ const LabTerminal = forwardRef<LabTerminalHandle, LabTerminalProps>(function Lab
       fontSize: 14,
       fontFamily: "'IBM Plex Mono', 'Fira Code', monospace",
       theme: {
-        background: '#0d1117',
+        background: '#090a0c',
         foreground: '#c9d1d9',
         cursor: '#58a6ff',
-        cursorAccent: '#0d1117',
+        cursorAccent: '#090a0c',
         selectionBackground: '#264f78',
       },
       allowProposedApi: true,

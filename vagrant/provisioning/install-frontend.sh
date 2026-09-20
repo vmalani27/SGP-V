@@ -51,13 +51,13 @@ elif [ -f "$FRONTEND_DIR/.env.local" ]; then
   echo "  - Prepared existing .env.local for Next.js build"
 fi
 
-REMOTE_FRONTEND="ghcr.io/vmalani27/sgp-v/frontend:dev"
+REMOTE_FRONTEND="${ECR_REGISTRY:-public.ecr.aws/vmalani27}/labops-frontend:dev"
 echo "==> Fetching Next.js frontend production image..."
 if docker pull "$REMOTE_FRONTEND" 2>/dev/null; then
   docker tag "$REMOTE_FRONTEND" "${IMAGE_NAME}:prod"
-  echo "  - [✓] Pulled pre-built image from GHCR ($REMOTE_FRONTEND)"
+  echo "  - [✓] Pulled pre-built image from ECR ($REMOTE_FRONTEND)"
 else
-  echo "  - [!] Could not pull from GHCR, building locally..."
+  echo "  - [!] Could not pull from ECR, building locally..."
   docker build \
     -t "${IMAGE_NAME}:prod" \
     --target runtime \

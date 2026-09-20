@@ -1,0 +1,34 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListContentBuckets",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::content-dev-586177432842-ap-south-1-an"
+      ]
+    },
+    {
+      "Sid": "WriteContentObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::content-dev-586177432842-ap-south-1-an/*"
+      ]
+    },
+    {
+      "Sid": "CloudFrontInvalidationPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation"
+      ],
+      "Resource": "arn:aws:cloudfront::586177432842:distribution/EGYXOZ0SBPHYU"
+    }
+  ]
+}

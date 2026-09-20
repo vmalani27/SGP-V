@@ -1,162 +1,95 @@
-import 'server-only';
-
-import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { gunzipSync } from 'node:zlib';
-
-import * as tar from 'tar';
 import yaml from 'js-yaml';
-import type { ContentChange, CourseChanges } from './content-types';
+import type {
+  ContentChange,
+  CourseChanges,
+  ContentCourse,
+  CourseCatalogEntry,
+  ContentModule,
+  Chapter,
+  ContentLab,
+  CourseItem,
+} from './content-types';
 
 /**
- * Client-side content bootstrap (runs on the Next.js server).
+ * Local Content Store (Zero Outbound Network Polling).
  *
- * The published content is a single tarball on S3. This module downloads it,
- * verifies its sha256 against the backend's version handshake, extracts it
- * into a local content dir, and serves individual files from there. The
- * backend no longer reads content files — this module owns that.
+ * All course files and curriculum metadata are managed on the host filesystem
+ * by the LabOps CLI (~/.labops/content) and mounted into the container as read-only (:ro).
+ * This module purely reads from the local filesystem with zero network latency.
  */
 
-const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:8000';
 const CONTENT_DIR = process.env.CONTENT_LOCAL_DIR || '/app/.content';
-const DATA_DIR = path.join(CONTENT_DIR, 'data');
 const MARKER_PATH = path.join(CONTENT_DIR, 'version');
 const CHANGES_PATH = path.join(CONTENT_DIR, 'changes.json');
-const TMP_DIR = path.join(CONTENT_DIR, '.sync-tmp');
-
-export interface ContentVersion {
-  version: string;
-  download_url: string;
-  artifact_sha256: string;
-  from_version?: string | null;
-  changes?: ContentChange[];
-  updatedAt?: string | null;
-}
 
 // How long new/updated badges remain visible after a content release.
 const BADGE_TTL_MS = (Number(process.env.CONTENT_BADGE_TTL_DAYS) || 7) * 24 * 60 * 60 * 1000;
 
-let syncPromise: Promise<void> | null = null;
+const ITEM_PATH_RE = /^courses\/([^/]+)\/modules\/[^/]+\/(?:chapters\/([^/]+)\.md|labs\/([^/]+)\/lab\.yaml)$/;
 
-export async function getContentVersion(): Promise<ContentVersion | null> {
-  const urls = [
-    process.env.BACKEND_API_URL,
-    'http://backend:8000',
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
-  ].filter(Boolean) as string[];
+export async function getContentVersion(): Promise<string> {
+  try {
+    const raw = await fs.readFile(MARKER_PATH, 'utf8');
+    if (raw && raw.trim()) return raw.trim();
+  } catch {}
 
-  for (const baseUrl of urls) {
+  try {
+    const dataDir = await getDataDir();
+    const raw = await fs.readFile(path.join(dataDir, 'version'), 'utf8');
+    if (raw && raw.trim()) return raw.trim();
+  } catch {}
+
+  return 'dev-local';
+}
+
+let resolvedDataDir: string | null = null;
+
+async function getDataDir(): Promise<string> {
+  if (resolvedDataDir) return resolvedDataDir;
+
+  const candidates = [
+    path.join(CONTENT_DIR, 'data'),
+    CONTENT_DIR,
+    path.resolve(process.cwd(), '../out/published/171ae31d28516106'),
+    path.resolve(process.cwd(), 'out/published/171ae31d28516106'),
+    path.resolve(process.cwd(), '../out'),
+    path.resolve(process.cwd(), 'out'),
+    '/out',
+  ];
+
+  for (const candidate of candidates) {
     try {
-      const res = await fetch(`${baseUrl}/api/v1/content/version`, { cache: 'no-store' });
-      if (res.ok) {
-        const data = (await res.json()) as ContentVersion;
-        console.log(`[ContentSync] Successfully fetched version from ${baseUrl}:`, {
-          version: data.version,
-          changesCount: data.changes?.length ?? 0,
-          from_version: data.from_version,
-          updatedAt: data.updatedAt,
-        });
-        if (data.changes && data.changes.length > 0) {
-          console.log('[ContentSync] Raw changes list from backend:', data.changes);
-        }
-        return data;
+      await fs.access(candidate);
+      // Check if candidate contains courses or catalog
+      const hasCourses = await fs.access(path.join(candidate, 'courses')).then(() => true).catch(() => false);
+      const hasCatalog = await fs.access(path.join(candidate, 'catalog.json')).then(() => true).catch(() => false);
+      if (hasCourses || hasCatalog) {
+        resolvedDataDir = candidate;
+        return candidate;
       }
-    } catch {
-      // try next candidate URL
-    }
+    } catch {}
   }
-  console.warn('[ContentSync] Failed to fetch content version from all backend candidate URLs:', urls);
-  return null;
+
+  resolvedDataDir = path.join(CONTENT_DIR, 'data');
+  return resolvedDataDir;
 }
 
 /**
- * Ensure the local content dir matches the published version. Safe to call
- * from any route handler — concurrent callers share a single in-flight sync.
+ * Ensures the local content directory is available.
+ * Zero outbound network calls — instant local disk check.
  */
 export async function ensureContent(): Promise<void> {
-  if (!syncPromise) {
-    syncPromise = doSync().finally(() => {
-      syncPromise = null;
-    });
-  }
-  return syncPromise;
-}
-
-async function isCurrent(version: string): Promise<boolean> {
-  try {
-    if ((await fs.readFile(MARKER_PATH, 'utf8')).trim() !== version) return false;
-    await fs.access(path.join(DATA_DIR, 'index.json'));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Persist the changelog alongside the version marker for the current version. */
-async function writeChanges(info: ContentVersion): Promise<void> {
-  const payload = {
-    version: info.version,
-    from_version: info.from_version ?? null,
-    changes: info.changes ?? [],
-    updatedAt: info.updatedAt ?? new Date().toISOString(),
-  };
-  await fs.writeFile(
-    CHANGES_PATH,
-    JSON.stringify(payload, null, 2),
-    'utf8',
-  );
-  console.log('[ContentSync] Persisted changelog to disk at', CHANGES_PATH, payload);
-}
-
-async function doSync(): Promise<void> {
-  console.log('[ContentSync] doSync() initiated...');
-  const info = await getContentVersion();
-  if (!info || !info.version || !info.download_url) {
-    console.log('[ContentSync] No published content available from backend version handshake.');
-    return;
-  }
-
-  // Always keep changes.json synchronized with the active version's changelog metadata
-  await writeChanges(info);
-
-  const current = await isCurrent(info.version);
-  console.log(`[ContentSync] Content version ${info.version} isCurrent=${current}`);
-  if (current) {
-    return;
-  }
-
-  console.log(`[ContentSync] Downloading new content tarball from ${info.download_url}...`);
-  const res = await fetch(info.download_url, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`Failed to download content (${res.status})`);
-
-  const buf = Buffer.from(await res.arrayBuffer());
-  const raw = gunzipSync(buf);
-  const digest = createHash('sha256').update(raw).digest('hex').slice(0, 16);
-  if (info.artifact_sha256 && digest !== info.artifact_sha256) {
-    throw new Error(`Content checksum mismatch: got ${digest}, expected ${info.artifact_sha256}`);
-  }
-
-  await fs.rm(TMP_DIR, { recursive: true, force: true });
-  const tmpData = path.join(TMP_DIR, 'data');
-  await fs.mkdir(tmpData, { recursive: true });
-  const tarballPath = path.join(TMP_DIR, 'content.tar.gz');
-  await fs.writeFile(tarballPath, buf);
-  await tar.x({ file: tarballPath, cwd: tmpData, gzip: true });
-
-  await fs.rm(DATA_DIR, { recursive: true, force: true });
-  await fs.rename(tmpData, DATA_DIR);
-  await fs.writeFile(MARKER_PATH, info.version);
-  console.log(`[ContentSync] Content sync complete! Extracted version ${info.version} into ${DATA_DIR}`);
-  await fs.rm(TMP_DIR, { recursive: true, force: true });
+  await getDataDir();
 }
 
 // ── Local file readers ───────────────────────────────────────────────────────
 
 async function readFile(...segments: string[]): Promise<string | null> {
   try {
-    return await fs.readFile(path.join(DATA_DIR, ...segments), 'utf8');
+    const base = await getDataDir();
+    return await fs.readFile(path.join(base, ...segments), 'utf8');
   } catch {
     return null;
   }
@@ -244,73 +177,54 @@ export async function readLabConfig(courseId: string, labId: string): Promise<Re
   );
   if (!config) return null;
 
-  config.lab_id = labId;
-  config.module_id = modId;
-
-  // Resolve environment reference (string) to a shared environments/{ref}.yaml file.
-  const envRef = config.environment;
-  if (typeof envRef === 'string') {
-    const envData = await loadYaml<Record<string, unknown>>('environments', `${envRef}.yaml`);
-    if (envData) config.environment = envData;
+  const baseConfig: Record<string, unknown> = { ...config };
+  if (!baseConfig.tasks) {
+    const tasks = await readLabTasks(courseId, labId);
+    if (tasks) baseConfig.tasks = tasks;
   }
 
-  return config;
-}
-
-// ── Content update badges ──────────────────────────────────────────────────────
-// The worker stores a per-version changelog (`content_changes/{version}` in
-// Firestore), the backend exposes it in /content/version, and this maps raw
-// content paths onto the chapter/lab items of one course.
-
-const ITEM_PATH_RE = /^courses\/([^/]+)\/modules\/[^/]+\/(?:chapters\/([^/]+)\.md|labs\/([^/]+)(?:\/|$))/;
-
-/**
- * Return new/updated chapter+lab item ids for a course, from the changelog
- * persisted for the currently-published version. Empty on first publish (no
- * previous version), on backend lag, or when nothing changed for this course.
- */
-export async function getCourseChanges(courseId: string): Promise<CourseChanges> {
-  try {
-    await ensureContent();
-  } catch (err) {
-    console.warn('[getCourseChanges] ensureContent() threw an error:', err);
-  }
-
-  let parsed: { changes?: ContentChange[]; updatedAt?: string | null } | null = null;
-  try {
-    const raw = await fs.readFile(CHANGES_PATH, 'utf8');
-    parsed = JSON.parse(raw);
-    console.log(`[getCourseChanges] Read ${CHANGES_PATH}:`, {
-      changesCount: parsed?.changes?.length ?? 0,
-      updatedAt: parsed?.updatedAt,
-    });
-  } catch (err) {
-    console.log(`[getCourseChanges] Could not read ${CHANGES_PATH}, attempting direct getContentVersion() fallback...`);
-    try {
-      const info = await getContentVersion();
-      if (info) {
-        parsed = { changes: info.changes, updatedAt: info.updatedAt };
-        console.log('[getCourseChanges] Handshake fallback returned:', {
-          changesCount: parsed?.changes?.length ?? 0,
-          updatedAt: parsed?.updatedAt,
-        });
-      }
-    } catch (fallbackErr) {
-      console.warn('[getCourseChanges] Fallback to getContentVersion() failed:', fallbackErr);
+  // Resolve environment definition from environments/<env>.yaml if environment is a string
+  if (typeof baseConfig.environment === 'string') {
+    const envName = baseConfig.environment;
+    const envDef = await loadYaml<Record<string, unknown>>('environments', `${envName}.yaml`);
+    if (envDef) {
+      baseConfig.environment = {
+        name: envName,
+        ...envDef,
+      };
     }
   }
 
+  return baseConfig;
+}
+
+/**
+ * Return new/updated chapter+lab item ids for a course from changes.json.
+ */
+export async function getCourseChanges(courseId: string): Promise<CourseChanges> {
+  let parsed: { changes?: ContentChange[]; updatedAt?: string | null } | null = null;
+  
+  const possibleChangesPaths = [
+    CHANGES_PATH,
+    path.join(await getDataDir(), 'changes.json'),
+    path.join(await getDataDir(), '..', 'changes.json'),
+  ];
+
+  for (const p of possibleChangesPaths) {
+    try {
+      const raw = await fs.readFile(p, 'utf8');
+      parsed = JSON.parse(raw);
+      if (parsed?.changes) break;
+    } catch {}
+  }
+
   if (!Array.isArray(parsed?.changes) || parsed.changes.length === 0) {
-    console.log(`[getCourseChanges] No changes array found for course ${courseId}. Returning empty badge map.`);
     return {};
   }
 
-  // Badges are temporary: if an explicit publish timestamp is provided and older
-  // than the TTL, render nothing. If missing or invalid, treat as fresh within TTL.
   if (typeof parsed.updatedAt === 'string') {
     const releasedAt = new Date(parsed.updatedAt).getTime();
     if (Number.isFinite(releasedAt) && Date.now() - releasedAt > BADGE_TTL_MS) {
-      console.log(`[getCourseChanges] Changelog expired for course ${courseId} (releasedAt=${parsed.updatedAt}, TTL=${BADGE_TTL_MS}ms). Returning empty badge map.`);
       return {};
     }
   }
@@ -318,20 +232,176 @@ export async function getCourseChanges(courseId: string): Promise<CourseChanges>
   const map: CourseChanges = {};
   for (const c of parsed.changes) {
     if (!c || typeof c !== 'object') continue;
-    if (c.change === 'removed') continue; // deletions leave the TOC anyway
+    if (c.change === 'removed') continue;
     const m = ITEM_PATH_RE.exec(c.path ?? '');
-    if (!m) {
-      console.log(`[getCourseChanges] Path did not match ITEM_PATH_RE: "${c.path}"`);
-      continue;
-    }
-    if (m[1] !== courseId) {
-      continue; // Change belongs to a different course
-    }
+    if (!m || m[1] !== courseId) continue;
     const id = m[2] ?? m[3];
     if (!id) continue;
     map[id] = { kind: m[2] ? 'chapter' : 'lab', change: c.change };
-    console.log(`[getCourseChanges] Added badge for [${courseId}] -> item "${id}" (${m[2] ? 'chapter' : 'lab'}): ${c.change}`);
   }
-  console.log(`[getCourseChanges] Final badge map for course [${courseId}]:`, map);
   return map;
+}
+
+// ── Course & Catalog Readers ──────────────────────────────────────────────────
+
+export async function readCatalog(): Promise<CourseCatalogEntry[]> {
+  // 1. Try reading catalog.json from DATA_DIR or root
+  const rawCatalog = await readFile('catalog.json');
+  if (rawCatalog) {
+    try {
+      const data = JSON.parse(rawCatalog);
+      if (Array.isArray(data.courses)) {
+        return data.courses.map((c: any) => ({
+          id: c.id,
+          title: c.title,
+          description: c.description,
+          level: c.level,
+          totalChapters: c.totalChapters ?? (Array.isArray(c.modules) ? c.modules.reduce((acc: number, m: any) => acc + (m.chapters?.length || 0), 0) : 0),
+          totalLabs: c.totalLabs ?? (Array.isArray(c.modules) ? c.modules.reduce((acc: number, m: any) => acc + (m.labs?.length || 0), 0) : 0),
+          modules: c.modules ?? [],
+        }));
+      }
+    } catch {}
+  }
+
+  // 2. Fallback: read index.json
+  const rawIndex = await readFile('index.json');
+  if (rawIndex) {
+    try {
+      const data = JSON.parse(rawIndex);
+      if (Array.isArray(data.courses)) {
+        return data.courses;
+      }
+    } catch {}
+  }
+
+  return [];
+}
+
+export async function readCourse(courseId: string): Promise<ContentCourse | null> {
+  const courseYaml = await loadYaml<{
+    id?: string;
+    title?: string;
+    description?: string;
+    prerequisites?: string[];
+    modules?: string[];
+    spec?: {
+      host?: string;
+      runtime?: string;
+      scope?: string;
+    };
+    keyTakeaways?: string[];
+    quickLinks?: { label: string; href: string }[];
+  }>('courses', courseId, 'course.yaml');
+
+  if (!courseYaml) return null;
+
+  const modules: ContentModule[] = [];
+
+  if (Array.isArray(courseYaml.modules)) {
+    for (const modId of courseYaml.modules) {
+      if (typeof modId !== 'string') continue;
+      const mod = await readModule(courseId, modId);
+      if (mod) modules.push(mod);
+    }
+  }
+
+  return {
+    id: courseYaml.id ?? courseId,
+    title: courseYaml.title ?? courseId,
+    description: courseYaml.description ?? '',
+    prerequisites: Array.isArray(courseYaml.prerequisites) ? courseYaml.prerequisites : undefined,
+    modules,
+    spec: courseYaml.spec
+      ? {
+          host: courseYaml.spec.host ?? '',
+          runtime: courseYaml.spec.runtime ?? '',
+          scope: courseYaml.spec.scope ?? '',
+        }
+      : undefined,
+    keyTakeaways: courseYaml.keyTakeaways,
+    quickLinks: courseYaml.quickLinks,
+  };
+}
+
+async function readModule(courseId: string, moduleId: string): Promise<ContentModule | null> {
+  const modYaml = await loadYaml<{
+    id?: string;
+    title?: string;
+    description?: string;
+    order?: number;
+    items?: ({ type: 'chapter' | 'lab'; id: string } | string)[];
+  }>('courses', courseId, 'modules', moduleId, 'module.yaml');
+
+  if (!modYaml) return null;
+
+  const chapters: Chapter[] = [];
+  const labs: ContentLab[] = [];
+  const items: CourseItem[] = [];
+
+  let itemOrder = 1;
+  if (Array.isArray(modYaml.items)) {
+    for (const rawItem of modYaml.items) {
+      if (typeof rawItem === 'string') continue;
+      if (rawItem.type === 'chapter') {
+        const title = (await getChapterTitle(courseId, moduleId, rawItem.id)) ?? rawItem.id;
+        chapters.push({
+          id: rawItem.id,
+          title,
+          description: '',
+          order: itemOrder,
+        });
+        items.push({
+          type: 'chapter',
+          id: rawItem.id,
+          title,
+          moduleId,
+          moduleTitle: modYaml.title ?? moduleId,
+        });
+        itemOrder++;
+      } else if (rawItem.type === 'lab') {
+        const labYaml = await loadYaml<{ title?: string; description?: string }>(
+          'courses', courseId, 'modules', moduleId, 'labs', rawItem.id, 'lab.yaml'
+        );
+        const title = labYaml?.title ?? rawItem.id;
+        labs.push({
+          id: rawItem.id,
+          title,
+          description: labYaml?.description ?? '',
+          order: itemOrder,
+        });
+        items.push({
+          type: 'lab',
+          id: rawItem.id,
+          title,
+          moduleId,
+          moduleTitle: modYaml.title ?? moduleId,
+        });
+        itemOrder++;
+      }
+    }
+  }
+
+  return {
+    id: modYaml.id ?? moduleId,
+    title: modYaml.title ?? moduleId,
+    description: modYaml.description ?? '',
+    order: modYaml.order,
+    chapters,
+    labs,
+    items,
+  };
+}
+
+async function getChapterTitle(courseId: string, moduleId: string, chapterId: string): Promise<string | null> {
+  const content = await readFile('courses', courseId, 'modules', moduleId, 'chapters', `${chapterId}.md`);
+  if (!content) return null;
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('# ')) {
+      return trimmed.slice(2).trim();
+    }
+  }
+  return null;
 }

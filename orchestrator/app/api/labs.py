@@ -146,11 +146,14 @@ def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_dock
             })
 
         try:
-            if req.pre_pull or req.setup:
-                docker_svc.wait_for_docker(session.container_name)
-
             if req.pre_pull:
+                docker_svc.wait_for_docker(session.container_name)
                 docker_svc.pre_pull_images(session.container_name, req.pre_pull)
+            elif req.setup:
+                # If container has docker CLI, wait for daemon before running setup commands
+                code, _ = docker_svc.exec_command(session.container_name, ["which", "docker"], user="root")
+                if code == 0:
+                    docker_svc.wait_for_docker(session.container_name)
 
             for setup_cmd in req.setup:
                 exit_code, output = docker_svc.exec_command(
@@ -170,6 +173,21 @@ def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_dock
                 "detail": str(e),
                 **SCHEMA_HELP,
             })
+
+        # Ensure container has stabilized and pre-initialize tmux session
+        try:
+            for _ in range(25):
+                code, _ = docker_svc.exec_command(session.container_name, ["id", "-u", "student"], user="root")
+                if code == 0:
+                    break
+                time.sleep(0.2)
+            docker_svc.exec_command(
+                session.container_name,
+                ["sudo", "-H", "-u", "student", "tmux", "new-session", "-d", "-s", "lab", "bash -l"],
+                user="root",
+            )
+        except Exception as e:
+            logger.debug(f"Pre-initialization check for '{session.container_name}': {e}")
 
         sessions[session.session_id] = session
         return session

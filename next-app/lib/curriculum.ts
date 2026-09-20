@@ -1,6 +1,6 @@
 import type { ContentCourse, CourseItem } from './content-types';
 import type { Enrollment } from './api';
-import { getAllItems } from './content-server';
+import { getAllItems } from './content-utils';
 
 export interface CurriculumStatus {
   completedChapterIds: string[];

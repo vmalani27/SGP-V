@@ -8,23 +8,22 @@ import (
 
 // PrintHelp displays CLI usage guidance.
 func PrintHelp() {
-	fmt.Println("LabOps CLI — Local Learning Environment")
-	fmt.Println("Usage: labops <command> [options]")
-	fmt.Println("\nAvailable Commands:")
-	fmt.Println("  doctor    Runs hardware, Docker, and hypervisor prerequisite checks.")
-	fmt.Println("  setup     Installs local dependencies and prepares the environment.")
-	fmt.Println("  update    Installs or updates the LabOps application and lab images.")
-	fmt.Println("  start     Starts the installed LabOps environment.")
-	fmt.Println("            Flags: --docker (-d) for Docker Desktop, --vm (-v) for Vagrant VM")
-	fmt.Println("  stop      Stops running LabOps containers and/or Vagrant VM.")
-	fmt.Println("  logs      Displays stdout/stderr logs from active services.")
-	fmt.Println("  version   Displays the installed LabOps release state.")
-	fmt.Println("  help      Displays this help menu.")
-	fmt.Println("\nExample Workflow:")
-	fmt.Println("  1. Verify system:    labops doctor")
-	fmt.Println("  2. Install/update:   labops setup && labops update")
-	fmt.Println("  3. Launch LabOps:    labops start")
-	fmt.Println("  4. Stop when done:   labops stop")
+	fmt.Println("LabOps — Interactive DevOps Learning Environment")
+	fmt.Println("Usage: labops <command>")
+	fmt.Println("\nCommands:")
+	fmt.Println("  start     Start your learning workspace (opens in browser)")
+	fmt.Println("  stop      Stop your learning workspace")
+	fmt.Println("  restart   Restart your learning workspace")
+	fmt.Println("  status    Check if your workspace is running")
+	fmt.Println("  update    Download latest courses and lab materials")
+	fmt.Println("  doctor    Check if your computer is ready to run LabOps")
+	fmt.Println("  logs      Show troubleshooting logs")
+	fmt.Println("  version   Show installed version of LabOps")
+	fmt.Println("  help      Show this help menu")
+	fmt.Println("\nQuick Start:")
+	fmt.Println("  1. Check system:   labops doctor")
+	fmt.Println("  2. Start learning: labops start")
+	fmt.Println("  3. Stop when done: labops stop")
 	fmt.Println("==================================================")
 }
 
@@ -48,10 +47,14 @@ func main() {
 		success = RunVersion()
 	case "start":
 		success = RunStart()
+	case "restart":
+		success = RunRestart()
 	case "stop":
 		success = RunStop()
 	case "logs":
 		success = RunLogs()
+	case "status":
+		success = RunStatus()
 	case "help", "-h", "--help":
 		PrintHelp()
 		os.Exit(0)

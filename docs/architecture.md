@@ -1,6 +1,6 @@
 # LabOps Architecture & Component Blueprint
 
-This document details the end-to-end architecture of **LabOps (SGP-V)**, a containerized, local-first learning platform for hands-on DevOps education.
+This document details the end-to-end architecture of **LabOps (SGP-V)**, a local-first, containerized learning platform for hands-on DevOps education.
 
 ---
 
@@ -17,65 +17,60 @@ flowchart TB
     %% ─────────────────────────────────────────────────────────────
     %% GITOPS & CI/CD PIPELINES
     %% ─────────────────────────────────────────────────────────────
-    subgraph GitOps ["1. GitOps & Image Distribution (GitHub Actions)"]
+    subgraph GitOps ["1. GitOps & CDN Publishing (GitHub Actions)"]
         direction TB
         subgraph ContentPipeline ["Content Sync Pipeline"]
-            Validator["Content Validator\n(scripts/validate_content.py)"]
-            ManifestGen["Manifest & Tarball Generator\n(scripts/generate_manifest.py)"]
+            Validator["Content Validator\n(scripts/validator.py)"]
+            Packager["Deterministic Tarball & Catalog Generator\n(scripts/validate_content.py)"]
+            CloudFront[("AWS CloudFront CDN + S3\n(d3rqfqpemi0u1s.cloudfront.net)\n- latest.json\n- catalog.json\n- published/<sha>/content.tar.gz")]
         end
 
-        subgraph ImagePipeline ["Multi-Image GHCR Pipeline"]
-            BuildFe["Build Frontend\n(next-app : Standalone SSR)"]
-            BuildBe["Build Backend\n(backend : FastAPI)"]
-            BuildOrc["Build Orchestrator\n(orchestrator : FastAPI + uvloop)"]
-            BuildLabs["Build Lab Images\n(lab-ubuntu ➔ lab-docker ➔ lab-docker-fundamentals)"]
+        subgraph ImagePipeline ["Multi-Image Amazon ECR Pipeline"]
+            BuildFe["Build Frontend (Next.js 15)"]
+            BuildSync["Build Content-Sync Sidecar (Go)"]
+            BuildOrc["Build Orchestrator (FastAPI)"]
+            BuildLabs["Build Lab Images (Ubuntu, Docker)"]
+            ECR[("Amazon ECR / ECR Public\n(public.ecr.aws/vmalani27/*)")]
         end
-    end
-
-    %% ─────────────────────────────────────────────────────────────
-    %% CLOUD INFRASTRUCTURE (AWS + FIREBASE)
-    %% ─────────────────────────────────────────────────────────────
-    subgraph CloudInfra ["2. Cloud Control Plane & Content Delivery"]
-        direction TB
-        S3Bucket[("AWS S3 Content Bucket\n(s3://content-dev-.../published/)")]
-        LambdaWorker["AWS Lambda Worker\n(Content Ingest / Manifest Seeder)"]
-        FirebaseAuth["Firebase Authentication\n(Identity & JWTs)"]
-        FirestoreDB[("Cloud Firestore\n(Courses, Syllabus, User Progress)")]
     end
 
     %% ─────────────────────────────────────────────────────────────
     %% LOCAL RUNTIME ENVIRONMENT (HOST MACHINE)
     %% ─────────────────────────────────────────────────────────────
-    subgraph LocalStack ["3. Local Runtime Stack (Docker Desktop or Vagrant VM)"]
+    subgraph LocalStack ["2. Local Student Workspace (Docker on WSL2 / Native Linux / Desktop)"]
         direction TB
         
         subgraph HostControl ["Host Control Plane"]
-            LabopsCLI["Go CLI (labops)\n[doctor | setup | pull | start | stop | logs]"]
+            LabopsCLI["Go CLI (labops)\n[start | stop | restart | status | update | doctor | logs]"]
         end
 
-        subgraph CoreServices ["Core Platform Services"]
+        subgraph HostStorage ["Local Host Persistence (~/.labops/)"]
+            UserState[("user_state.json\n- Student Identity\n- Course Enrollments\n- Chapter Checkpoints\n- Lab Progress")]
+            ContentCache[("content/\n- Extracted Markdown\n- Course Metadata\n- Lab Task Configs")]
+        end
+
+        subgraph CoreServices ["Core Platform Services (Docker Compose)"]
             direction LR
-            Frontend["Next.js 15 Frontend (:3000)\n- Standalone Node.js SSR\n- Client React Hydration\n- xterm.js Terminal\n- Local Content Cache (/app/.content)"]
-            
-            Backend["FastAPI Backend (:8000)\n- Presigned S3 Content URL Signer\n- Course Metadata / Version API\n- Progress Sync Bridge"]
-            
-            Orchestrator["FastAPI Orchestrator (:8001)\n- Docker SDK Controller\n- Interactive PTY & WebSocket (/ws/terminal)\n- Automated Task Validator Engine\n- GHCR Auto-Pull Fallback"]
+            Proxy["Nginx Gateway (:3000)\n- Single host entrypoint\n- Unified HTTP / WebSocket router"]
+            Frontend["Next.js 15 Frontend\n- Local Course Catalog\n- Chapter Player & Tasks\n- xterm.js Terminal UI\n- Local-First User State"]
+            Sidecar["Content-Sync Sidecar (Go)\n- Background CDN Poller (<8MB RAM)\n- SHA256 Verification\n- Auto-syncs to /content"]
+            Orchestrator["FastAPI Orchestrator\n- Docker SDK Controller\n- Interactive PTY & WebSocket (/ws/terminal)\n- Pre-Warmed tmux Sessions\n- Automated Task Validator Engine"]
         end
 
         subgraph RuntimeEngine ["Adaptive Container Runtime Engine"]
             direction TB
             RuntimeSwitch{{"Runtime Mode\nSelector"}}
-            SysboxRuntime["Sysbox Engine\n(sysbox-runc / Vagrant VM)\n- Rootless user namespace\n- True system container isolation"]
-            DockerDesktopRuntime["Docker Desktop Engine\n(runc / WSL2 / macOS Hypervisor)\n- privileged: true\n- Dedicated storage volumes (/var/lib/docker)"]
+            SysboxRuntime["Sysbox Engine\n(sysbox-runc / WSL2 / Linux)\n- Rootless user namespace\n- Systemd + inner dockerd"]
+            DockerDesktopRuntime["Docker Desktop Fallback\n(runc / WSL2 / macOS Hypervisor)\n- privileged: true\n- Dedicated storage volumes (/var/lib/docker)"]
         end
 
-        subgraph LabSandboxes ["4. Isolated Student Lab Sandbox (labops-lab-*)"]
+        subgraph LabSandboxes ["3. Isolated Student Lab Sandbox (labops-lab-*)"]
             direction TB
             Init["systemd Init (PID 1)"]
             InnerDocker["Inner Docker Daemon (dockerd / containerd)"]
-            TmuxSession["tmux Session (:demo) + bash shell"]
+            TmuxSession["tmux Session (:lab) + bash shell"]
             PreloadedImages["Preloaded Images (alpine, nginx, python)"]
-            CheckValidators["Validation Test Suites (/usr/local/checks)"]
+            CheckValidators["Validation Test Suites"]
             
             Init --> InnerDocker
             Init --> TmuxSession
@@ -90,48 +85,33 @@ flowchart TB
 
     %% Content Authoring Flow
     ContentDev -->|"git push content-v2/"| Validator
-    Validator --> ManifestGen
-    ManifestGen -->|"Upload content.tar.gz & latest.json"| S3Bucket
-    S3Bucket -.->|"S3 ObjectCreated Event"| LambdaWorker
-    LambdaWorker -->|"Seed Course Hierarchy & Tasks"| FirestoreDB
+    Validator --> Packager
+    Packager -->|"Upload static bundles"| CloudFront
 
     %% Image Distribution Flow
     ContentDev -->|"git push to dev/beta"| ImagePipeline
-    ImagePipeline -->|"Push pre-built images"| GHCR[("GitHub Container Registry\n(ghcr.io/vmalani27/sgp-v/*)")]
-    GHCR -.->|"docker pull via CLI / Compose"| LocalStack
+    ImagePipeline -->|"Push container images"| GHCR
+    GHCR -.->|"Pull pre-built images"| LocalStack
 
-    %% User & App Interaction Flows
-    StudentUser -->|"1. Web UI & Markdown Navigation"| Frontend
-    StudentUser -->|"2. Authenticate"| FirebaseAuth
-    StudentUser <==>|"3. Interactive Terminal (WebSockets)"| Orchestrator
+    %% Sync & Content Flow
+    Sidecar -->|"Poll & pull releases (latest.json)"| CloudFront
+    Sidecar -->|"Extract into shared volume"| ContentCache
+    Frontend <-->|"Read curriculum files"| ContentCache
+    Frontend <-->|"Read & persist progress"| UserState
 
-    %% Internal Communication Flows
-    Frontend -->|"A. S3 Presigned URL / Course Version"| Backend
-    Frontend -->|"B. Download Content Tarball"| S3Bucket
-    Backend <-->|"User Progress & Syllabus"| FirestoreDB
-    Frontend -->|"C. Start / Inspect / Grade Lab"| Orchestrator
+    %% User Interaction Flow
+    StudentUser <-->|"1. Access Learning Portal"| Proxy
+    Proxy -->|"HTTP /"| Frontend
+    Proxy -->|"WS /ws/terminal"| Orchestrator
+    Proxy -->|"REST /labs/*"| Orchestrator
 
     %% Orchestrator Management
     Orchestrator --> RuntimeSwitch
-    RuntimeSwitch -->|"Vagrant Mode"| SysboxRuntime
-    RuntimeSwitch -->|"Desktop Mode"| DockerDesktopRuntime
+    RuntimeSwitch -->|"Native WSL2 / Linux"| SysboxRuntime
+    RuntimeSwitch -->|"Desktop Fallback"| DockerDesktopRuntime
     SysboxRuntime --> LabSandboxes
     DockerDesktopRuntime --> LabSandboxes
-
-    %% ─────────────────────────────────────────────────────────────
-    %% STYLING
-    %% ─────────────────────────────────────────────────────────────
-    classDef gitops fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef cloud fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
-    classDef local fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    classDef sandbox fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    classDef registry fill:#ede7f6,stroke:#512da8,stroke-width:2px;
-
-    class GitOps,ContentPipeline,ImagePipeline gitops;
-    class CloudInfra,S3Bucket,LambdaWorker,FirebaseAuth,FirestoreDB cloud;
-    class LocalStack,HostControl,CoreServices,RuntimeEngine local;
-    class LabSandboxes,Init,InnerDocker,TmuxSession,PreloadedImages,CheckValidators sandbox;
-    class GHCR registry;
+    LabopsCLI -.->|"Supervise lifecycle"| CoreServices
 ```
 
 ---
@@ -140,33 +120,38 @@ flowchart TB
 
 | Component | Technology | Primary Role |
 |---|---|---|
-| **`next-app` (Frontend)** | Next.js 15, React 19, Tailwind, xterm.js | Standalone SSR web application. Renders markdown course content, manages local tarball cache in `/app/.content`, and streams interactive shell sessions via WebSockets. |
-| **`orchestrator`** | FastAPI, Python 3.12, `docker` SDK, `uvloop` | Manages lab container lifecycles (`start`, `stop`, `exec`), bridges terminal PTYs over WebSocket `/ws/terminal`, executes task verification scripts, and auto-pulls missing images from GHCR. |
-| **`backend`** | FastAPI, Python 3.12, `google-cloud-firestore`, `boto3` | Generates presigned S3 download URLs for content delivery, syncs user course enrollment and progress state with Firestore. |
-| **`lab-images`** | Ubuntu 22.04, systemd, Docker CE, containerd | Self-contained, multi-stage Linux lab environments running full systemd (PID 1) and inner `dockerd` with pre-cached exercise images. |
-| **`cli` (`labops`)** | Go 1.22+ (Zero Dependencies) | Cross-platform bootstrap CLI for Windows, macOS, and Linux. Performs preflight checks (`doctor`), image pulling (`pull`), and interactive runtime selection (`start` / `stop`). |
-| **`worker` (Lambda)** | Python 3.12 AWS Lambda | Ingests `latest.json` content manifests triggered by S3 uploads, parsing module and task metadata directly into Cloud Firestore. |
+| **`proxy` (Gateway)** | Nginx Alpine | Single unified reverse proxy on port 3000. Routes frontend SSR/static assets, orchestrator REST endpoints (`/labs/`, `/demos/`, `/health`), and WebSocket terminal sessions (`/ws/terminal`). |
+| **`next-app` (Frontend)** | Next.js 15, React 19, Tailwind, xterm.js | Standalone SSR web application. Reads curriculum directly from local filesystem (`/app/.content`), manages student progress locally in `~/.labops/user_state.json`, and coordinates task validation. |
+| **`content-sync` (Sidecar)** | Go 1.22+ (Alpine, < 8MB RAM) | Continuous background daemon. Polls CloudFront CDN (`latest.json`), validates SHA256 checksums, and safely extracts curriculum releases into the shared `/content` volume. |
+| **`orchestrator`** | FastAPI, Python 3.12, Docker SDK, uvloop | Manages student sandbox lifecycles (`start`, `stop`, `exec`), bridges terminal PTYs over WebSocket `/ws/terminal` with pre-initialized `tmux` sessions, and executes task grading commands without exposing verification answers. |
+| **`cli` (`labops`)** | Go 1.22+ (Zero Dependencies) | Cross-platform bootstrap CLI for Windows, macOS, and Linux. Provides zero-plumbing lifecycle controls (`start`, `stop`, `restart`, `status`, `update`, `doctor`, `logs`). |
+| **`lab-images`** | Ubuntu 22.04, systemd, Docker CE, containerd | Self-contained Linux lab environments running full systemd (PID 1) and inner `dockerd` with pre-cached exercise images. |
 
 ---
 
 ## 3. Communication Protocols & Security Boundaries
 
 ```
-Browser  ───(HTTPS / WS)───►  Frontend (:3000)
-   │                               │ (internal backendFetch)
-   │                               ▼
-   ├────────(HTTP / REST)────► Backend (:8000) ──► AWS S3 & Firestore
-   │
-   └────────(WS / Terminal)──► Orchestrator (:8001) ──► Docker Engine
-                                                              │
-                                                              ▼
-                                                     [ Lab Sandbox ]
-                                                     (Inner dockerd)
+Browser  ───(HTTP / WS on port 3000)───►  Nginx Gateway Proxy (:3000)
+                                                 │
+                   ┌─────────────────────────────┴─────────────────────────────┐
+                   │                                                           │
+                   ▼ (HTTP /)                                                  ▼ (WS & REST /labs)
+           Next.js Frontend (:3000)                                     FastAPI Orchestrator (:8000)
+                   │                                                           │
+                   ▼                                                           ▼
+      [ Local User State & Content ]                                     Docker Engine Socket
+       (~/.labops/user_state.json)                                             │
+                                                                               ▼
+                                                                      [ Lab Sandbox (labops-lab-*) ]
+                                                                      - systemd (PID 1)
+                                                                      - inner dockerd
+                                                                      - isolated tmux session
 ```
 
 1. **Client Isolation:** The student browser connects to the Orchestrator WebSocket using a shared session secret. The student never has access to the host's `/var/run/docker.sock`.
 2. **Inner Docker Isolation (DinD):**
-   * **Sysbox Mode (Vagrant/Linux):** Linux user-namespaces map root inside the container to an unprivileged host UID.
-   * **Docker Desktop Mode (Windows/macOS):** Runs inside the Hyper-V/Virtualization.framework micro-VM with dedicated `/var/lib/docker` volumes, eliminating overlayfs-on-overlayfs conflicts while isolating the host OS.
-3. **Local-First Content Delivery:** The frontend fetches the course content tarball from S3 once, verifies its SHA256 checksum, and extracts it to `/app/.content`, providing fast offline-ready rendering.
+   * **Sysbox Mode (WSL2 / Linux):** Linux user-namespaces map root inside the container to an unprivileged host UID.
+   * **Docker Desktop Mode (Windows / macOS):** Runs inside the WSL2 / Hyper-V utility VM with dedicated `/var/lib/docker` volumes, eliminating overlayfs conflicts while isolating the host OS.
+3. **Local-First Autonomy:** The platform functions completely offline once course materials and images are downloaded. All user progress and checkpoints are stored directly on the host machine in `~/.labops/user_state.json`.
 

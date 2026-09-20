@@ -4,14 +4,14 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, getOrchestratorUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { itemHref } from '@/lib/content-server';
+import { itemHref } from '@/lib/content-utils';
 import type { LabMeta, TaskStatus, TaskProgressData, LabTask } from '@/lib/task-types';
 import type { ContentCourse, CourseItem } from '@/lib/content-types';
 import LabTerminal from '@/components/LabTerminal';
 import LabBriefing from '@/components/LabBriefing';
 import ProvisioningBoot from '@/components/ProvisioningBoot';
-import Navbar from '@/components/Navbar';
-import PlayerSidebar from '@/components/PlayerSidebar';
+
+
 import LabTaskRenderer from '@/components/LabTaskRenderer';
 import CelebrationOverlay from '@/components/CelebrationOverlay';
 import SubmitLabModal from '@/components/SubmitLabModal';
@@ -73,6 +73,13 @@ function buildLabMeta(
   return meta;
 }
 
+const ENV_IMAGE_FALLBACKS: Record<string, string> = {
+  'linux-basic': 'labops-ubuntu:latest',
+  'docker-basic': 'labops-docker:latest',
+  'docker-fundamentals': 'labops-docker-fundamentals:latest',
+  'docker-build': 'labops-docker-build:latest',
+};
+
 function envConfigFrom(labConfig: Record<string, unknown> | null): {
   image: string;
   apt_packages: string[];
@@ -83,7 +90,7 @@ function envConfigFrom(labConfig: Record<string, unknown> | null): {
   const env = (typeof envRaw === 'object' && envRaw !== null ? envRaw : {}) as Record<string, unknown>;
   const baseImage =
     (env.base_image as string | undefined) ??
-    (typeof envRaw === 'string' ? envRaw : '');
+    (typeof envRaw === 'string' ? ENV_IMAGE_FALLBACKS[envRaw] || envRaw : '');
 
   return {
     image: baseImage,
@@ -111,6 +118,12 @@ function labStateFrom(res: {
     expiresAt: res.expires_at ?? null,
     remainingSeconds: res.remaining_seconds ?? null,
   };
+}
+
+function getLabProgressKey(courseId: string, labId: string, sessionId?: string): string {
+  return sessionId
+    ? `lab_task_progress_${courseId}_${labId}_${sessionId}`
+    : `lab_task_progress_${courseId}_${labId}`;
 }
 
 function resolveLabPreviewPath(labConfig: Record<string, unknown> | null, port: number): string {
@@ -341,6 +354,11 @@ export default function LabClient({
   const handleStartNew = useCallback(async () => {
     cancelCelebration();
     if (labState) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem(getLabProgressKey(courseId, labId, labState.sessionId));
+        } catch {}
+      }
       try {
         await api.labs.destroy(courseId, labId, labState.sessionId);
       } catch {
@@ -423,6 +441,11 @@ export default function LabClient({
     setSubmitOpen(false);
     setDestroying(true);
     try {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem(getLabProgressKey(courseId, labId, labState.sessionId));
+        } catch {}
+      }
       await api.labs.destroy(courseId, labId, labState.sessionId);
       setLabState(null);
       setPhase('intro');
@@ -443,6 +466,11 @@ export default function LabClient({
     setSubmitting(true);
     setSubmitError(null);
     try {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem(getLabProgressKey(courseId, labId, labState.sessionId));
+        } catch {}
+      }
       if (labInfo.moduleId) {
         await api.courses.updateLabProgress(courseId, labId, labInfo.moduleId);
       }
@@ -483,15 +511,59 @@ export default function LabClient({
           setTasksError('This lab has no tasks yet.');
           return;
         }
-        setTaskProgress({ tasks: data.tasks, currentIndex: 0, completed: false });
-        taskProgressRef.current = { tasks: data.tasks, currentIndex: 0, completed: false };
+
+        // Restore saved task progress for this active session if available
+        let savedStatuses: Record<string, TaskStatus> = {};
+
+        if (typeof window !== 'undefined' && labState?.sessionId) {
+          try {
+            const key = getLabProgressKey(courseId, labId, labState.sessionId);
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const saved = JSON.parse(raw);
+              if (saved && typeof saved === 'object' && saved.taskStatuses && typeof saved.taskStatuses === 'object') {
+                savedStatuses = saved.taskStatuses;
+              }
+            }
+          } catch (e) {
+            console.warn('[LabClient] Failed to read saved task progress:', e);
+          }
+        }
+
+        // Strictly enforce progressive sequential progression:
+        // Tasks must be completed in order. Find the first incomplete task.
+        const validStatuses: Record<string, TaskStatus> = {};
+        let initialIndex = 0;
+        let initialCompleted = false;
+        let foundIncomplete = false;
+
+        for (let i = 0; i < data.tasks.length; i++) {
+          const t = data.tasks[i];
+          if (!foundIncomplete && savedStatuses[t.id] === 'correct') {
+            validStatuses[t.id] = 'correct';
+          } else if (!foundIncomplete) {
+            foundIncomplete = true;
+            initialIndex = i;
+          }
+        }
+
+        if (!foundIncomplete && data.tasks.length > 0) {
+          // All tasks are verified as completed
+          initialIndex = data.tasks.length - 1;
+          initialCompleted = true;
+        }
+
+        setTaskStatuses(validStatuses);
+        setTaskProgress({ tasks: data.tasks, currentIndex: initialIndex, completed: initialCompleted });
+        taskProgressRef.current = { tasks: data.tasks, currentIndex: initialIndex, completed: initialCompleted };
+        if (initialCompleted) setSubmitOpen(true);
       })
       .catch(() => {
         if (!cancelled) setTasksError('Failed to load lab tasks. Refresh the page to retry.');
       });
 
     return () => { cancelled = true; };
-  }, [phase, taskProgress, courseId, labId, labConfig]);
+  }, [phase, taskProgress, courseId, labId, labConfig, labState?.sessionId]);
 
   // Session expiry countdown
   const [now, setNow] = useState(() => Date.now());
@@ -591,7 +663,8 @@ export default function LabClient({
       }
       const result = await api.labs.validate(courseId, labId, taskId, answer, task);
       if (result.correct) {
-        setTaskStatuses((prev) => ({ ...prev, [taskId]: 'correct' }));
+        const nextStatuses = { ...taskStatuses, [taskId]: 'correct' as TaskStatus };
+        setTaskStatuses(nextStatuses);
         setCelebrating(true);
         if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current);
         celebrateTimerRef.current = setTimeout(() => {
@@ -601,10 +674,25 @@ export default function LabClient({
           if (!prev) return;
           const nextIndex = prev.currentIndex + 1;
           const completed = nextIndex >= prev.tasks.length;
-          const next = { ...prev, currentIndex: nextIndex, completed };
+          const next = { ...prev, currentIndex: completed ? prev.tasks.length - 1 : nextIndex, completed };
           taskProgressRef.current = next;
           setTaskProgress(next);
           if (completed) setSubmitOpen(true);
+
+          if (typeof window !== 'undefined' && labState?.sessionId) {
+            try {
+              const key = getLabProgressKey(courseId, labId, labState.sessionId);
+              localStorage.setItem(key, JSON.stringify({
+                sessionId: labState.sessionId,
+                currentIndex: completed ? prev.tasks.length - 1 : nextIndex,
+                taskStatuses: nextStatuses,
+                completed,
+                updatedAt: Date.now(),
+              }));
+            } catch (e) {
+              console.warn('[LabClient] Failed to persist task progress:', e);
+            }
+          }
         }, 1400);
       } else {
         setTaskStatuses((prev) => ({ ...prev, [taskId]: 'incorrect' }));
@@ -621,7 +709,7 @@ export default function LabClient({
 
   if (authLoading || phase === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0f1419]">
+      <div className="min-h-screen flex items-center justify-center bg-[#090a0c]">
         <div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto" />
       </div>
     );
@@ -633,48 +721,9 @@ export default function LabClient({
   const env = envConfigFrom(labConfig);
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-bg text-text antialiased">
-      <Navbar
-        breadcrumb={[
-          { label: course.title, href: `/courses/${courseId}` },
-          { label: moduleTitle || 'Course' },
-        ]}
-      />
-
-      <div className="flex flex-1 overflow-hidden pt-14">
-        {/* Course Sidebar */}
-        <aside
-          className={`shrink-0 overflow-hidden border-r border-line bg-panel transition-all duration-200 ${
-            sidebarOpen ? 'w-64' : 'w-0 border-r-0'
-          }`}
-        >
-          {sidebarOpen && (
-            <PlayerSidebar
-              course={course}
-              courseId={courseId}
-              currentItemId={labId}
-              completedChapterIds={completedChapterIds}
-              onToggle={() => setSidebarOpen(false)}
-            />
-          )}
-        </aside>
-
-        {!sidebarOpen && (
-          <div className="flex w-10 shrink-0 items-start justify-center border-r border-line bg-panel/40 pt-3">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="rounded p-1.5 text-muted transition hover:bg-line/20 hover:text-text"
-              title="Open sidebar (ESC)"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Pre-flight Briefing */}
+    <>
+      <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#090a0c]">
+        {/* Pre-flight Briefing */}
           {phase === 'intro' && (
             <LabBriefing
               meta={meta}
@@ -692,39 +741,22 @@ export default function LabClient({
             <>
               {/* Clean Workspace Toolbar */}
               {phase === 'running' && labState && (
-                <div className="flex h-11 shrink-0 items-center justify-between border-b border-line bg-panel/50 px-4 font-mono text-xs">
+                <div className="flex h-11 shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#0e0f12] px-4 font-mono text-xs">
                   {/* Left: Environment Status Indicator + Timer */}
                   <div className="flex items-center gap-3">
-                    <div
-                      className={`flex items-center gap-1.5 rounded border px-2 py-0.5 text-[11px] font-medium tracking-wide ${
-                        labState.status === 'running'
-                          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
-                          : 'border-amber-500/20 bg-amber-500/10 text-amber-400'
-                      }`}
-                      title={`Internal ID: ${labState.sessionId}`}
-                    >
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${
-                          labState.status === 'running' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-                        }`}
-                      />
-                      <span>{labState.status === 'running' ? 'CONNECTED' : 'PAUSED'}</span>
-                    </div>
-
                     {remainingSec !== null && (
                       <>
-                        <span className="text-line">|</span>
                         <div
-                          className={`flex items-center gap-1.5 text-xs ${
+                          className={`flex items-center gap-1.5 font-mono text-xs ${
                             remainingSec <= 60
                               ? 'text-rose-400 font-semibold'
                               : remainingSec <= 300
                               ? 'text-amber-400'
-                              : 'text-muted'
+                              : 'text-zinc-400'
                           }`}
                         >
-                          <span className="text-muted/60">TIME:</span>
-                          <span className="font-semibold text-text">{formatRemaining(remainingSec)}</span>
+                          <span className="text-zinc-500">TIME:</span>
+                          <span className="font-semibold text-zinc-300">{formatRemaining(remainingSec)}</span>
                         </div>
                       </>
                     )}
@@ -743,7 +775,7 @@ export default function LabClient({
                               href={previewUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 transition animate-in fade-in duration-300 hover:bg-emerald-500/20 hover:text-emerald-300"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 transition animate-in fade-in duration-300 hover:bg-emerald-500/20 hover:text-emerald-300"
                               title={`Port ${port} is live! Click to open web preview in a new tab${destPath ? ` (/${destPath})` : ''}`}
                             >
                               <span className="relative flex h-2 w-2">
@@ -764,7 +796,7 @@ export default function LabClient({
                       <button
                         onClick={handleStop}
                         disabled={stopping || restarting || destroying}
-                        className="rounded border border-line bg-panel px-2.5 py-1 text-xs text-muted hover:border-zinc-700 hover:text-text transition-colors disabled:opacity-50"
+                        className="rounded border border-white/[0.08] bg-zinc-900/80 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-50 cursor-pointer"
                       >
                         {stopping ? 'Pausing...' : 'Pause'}
                       </button>
@@ -773,7 +805,7 @@ export default function LabClient({
                       <button
                         onClick={handleResume}
                         disabled={resuming || restarting || destroying}
-                        className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                        className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50 cursor-pointer"
                       >
                         {resuming ? 'Resuming...' : 'Resume'}
                       </button>
@@ -781,14 +813,14 @@ export default function LabClient({
                     <button
                       onClick={handleRestart}
                       disabled={restarting || stopping || resuming || destroying}
-                      className="rounded border border-line bg-panel px-2.5 py-1 text-xs text-muted hover:border-zinc-700 hover:text-text transition-colors disabled:opacity-50"
+                      className="rounded border border-white/[0.08] bg-zinc-900/80 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-50 cursor-pointer"
                     >
                       {restarting ? 'Restarting...' : '↻ Restart'}
                     </button>
                     <button
                       onClick={handleDestroy}
                       disabled={destroying || stopping || resuming || restarting}
-                      className="rounded border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 text-xs text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/40 transition-colors disabled:opacity-50"
+                      className="rounded border border-red-800/40 bg-red-950/30 px-2.5 py-1 text-xs font-medium text-red-400 hover:bg-red-900/40 transition-colors disabled:opacity-50 cursor-pointer"
                     >
                       {destroying ? 'Ending...' : '✕ End Lab'}
                     </button>
@@ -801,7 +833,7 @@ export default function LabClient({
 
                 {/* Left Pane: Tasks */}
                 {(phase === 'provisioning' || phase === 'running') && (
-                  <div className="w-[420px] min-w-[340px] overflow-y-auto border-r border-line bg-bg">
+                  <div className="w-[420px] min-w-[340px] overflow-y-auto border-r border-white/[0.06] bg-[#121316]">
                     <div className="p-6">
                       {phase === 'running' && taskProgress && taskProgress.tasks.length > 0 ? (
                         <LabTaskRenderer
@@ -810,14 +842,15 @@ export default function LabClient({
                           taskErrors={taskErrors}
                           validating={validating}
                           onValidate={handleValidate}
+                          onRequestSubmit={() => setSubmitOpen(true)}
                         />
                       ) : tasksError ? (
-                        <div className="rounded border border-rose-500/20 bg-rose-500/10 p-4 font-mono text-xs text-rose-300">
+                        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 font-mono text-xs text-red-300">
                           {tasksError}
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2 font-mono text-xs text-muted">
-                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                        <div className="flex items-center gap-2 font-mono text-xs text-zinc-400">
+                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
                           {phase === 'provisioning' ? 'Setting up task harness...' : 'Loading lab tasks...'}
                         </div>
                       )}
@@ -826,7 +859,7 @@ export default function LabClient({
                 )}
 
                 {/* Right Pane: Terminal / Boot States */}
-                <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-black">
+                <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#090a0c]">
                   {phase === 'provisioning' && (
                     <ProvisioningBoot image={env.image} label={meta.environment} />
                   )}
@@ -848,7 +881,7 @@ export default function LabClient({
                         />
                       )}
                       {labState.status === 'stopped' && (
-                        <div className="flex flex-1 items-center justify-center font-mono text-xs text-muted">
+                        <div className="flex flex-1 items-center justify-center font-mono text-xs text-zinc-400">
                           Lab is paused. Click Resume above to reconnect.
                         </div>
                       )}
@@ -862,21 +895,21 @@ export default function LabClient({
                           ⏱
                         </div>
                         <div>
-                          <h2 className="text-base font-semibold text-text">Lab Session Expired</h2>
-                          <p className="mt-1 text-xs text-muted leading-relaxed">
+                          <h2 className="text-base font-semibold text-zinc-100">Lab Session Expired</h2>
+                          <p className="mt-1 text-xs text-zinc-400 leading-relaxed">
                             This ephemeral sandbox container reached its time limit and was shut down.
                           </p>
                         </div>
                         <div className="flex justify-center gap-3 pt-2">
                           <button
                             onClick={handleStartNew}
-                            className="rounded bg-accent px-4 py-2 text-xs font-semibold text-bg hover:bg-accentStrong transition-colors"
+                            className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-200 transition-colors"
                           >
                             Start New Lab
                           </button>
                           <button
                             onClick={() => router.push(`/courses/${courseId}`)}
-                            className="rounded border border-line bg-panel px-4 py-2 text-xs text-text hover:bg-line/20 transition-colors"
+                            className="rounded-lg border border-white/[0.08] bg-zinc-900/80 px-4 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
                           >
                             Back to Course
                           </button>
@@ -892,19 +925,19 @@ export default function LabClient({
                           !
                         </div>
                         <div>
-                          <h2 className="text-base font-semibold text-text">Lab Initialization Failed</h2>
+                          <h2 className="text-base font-semibold text-zinc-100">Lab Initialization Failed</h2>
                           <p className="mt-1 text-xs text-rose-400 leading-relaxed">{error}</p>
                         </div>
                         <div className="flex justify-center gap-3 pt-2">
                           <button
                             onClick={handleStart}
-                            className="rounded bg-accent px-4 py-2 text-xs font-semibold text-bg hover:bg-accentStrong transition-colors"
+                            className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-200 transition-colors"
                           >
                             Retry
                           </button>
                           <button
                             onClick={() => router.push(`/courses/${courseId}`)}
-                            className="rounded border border-line bg-panel px-4 py-2 text-xs text-text hover:bg-line/20 transition-colors"
+                            className="rounded-lg border border-white/[0.08] bg-zinc-900/80 px-4 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
                           >
                             Back to Course
                           </button>
@@ -917,7 +950,6 @@ export default function LabClient({
             </>
           )}
         </section>
-      </div>
 
       <SubmitLabModal
         open={submitOpen}
@@ -927,6 +959,6 @@ export default function LabClient({
         onSubmit={handleSubmitLab}
         onClose={() => setSubmitOpen(false)}
       />
-    </main>
+    </>
   );
 }

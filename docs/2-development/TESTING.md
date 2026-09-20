@@ -39,7 +39,7 @@ aws --endpoint-url http://localhost.floci.io:4566 s3 sync out/ s3://my-content-b
 $C up --build -d
 vagrant up                      # provisions + starts the orchestrator VM (Docker + Sysbox)
 
-# 3. Lab images are built inside the VM by provisioning/build-lab-images.sh
+# 3. Lab images are built inside the VM by vagrant/provisioning/build-lab-images.sh
 #    (the VM's own Docker runs the lab containers; ~1 rebuild after first vagrant up)
 ```
 

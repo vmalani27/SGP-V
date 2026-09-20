@@ -2,6 +2,7 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import CodeBlock from './CodeBlock';
 
 export default function RichText({
   content,
@@ -15,7 +16,7 @@ export default function RichText({
   const sizeClass = size === 'sm' ? ' prose-sm' : size === 'xs' ? ' prose-xs' : '';
   return (
     <div className={`prose-custom${sizeClass} ${className}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock }}>{content}</ReactMarkdown>
     </div>
   );
 }

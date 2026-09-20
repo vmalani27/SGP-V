@@ -23,18 +23,27 @@ type installState struct {
 	ImageDigests map[string]string `json:"image_digests"`
 }
 
+func registryBase() string {
+	if reg := strings.TrimSpace(os.Getenv("ECR_REGISTRY")); reg != "" {
+		return reg
+	}
+	return "public.ecr.aws/i9t1l0m7/vmalani27"
+}
+
 func labOpsImages(channel string) []managedImage {
+	base := registryBase()
 	return []managedImage{
-		{Name: "Frontend", Remote: "ghcr.io/vmalani27/sgp-v/frontend:" + channel},
-		{Name: "Orchestrator", Remote: "ghcr.io/vmalani27/sgp-v/orchestrator:" + channel},
-		{Name: "Ubuntu lab", Remote: "ghcr.io/vmalani27/sgp-v/lab-ubuntu:" + channel, Tags: []string{"labops-ubuntu:latest", "sgp-lab-ubuntu:latest"}},
-		{Name: "Docker lab", Remote: "ghcr.io/vmalani27/sgp-v/lab-docker:" + channel, Tags: []string{"labops-docker:latest", "sgp-lab-docker:latest"}},
-		{Name: "Docker fundamentals lab", Remote: "ghcr.io/vmalani27/sgp-v/lab-docker-fundamentals:" + channel, Tags: []string{"labops-docker-fundamentals:latest", "sgp-lab-docker-fundamentals:latest"}},
-		{Name: "Docker build lab", Remote: "ghcr.io/vmalani27/sgp-v/lab-docker-build:" + channel, Tags: []string{"labops-docker-build:latest", "sgp-lab-docker-build:latest"}},
+		{Name: "Frontend", Remote: base + "/labops-frontend:" + channel},
+		{Name: "Orchestrator", Remote: base + "/labops-orchestrator:" + channel},
+		{Name: "Ubuntu lab", Remote: base + "/labops-base:" + channel, Tags: []string{"labops-ubuntu:latest", "sgp-lab-ubuntu:latest"}},
+		{Name: "Docker lab", Remote: base + "/labops-labs:docker-" + channel, Tags: []string{"labops-docker:latest", "sgp-lab-docker:latest"}},
+		{Name: "Docker fundamentals lab", Remote: base + "/labops-labs:docker-fundamentals-" + channel, Tags: []string{"labops-docker-fundamentals:latest", "sgp-lab-docker-fundamentals:latest"}},
+		{Name: "Docker build lab", Remote: base + "/labops-labs:docker-build-" + channel, Tags: []string{"labops-docker-build:latest", "sgp-lab-docker-build:latest"}},
 	}
 }
 
 var defaultChannel = "dev"
+var defaultCDNURL = "https://d3rqfqpemi0u1s.cloudfront.net"
 
 func selectedChannel() string {
 	channel := strings.TrimSpace(os.Getenv("LABOPS_CHANNEL"))
@@ -42,6 +51,20 @@ func selectedChannel() string {
 		return defaultChannel
 	}
 	return channel
+}
+
+// GetContentCDNURL returns the content CDN URL injected at build or overridden via environment.
+func GetContentCDNURL() string {
+	if env := strings.TrimSpace(os.Getenv("CONTENT_PUBLIC_BASE_URL")); env != "" {
+		return env
+	}
+	if env := strings.TrimSpace(os.Getenv("LABOPS_CDN_URL")); env != "" {
+		return env
+	}
+	if defaultCDNURL != "" {
+		return defaultCDNURL
+	}
+	return ""
 }
 
 func statePath() (string, error) {
@@ -56,8 +79,13 @@ func statePath() (string, error) {
 	return filepath.Join(dir, "state.json"), nil
 }
 
-func imageDigest(image string) string {
-	cmd := exec.Command("docker", "image", "inspect", "--format", "{{index .RepoDigests 0}}", image)
+func imageDigest(image string, useWSL bool, wslDistro string) string {
+	var cmd *exec.Cmd
+	if useWSL {
+		cmd = exec.Command("wsl.exe", "-d", wslDistro, "docker", "image", "inspect", "--format", "{{index .RepoDigests 0}}", image)
+	} else {
+		cmd = exec.Command("docker", "image", "inspect", "--format", "{{index .RepoDigests 0}}", image)
+	}
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -79,13 +107,16 @@ func saveInstallState(state installState) error {
 
 // RunUpdate installs or updates the student-facing application and lab images.
 func RunUpdate() bool {
-	if !CheckDependency("docker") {
-		fmt.Println("LabOps cannot update because Docker is not installed or not in PATH.")
-		return false
-	}
+	wslReady, wslDistro := CheckWSLDockerReady()
+	useWSL := false
+
 	if !IsDockerDaemonRunning() {
-		fmt.Println("LabOps cannot update because the Docker daemon is not running.")
-		return false
+		if wslReady {
+			useWSL = true
+		} else {
+			fmt.Println("LabOps cannot update because the Docker daemon is not running on host or inside WSL2.")
+			return false
+		}
 	}
 
 	channel := selectedChannel()
@@ -97,11 +128,28 @@ func RunUpdate() bool {
 		ImageDigests: make(map[string]string, len(images)),
 	}
 
-	fmt.Printf("Updating LabOps (%s channel)\n", channel)
+	if useWSL {
+		fmt.Printf("Updating LabOps (%s channel) via WSL2 (%s)\n", channel, wslDistro)
+	} else {
+		fmt.Printf("Updating LabOps (%s channel)\n", channel)
+	}
 	fmt.Println("==================================================")
+	fmt.Println("[1/2] Updating course curriculum content...")
+	cdnURL := GetContentCDNURL()
+	if err := SyncCourseContent(cdnURL, true); err != nil {
+		fmt.Printf("Warning: Could not sync latest content from %s: %v\n", cdnURL, err)
+		fmt.Println("Continuing with cached course content...")
+	}
+
+	fmt.Println("\n[2/2] Updating managed container images...")
 	for index, image := range images {
-		fmt.Printf("[%d/%d] Updating %s...\n", index+1, len(images), image.Name)
-		cmd := exec.Command("docker", "pull", image.Remote)
+		fmt.Printf("  - [%d/%d] Updating %s...\n", index+1, len(images), image.Name)
+		var cmd *exec.Cmd
+		if useWSL {
+			cmd = exec.Command("wsl.exe", "-d", wslDistro, "docker", "pull", image.Remote)
+		} else {
+			cmd = exec.Command("docker", "pull", image.Remote)
+		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -109,13 +157,19 @@ func RunUpdate() bool {
 			return false
 		}
 		for _, tag := range image.Tags {
-			if err := exec.Command("docker", "tag", image.Remote, tag).Run(); err != nil {
+			var tagCmd *exec.Cmd
+			if useWSL {
+				tagCmd = exec.Command("wsl.exe", "-d", wslDistro, "docker", "tag", image.Remote, tag)
+			} else {
+				tagCmd = exec.Command("docker", "tag", image.Remote, tag)
+			}
+			if err := tagCmd.Run(); err != nil {
 				fmt.Printf("Update failed while preparing %s: %v\n", image.Name, err)
 				return false
 			}
 		}
 		state.Images[image.Name] = image.Remote
-		state.ImageDigests[image.Name] = imageDigest(image.Remote)
+		state.ImageDigests[image.Name] = imageDigest(image.Remote, useWSL, wslDistro)
 	}
 
 	if err := saveInstallState(state); err != nil {
@@ -148,8 +202,11 @@ func RunVersion() bool {
 		fmt.Printf("LabOps state is invalid: %v\n", err)
 		return false
 	}
-	fmt.Printf("LabOps channel: %s\n", state.Channel)
-	fmt.Printf("Last update: %s\n", state.UpdatedAt)
-	fmt.Printf("Managed images: %d\n", len(state.Images))
+	fmt.Printf("LabOps channel:  %s\n", state.Channel)
+	fmt.Printf("Content CDN:     %s\n", GetContentCDNURL())
+	fmt.Printf("Content version: %s\n", ReadLocalContentVersion())
+	fmt.Printf("Content cache:   %s\n", GetContentDir())
+	fmt.Printf("Last update:     %s\n", state.UpdatedAt)
+	fmt.Printf("Managed images:  %d\n", len(state.Images))
 	return true
 }

@@ -1,38 +1,7 @@
 x-frontend-target: ${FRONTEND_TARGET:-dev}
-x-firebase-creds:
-  FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
-  FIREBASE_CREDENTIALS_JSON: ${FIREBASE_CREDENTIALS_JSON:-}
 services:
-  backend:
-    image: ghcr.io/vmalani27/sgp-v/backend:beta
-    build:
-      context: ./backend
-    container_name: labops-backend-beta
-    ports:
-    - 8000:8000
-    volumes:
-    - ./backend:/app
-    - ./environments/beta/firebase/FIREBASE_CREDS_JSON_BETA.json:/app/credentials.json:ro
-    environment:
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
-      FIREBASE_CREDENTIALS_JSON: ${FIREBASE_CREDENTIALS_JSON:-}
-      CONTENT_PUBLIC_BASE_URL: ${CONTENT_PUBLIC_BASE_URL:-}
-      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://host.docker.internal:8001}
-      WS_ORCHESTRATOR_URL: ${WS_ORCHESTRATOR_URL:-ws://host.docker.internal:8001}
-      JWT_SECRET: ${JWT_SECRET:-dev-only-change-in-production}
-    extra_hosts:
-    - host.docker.internal:host-gateway
-    restart: unless-stopped
-    command:
-    - uvicorn
-    - app.main:app
-    - --host
-    - 0.0.0.0
-    - --port
-    - '8000'
-    - --reload
   frontend:
-    image: ghcr.io/vmalani27/sgp-v/frontend:beta
+    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27}/labops-frontend:beta
     container_name: labops-frontend-beta
     user: "0:0"
     ports:
@@ -44,13 +13,31 @@ services:
     - HOSTNAME=0.0.0.0
     - PORT=3000
     - NEXT_TELEMETRY_DISABLED=1
-    - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-    - BACKEND_API_URL=http://backend:8000
+    - NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8001
+    - NEXT_PUBLIC_ORCHESTRATOR_SECRET=local-dev-super-secret
     - CONTENT_LOCAL_DIR=/app/.content
+    - CONTENT_PUBLIC_BASE_URL=${CONTENT_PUBLIC_BASE_URL:-}
     depends_on:
-    - backend
+    - orchestrator
+    restart: unless-stopped
+  orchestrator:
+    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27}/labops-orchestrator:beta
+    container_name: labops-orchestrator-beta
+    privileged: true
+    user: "0:0"
+    ports:
+    - 8001:8000
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      LAB_PREFIX: labops-lab
+      DEMO_PREFIX: labops-demo
+      LAB_TIMEOUT_MINUTES: '40'
+      DEMO_TIMEOUT_MINUTES: '30'
+      CONTAINER_RUNTIME_MODE: privileged
+      ORCHESTRATOR_SECRET: ${ORCHESTRATOR_SECRET:-local-dev-super-secret}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-in-production}
     restart: unless-stopped
 volumes:
-  frontend_node_modules: null
-  frontend_next: null
   frontend_content: null

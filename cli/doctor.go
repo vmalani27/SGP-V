@@ -328,8 +328,18 @@ func CheckWSL2Systemd() (bool, string, error) {
 		return false, "", fmt.Errorf("no WSL2 Linux distributions found")
 	}
 
-	// First pass: look for a distribution with systemd=true
+	// First pass: look for a distribution with active systemd or systemd=true in /etc/wsl.conf
 	for _, distro := range distros {
+		// Check running systemd state directly
+		cmdRunning := exec.Command("wsl.exe", "-d", distro, "systemctl", "is-system-running")
+		if out, err := cmdRunning.Output(); err == nil {
+			s := strings.TrimSpace(string(out))
+			if s == "running" || s == "degraded" {
+				return true, distro, nil
+			}
+		}
+
+		// Fallback to checking /etc/wsl.conf
 		cmd := exec.Command("wsl.exe", "-d", distro, "cat", "/etc/wsl.conf")
 		var out bytes.Buffer
 		cmd.Stdout = &out
@@ -343,7 +353,7 @@ func CheckWSL2Systemd() (bool, string, error) {
 	return false, distros[0], nil
 }
 
-// CheckPort80Availability tries to bind to 0.0.0.0:80 to see if it's free.
+// CheckPort80Availability checks if local port 80 (or fallback 8080) is available.
 func CheckPort80Availability() (bool, int) {
 	port := 80
 	if !CheckPortAvailable(port) {
@@ -356,200 +366,156 @@ func CheckPort80Availability() (bool, int) {
 	return true, port
 }
 
-// RunDoctor runs all hardware and software diagnostics.
+// RunDoctor runs all hardware and software diagnostics in a clean, student-friendly format.
 func RunDoctor() bool {
-	fmt.Println("Running LabOps Diagnostics & Preflight Checks...")
-	fmt.Println("==================================================")
+	fmt.Println("LabOps System Check")
+	fmt.Println("------------------------------------")
 
-	// 1. Virtualization
-	fmt.Print("Hardware Virtualization (VT-x/AMD-V): ")
-	virt, err := CheckVirtualization()
-	if err != nil {
-		fmt.Printf("FAILED to detect (%v)\n", err)
-	} else if virt {
-		fmt.Println("OK")
+	allPassed := true
+	var failureHints []string
+
+	// 1. System requirements (Virtualization + RAM + Disk)
+	virt, _ := CheckVirtualization()
+	ram, _ := CheckRAM()
+	disk, _ := CheckDisk()
+
+	sysOk := true
+	var sysDetail string
+	if !virt {
+		sysOk = false
+		sysDetail = "Hardware virtualization disabled in BIOS"
+		failureHints = append(failureHints, "Enable CPU Virtualization (VT-x / AMD-V) in your computer's BIOS/UEFI settings.")
+	} else if ram > 0 && ram < 4.0 {
+		sysOk = false
+		sysDetail = fmt.Sprintf("Insufficient RAM (%.1f GB, minimum 4 GB required)", ram)
+		failureHints = append(failureHints, "LabOps requires at least 4 GB of system RAM to run smoothly.")
+	} else if disk > 0 && disk < 10.0 {
+		sysOk = false
+		sysDetail = fmt.Sprintf("Low disk space (%.1f GB free, minimum 10 GB required)", disk)
+		failureHints = append(failureHints, "Free up at least 10 GB of disk space for container storage and lab environments.")
 	} else {
-		fmt.Println("FAILED (Enable Virtualization/VT-x/AMD-V in your BIOS/UEFI firmware)")
+		ramGB := int(ram + 0.5)
+		diskGB := int(disk + 0.5)
+		if ramGB > 0 && diskGB > 0 {
+			sysDetail = fmt.Sprintf("%d GB RAM / %d GB Free Disk", ramGB, diskGB)
+		} else {
+			sysDetail = "Hardware requirements met"
+		}
 	}
 
-	// 2. RAM check
-	fmt.Print("System RAM: ")
-	ram, err := CheckRAM()
-	if err != nil {
-		fmt.Printf("Unknown (%v)\n", err)
+	if sysOk {
+		fmt.Printf("  ✔ %-23s %s\n", "System requirements", sysDetail)
 	} else {
-		if ram >= 7.5 {
-			fmt.Printf("OK (%.2f GB)\n", ram)
-		} else if ram >= 4.0 {
-			fmt.Printf("WARNING: %.2f GB (Minimum required is 4GB; 8GB recommended for smoother experience)\n", ram)
-		} else {
-			fmt.Printf("FAILED: %.2f GB (Insufficient! Minimum required is 4GB)\n", ram)
-		}
+		allPassed = false
+		fmt.Printf("  ✖ %-23s %s\n", "System requirements", sysDetail)
 	}
 
-	// 3. Disk space check
-	fmt.Print("Available Disk Space: ")
-	disk, err := CheckDisk()
-	if err != nil {
-		fmt.Printf("Unknown (%v)\n", err)
-	} else {
-		if disk >= 20.0 {
-			fmt.Printf("OK (%.2f GB)\n", disk)
-		} else if disk >= 10.0 {
-			fmt.Printf("WARNING: %.2f GB (Low disk space; at least 15-20GB recommended to download VM boxes)\n", disk)
+	// 2. Subsystem / Environment
+	envOk := true
+	var envDetail string
+
+	switch runtime.GOOS {
+	case "windows":
+		sysd, distro, _ := CheckWSL2Systemd()
+		if distro != "" {
+			envDetail = fmt.Sprintf("WSL2 (%s)", distro)
+			if !sysd {
+				envOk = false
+				envDetail = fmt.Sprintf("WSL2 (%s - systemd not enabled)", distro)
+				failureHints = append(failureHints, fmt.Sprintf("Enable systemd in WSL2: add '[boot]\\nsystemd=true' to /etc/wsl.conf in %s and run 'wsl --shutdown'.", distro))
+			}
 		} else {
-			fmt.Printf("FAILED: %.2f GB (Insufficient! Less than 10GB free space)\n", disk)
+			envOk = false
+			envDetail = "WSL2 not found"
+			failureHints = append(failureHints, "Install WSL2 by opening PowerShell as Administrator and running: wsl --install -d Ubuntu-22.04")
 		}
+		if envOk {
+			fmt.Printf("  ✔ %-23s %s\n", "Windows Subsystem", envDetail)
+		} else {
+			allPassed = false
+			fmt.Printf("  ✖ %-23s %s\n", "Windows Subsystem", envDetail)
+		}
+	case "linux":
+		fmt.Printf("  ✔ %-23s %s\n", "Linux Environment", "Native Linux Kernel")
+	case "darwin":
+		fmt.Printf("  ✔ %-23s %s\n", "macOS Environment", "Darwin Kernel")
 	}
 
-	// Systemd enabled (WSL2):
-	fmt.Print("Systemd enabled (WSL2): ")
-	sysd, sysdDistro, err := CheckWSL2Systemd()
-	if err != nil || !sysd {
-		if sysdDistro != "" {
-			fmt.Printf("✖ (systemd not enabled in %s) - add '[boot]\\nsystemd=true' to /etc/wsl.conf and restart WSL2\n", sysdDistro)
+	// 3. Lab Runtime Engine (Docker in WSL2 or Host Docker)
+	engineOk := false
+	var engineDetail string
+
+	if runtime.GOOS == "windows" {
+		if wslReady, _ := CheckWSLDockerReady(); wslReady {
+			engineOk = true
+			engineDetail = "Ready"
+		} else if IsDockerDaemonRunning() {
+			engineOk = true
+			engineDetail = "Ready"
 		} else {
-			fmt.Println("✖ (systemd not enabled) - add '[boot]\\nsystemd=true' to /etc/wsl.conf and restart WSL2")
-		}
-	} else {
-		if sysdDistro == "native" {
-			fmt.Println("✔")
-		} else {
-			fmt.Printf("✔ (distro: %s)\n", sysdDistro)
-		}
-	}
-
-	// Port 80 availability:
-	fmt.Print("Port 80 availability: ")
-	ok, port := CheckPort80Availability()
-	if ok {
-		if port == 80 {
-			fmt.Println("✔ (free)")
-		} else {
-			fmt.Printf("✔ (80 busy, using fallback %d)\n", port)
-		}
-		os.Setenv("NGINX_PORT", fmt.Sprintf("%d", port))
-	} else {
-		fmt.Println("✖ (both 80 and 8080 occupied) - manual configuration required")
-	}
-
-	// 4. Dependencies
-	fmt.Println("\nRuntime Software Diagnostics:")
-
-	dockerCliPassed := CheckDependency("docker")
-	dockerDaemonRunning := false
-	if dockerCliPassed {
-		cmd := exec.Command("docker", "info")
-		if cmd.Run() == nil {
-			dockerDaemonRunning = true
-			fmt.Println("  - Docker CLI & Daemon: OK (Running on host)")
-		}
-	}
-
-	wslDockerRunning := false
-	wslSysboxDetected := false
-	if runtime.GOOS == "windows" && sysd && sysdDistro != "" {
-		cmd := exec.Command("wsl.exe", "-d", sysdDistro, "docker", "info")
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		if cmd.Run() == nil {
-			wslDockerRunning = true
-			if strings.Contains(strings.ToLower(out.String()), "sysbox-runc") {
-				wslSysboxDetected = true
+			if CheckDependency("docker") {
+				engineDetail = "Stopped (Docker Engine is not running)"
+				failureHints = append(failureHints, "Start Docker Desktop or start Docker inside WSL2 ('sudo service docker start').")
+			} else {
+				engineDetail = "Docker not installed"
+				failureHints = append(failureHints, "Install Docker Desktop for Windows or install Docker inside your WSL2 Ubuntu distro.")
 			}
 		}
-	}
-
-	if !dockerDaemonRunning {
-		if wslDockerRunning {
-			fmt.Printf("  - Docker Engine: OK (Running inside WSL2: %s)\n", sysdDistro)
-		} else if dockerCliPassed {
-			fmt.Println("  - Docker CLI: OK (Daemon not running — start Docker Desktop or start Docker in WSL2)")
+	} else {
+		if IsDockerDaemonRunning() {
+			engineOk = true
+			engineDetail = "Ready"
 		} else {
-			fmt.Println("  - Docker CLI: MISSING (Install Docker Desktop or Docker inside WSL2)")
+			engineDetail = "Docker daemon not running"
+			failureHints = append(failureHints, "Ensure the Docker daemon is running ('sudo systemctl start docker').")
 		}
 	}
 
-	composePassed := false
-	if dockerCliPassed {
-		cmd := exec.Command("docker", "compose", "version")
-		if cmd.Run() == nil {
-			composePassed = true
-			fmt.Println("  - Docker Compose v2: OK (Host)")
-		}
-	}
-	if !composePassed && wslDockerRunning {
-		cmd := exec.Command("wsl.exe", "-d", sysdDistro, "docker", "compose", "version")
-		if cmd.Run() == nil {
-			composePassed = true
-			fmt.Printf("  - Docker Compose: OK (Inside WSL2: %s)\n", sysdDistro)
-		}
-	}
-	if !composePassed {
-		fmt.Println("  - Docker Compose: MISSING")
-	}
-
-	vagrantPassed := CheckDependency("vagrant")
-	if vagrantPassed {
-		fmt.Println("  - Vagrant: OK")
+	if engineOk {
+		fmt.Printf("  ✔ %-23s %s\n", "Lab Runtime Engine", engineDetail)
 	} else {
-		fmt.Println("  - Vagrant: NOT INSTALLED (Optional fallback)")
+		allPassed = false
+		fmt.Printf("  ✖ %-23s %s\n", "Lab Runtime Engine", engineDetail)
 	}
 
-	// Check for a hypervisor: vboxmanage (VirtualBox) or vmware (VMware)
-	hasVbox, hasVMware := CheckHypervisorInstalled()
-	hypervisorPassed := hasVbox || hasVMware
-	if hypervisorPassed {
-		fmt.Println("  - Hypervisor (VirtualBox/VMware): OK")
+	// 4. Local Workspace Port
+	portOk := false
+	var portDetail string
+
+	// If LabOps is already running, port 3000 is occupied by us, which is valid and expected
+	if IsAlreadyHealthy() {
+		portOk = true
+		portDetail = "Available (LabOps is active)"
 	} else {
-		fmt.Println("  - Hypervisor (VirtualBox/VMware): NOT INSTALLED (Optional fallback)")
-	}
-
-	// Check for sysbox-runc in Docker info
-	hasSysbox := false
-	if dockerDaemonRunning {
-		cmd := exec.Command("docker", "info")
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		if cmd.Run() == nil && strings.Contains(strings.ToLower(out.String()), "sysbox-runc") {
-			hasSysbox = true
-			fmt.Println("  - Sysbox Runtime (sysbox-runc): OK (Detected on host)")
-		}
-	} else if wslSysboxDetected {
-		hasSysbox = true
-		fmt.Printf("  - Sysbox Runtime (sysbox-runc): OK (Detected in WSL2: %s)\n", sysdDistro)
-	}
-
-	dockerModeReady := dockerCliPassed && dockerDaemonRunning && composePassed
-	vmModeReady := vagrantPassed && hypervisorPassed
-
-	fmt.Println("==================================================")
-	fmt.Println("Runtime Mode Readiness:")
-	if hasSysbox {
-		if sysdDistro != "" && sysdDistro != "native" {
-			fmt.Printf("  [✔] Native Sysbox Mode (WSL2: %s) : READY (Production-Identical, Fastest)\n", sysdDistro)
+		ok3000 := CheckPortAvailable(3000)
+		if ok3000 {
+			portOk = true
+			portDetail = "Available"
 		} else {
-			fmt.Println("  [✔] Native Sysbox Mode (Linux)        : READY (Production-Identical, Fastest)")
+			portDetail = "Unavailable (Port 3000 is occupied)"
+			failureHints = append(failureHints, "Close applications using local port 3000 or run 'labops stop' to reset stale processes.")
 		}
 	}
-	if dockerModeReady {
-		fmt.Println("  [✔] Docker Desktop Mode               : READY (Standard Dev Mode)")
+
+	if portOk {
+		fmt.Printf("  ✔ %-23s %s\n", "Workspace Port", portDetail)
 	} else {
-		fmt.Println("  [✖] Docker Desktop Mode               : NOT READY (Requires running Docker Engine)")
+		allPassed = false
+		fmt.Printf("  ✖ %-23s %s\n", "Workspace Port", portDetail)
 	}
 
-	if vmModeReady {
-		fmt.Println("  [✔] Vagrant VM Mode (Fallback)        : READY")
-	} else {
-		fmt.Println("  [✖] Vagrant VM Mode (Fallback)        : NOT CONFIGURED (Optional)")
-	}
-
-	fmt.Println("==================================================")
-	if hasSysbox || dockerModeReady || vmModeReady {
-		fmt.Println("System is ready! Run 'labops start' to launch.")
+	// Result Summary
+	fmt.Println()
+	if allPassed {
+		fmt.Println("Everything looks good! Run 'labops start' to begin.")
 		return true
 	}
 
-	fmt.Println("Please install Docker Desktop or enable Docker inside WSL2/Linux to run LabOps.")
+	// If any check failed, print friendly troubleshooting suggestions
+	fmt.Println("Action Needed:")
+	for _, hint := range failureHints {
+		fmt.Printf("  • %s\n", hint)
+	}
+
 	return false
 }

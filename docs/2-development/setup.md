@@ -184,13 +184,13 @@ scripts\local\deploy_floci_lambda.bat
 docker compose -f docker-compose.local.yml up -d
 
 # Orchestrator VM (Docker + Sysbox; builds lab images on first boot)
-vagrant up
+vagrant -chdir=vagrant up
 ```
 
-The orchestrator runs in the VM as the **`labops-orchestrator` systemd service** (host process, not a container — the VM's Docker daemon is reserved for lab containers). Its env is seeded by `provisioning/install-orchestrator.sh` to `/opt/sgp/orchestrator.env`. Verify it came up:
+The orchestrator runs in the VM as the **`labops-orchestrator` systemd service** (host process, not a container — the VM's Docker daemon is reserved for lab containers). Its env is seeded by `vagrant/provisioning/install-orchestrator.sh` to `/opt/sgp/orchestrator.env`. Verify it came up:
 
 ```powershell
-vagrant ssh -c 'systemctl status labops-orchestrator'
+vagrant -chdir=vagrant ssh -c 'systemctl status labops-orchestrator'
 curl http://localhost:8001/health   # {"status":"ok","docker":"connected",...}
 ```
 

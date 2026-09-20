@@ -26,14 +26,14 @@ export default function ProvisioningBoot({ image, label }: { image: string; labe
   }, []);
 
   return (
-    <div className="flex min-h-0 flex-1 select-none flex-col bg-[#0d1117] p-5 font-mono text-xs">
+    <div className="flex min-h-0 flex-1 select-none flex-col bg-[#090a0c] p-5 font-mono text-xs">
       {steps.slice(0, visible + 1).map((s, i) => (
-        <div key={i} className={i === visible ? 'text-accent' : 'text-muted/70'}>
+        <div key={i} className={i === visible ? 'text-zinc-200' : 'text-zinc-500'}>
           {s.text}
         </div>
       ))}
-      <div className="mt-2 flex items-center gap-2 text-accent">
-        <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-accent border-t-transparent" />
+      <div className="mt-2 flex items-center gap-2 text-zinc-300">
+        <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-zinc-400 border-t-transparent" />
         Provisioning environment...
       </div>
     </div>

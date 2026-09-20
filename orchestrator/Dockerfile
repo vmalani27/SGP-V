@@ -3,14 +3,14 @@
 ###############################################################################
 # builder - compile wheels and install dependencies
 ###############################################################################
-FROM python:3.12-slim AS builder
+FROM python:3.12-alpine AS builder
 
 WORKDIR /build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Alpine's build dependencies for compiling Python packages via musl
+RUN apk add --no-cache \
+    build-base \
+    libffi-dev
 
 COPY requirements.txt .
 RUN python -m venv /opt/venv && \
@@ -20,23 +20,25 @@ RUN python -m venv /opt/venv && \
 ###############################################################################
 # base - runtime dependencies and user setup
 ###############################################################################
-FROM python:3.12-slim AS base
+FROM python:3.12-alpine AS base
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install lightweight runtime requirements via apk
+RUN apk add --no-cache \
     ca-certificates \
     tzdata \
-    && rm -rf /var/lib/apt/lists/*
+    bash
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Create non-root runner and map docker group (GID 999 is standard; adjust to match host/VM)
-RUN groupadd -g 999 docker && \
-    useradd -u 1001 -g docker -s /bin/bash -m orchestrator
+# Create the docker group securely and create the non-root orchestrator user
+# We use a fallback if GID 999 is already taken by Alpine's internal system groups
+RUN if ! getent group docker; then addgroup -g 999 docker 2>/dev/null || addgroup docker; fi && \
+    adduser -u 1001 -G docker -s /bin/bash -D orchestrator
 
 EXPOSE 8000
 
@@ -54,6 +56,7 @@ FROM base AS runtime
 
 COPY --chown=orchestrator:docker app/ ./app/
 
+# Switch to the non-root orchestrator user (who belongs to the 'docker' group)
 USER orchestrator
 
 # Single process with uvloop for low-latency WebSocket / PTY throughput

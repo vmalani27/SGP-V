@@ -17,6 +17,7 @@ export interface TaskValidation {
 export interface LabTask {
   id: string;
   title?: string;
+  summary?: string;
   description?: string;
   prompt: string;
   type: TaskType;

@@ -1,54 +1,85 @@
-import { auth } from './firebase';
+// Local developer API client
 import type { LabTask, TaskListResponse, TaskProgressData, ValidateResponse } from './task-types';
 
-export const getBaseUrl = () => process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-export const getOrchestratorUrl = () => process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8001';
+export const getOrchestratorUrl = () => {
+  if (typeof window !== 'undefined') {
+    // In browser through Nginx reverse proxy, route directly through same origin
+    return process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '';
+  }
+  // Server-side internal network route
+  return process.env.INTERNAL_ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://orchestrator:8000';
+};
 export const getOrchestratorSecret = () => process.env.NEXT_PUBLIC_ORCHESTRATOR_SECRET || 'local-dev-super-secret';
 
-async function getIdToken(): Promise<string | null> {
-  if (!auth) return null;
-  const user = auth.currentUser;
-  if (!user) return null;
-  try {
-    return await user.getIdToken();
-  } catch {
-    return null;
+export const getTerminalWsUrl = () => {
+  const orch = getOrchestratorUrl();
+  if (orch.startsWith('http')) {
+    return `${orch.replace('http', 'ws')}/ws/terminal`;
   }
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}/ws/terminal`;
+  }
+  return 'ws://localhost:3000/ws/terminal';
+};
+
+interface UserStatePayload {
+  version: number;
+  profile: {
+    userId: string;
+    displayName: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  enrolledCourses: string[];
+  courseProgress: Record<string, Record<string, Record<string, string>>>;
+  labProgress: Record<string, Record<string, Record<string, string>>>;
+}
+
+let cachedUserState: UserStatePayload | null = null;
+
+async function syncUserState(force = false): Promise<UserStatePayload> {
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/user/state', { cache: 'no-store' });
+      if (res.ok) {
+        const data = (await res.json()) as UserStatePayload;
+        cachedUserState = data;
+        try {
+          localStorage.setItem('labops_user_state', JSON.stringify(data));
+        } catch {}
+        return data;
+      }
+    } catch {
+      // offline / container not ready fallback
+    }
+
+    if (!cachedUserState || force) {
+      try {
+        const stored = localStorage.getItem('labops_user_state');
+        if (stored) cachedUserState = JSON.parse(stored);
+      } catch {}
+    }
+  }
+
+  if (cachedUserState) return cachedUserState;
+
+  return {
+    version: 1,
+    profile: {
+      userId: 'local-developer',
+      displayName: 'Local Developer',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    enrolledCourses: [],
+    courseProgress: {},
+    labProgress: {},
+  };
 }
 
 async function getUserId(): Promise<string> {
-  if (auth && auth.currentUser) {
-    return auth.currentUser.uid;
-  }
-  return "guest";
-}
-
-export async function apiFetch<T = unknown>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const token = await getIdToken();
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string>),
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(`${getBaseUrl()}${path}`, {
-    ...options,
-    headers,
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`API ${res.status}: ${body}`);
-  }
-
-  return res.json() as Promise<T>;
+  return "local-developer";
 }
 
 export async function orchestratorFetch<T = unknown>(
@@ -127,34 +158,135 @@ export interface Enrollment {
 
 export const api = {
   users: {
-    sync: () => apiFetch<UserSyncResult>('/api/v1/users/sync', { method: 'POST' }),
-    me: () => apiFetch<UserProfile>('/api/v1/users/me'),
-    updateProfile: (data: { displayName?: string; profileComplete?: boolean }) =>
-      apiFetch<UserProfile>('/api/v1/users/me', {
-        method: 'PUT',
-        body: JSON.stringify(data),
-      }),
-    enrollments: () => apiFetch<Enrollment[]>('/api/v1/users/me/enrollments'),
+    sync: async (): Promise<UserSyncResult> => {
+      const state = await syncUserState();
+      return {
+        uid: state.profile.userId,
+        email: 'developer@localhost',
+        displayName: state.profile.displayName,
+        enrolledCourses: state.enrolledCourses,
+        profileComplete: true,
+        isNew: false,
+      };
+    },
+    me: async (): Promise<UserProfile> => {
+      const state = await syncUserState();
+      return {
+        uid: state.profile.userId,
+        email: 'developer@localhost',
+        displayName: state.profile.displayName,
+        enrolledCourses: state.enrolledCourses,
+        profileComplete: true,
+      };
+    },
+    updateProfile: async (data: { displayName?: string; profileComplete?: boolean }): Promise<UserProfile> => {
+      if (data.displayName) {
+        if (cachedUserState) {
+          cachedUserState.profile.displayName = data.displayName;
+        }
+        try {
+          await fetch('/api/user/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ displayName: data.displayName }),
+          });
+        } catch {}
+      }
+      return api.users.me();
+    },
+    enrollments: async (): Promise<Enrollment[]> => {
+      const state = await syncUserState(true);
+      return state.enrolledCourses.map((courseId) => ({
+        userId: state.profile.userId,
+        courseId,
+        enrolledAt: state.profile.createdAt,
+        progress: state.courseProgress[courseId] || {},
+        labsProgress: state.labProgress[courseId] || {},
+        lastAccessed: state.profile.updatedAt,
+        status: 'in-progress',
+      }));
+    },
   },
   courses: {
-    list: () => apiFetch<CourseMeta[]>('/api/v1/courses'),
-    get: (id: string) => apiFetch<CourseMeta>(`/api/v1/courses/${id}`),
-    enroll: (id: string) =>
-      apiFetch<{ status: string; courseId: string }>(`/api/v1/courses/${id}/enroll`, {
-        method: 'POST',
-      }),
-    progress: (id: string) =>
-      apiFetch<Enrollment>(`/api/v1/courses/${id}/progress`),
-    updateProgress: (id: string, moduleId: string, chapterId: string, status = 'completed') =>
-      apiFetch<{ status: string; progress: Record<string, unknown> }>(
-        `/api/v1/courses/${id}/progress`,
-        { method: 'PUT', body: JSON.stringify({ moduleId, chapterId, status }) },
-      ),
-    updateLabProgress: (id: string, labId: string, moduleId: string, status = 'completed') =>
-      apiFetch<{ status: string; labsProgress: Record<string, Record<string, string>> }>(
-        `/api/v1/courses/${id}/labs/${labId}/progress`,
-        { method: 'PUT', body: JSON.stringify({ moduleId, status }) },
-      ),
+    list: async (): Promise<CourseMeta[]> => {
+      const courses = await localFetch<CourseMeta[]>('/api/local-content/catalog');
+      return courses;
+    },
+    get: async (id: string): Promise<CourseMeta> => {
+      return localFetch<CourseMeta>(`/api/local-content/courses/${id}`);
+    },
+    enroll: async (id: string): Promise<{ status: string; courseId: string }> => {
+      try {
+        const res = await fetch('/api/user/enroll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ courseId: id }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.state) {
+            cachedUserState = data.state;
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('labops_user_state', JSON.stringify(data.state));
+              } catch {}
+            }
+          }
+        }
+      } catch {}
+      await syncUserState(true);
+      return { status: 'enrolled', courseId: id };
+    },
+    progress: async (id: string): Promise<Enrollment> => {
+      const state = await syncUserState(true);
+      const progress = state.courseProgress[id] || {};
+      const labsProgress = state.labProgress[id] || {};
+      return {
+        userId: state.profile.userId,
+        courseId: id,
+        enrolledAt: state.profile.createdAt,
+        progress,
+        labsProgress,
+        lastAccessed: state.profile.updatedAt,
+        status: 'in-progress',
+      };
+    },
+    updateProgress: async (id: string, moduleId: string, chapterId: string, status = 'completed') => {
+      try {
+        const res = await fetch('/api/user/progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ courseId: id, moduleId, chapterId, status }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.progress && cachedUserState) {
+            if (!cachedUserState.courseProgress[id]) cachedUserState.courseProgress[id] = {};
+            cachedUserState.courseProgress[id] = data.progress;
+          }
+        }
+      } catch {}
+      const state = await syncUserState(true);
+      return { status: 'ok', progress: state.courseProgress[id] || {} };
+    },
+    updateLabProgress: async (id: string, labId: string, moduleId: string, status = 'completed') => {
+      try {
+        const res = await fetch('/api/user/progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ courseId: id, moduleId, labId, status }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.labsProgress && cachedUserState) {
+            if (!cachedUserState.labProgress[id]) cachedUserState.labProgress[id] = {};
+            cachedUserState.labProgress[id] = data.labsProgress;
+          }
+        }
+      } catch {}
+      const state = await syncUserState(true);
+      return { status: 'ok', labsProgress: state.labProgress[id] || {} };
+    },
   },
   content: {
     getChapterContent: (courseId: string, chapterId: string) =>
@@ -177,8 +309,21 @@ export const api = {
       localFetch<Record<string, unknown>>(
         `/api/local-content/labs/${courseId}/${labId}/config`
       ),
+    getVersion: () => localFetch<{ version: string }>('/api/local-content/version'),
   },
   labs: {
+    list: async () => {
+      try {
+        return await orchestratorFetch<{
+          session_id: string;
+          lab_id: string;
+          container_name: string;
+          status: string;
+        }[]>('/labs');
+      } catch (e) {
+        return [];
+      }
+    },
     active: async (courseId: string, labId: string) => {
       const userId = await getUserId();
       try {
@@ -192,7 +337,7 @@ export const api = {
         return {
           ...session,
           ws_token: JSON.stringify({ token: getOrchestratorSecret(), session_id: session.session_id, kind: "lab" }),
-          ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`,
+          ws_url: getTerminalWsUrl(),
         };
       } catch (e) {
         return null;
@@ -218,6 +363,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({
           user_id: userId,
+          course_id: courseId,
           lab_id: labId,
           image: envConfig.image || "labops-docker:latest",
           apt_packages: envConfig.apt_packages,
@@ -228,7 +374,7 @@ export const api = {
       return {
         ...session,
         ws_token: JSON.stringify({ token: getOrchestratorSecret(), session_id: session.session_id, kind: "lab" }),
-        ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`,
+        ws_url: getTerminalWsUrl(),
       };
     },
     status: (courseId: string, labId: string, sessionId: string) =>
@@ -253,7 +399,7 @@ export const api = {
     token: (courseId: string, labId: string, sessionId: string) =>
       Promise.resolve({
         ws_token: JSON.stringify({ token: getOrchestratorSecret(), session_id: sessionId, kind: "lab" }),
-        ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`
+        ws_url: getTerminalWsUrl()
       }),
     checkPort: async (sessionId: string, port: number) => {
       return orchestratorFetch<{ open: boolean; port: number }>(
@@ -469,7 +615,7 @@ export const api = {
         ...res,
         reused: res.reused || false,
         ws_token: JSON.stringify({ token: getOrchestratorSecret(), demo_id: demoId, user_id: userId, kind: "demo" }),
-        ws_url: `${getOrchestratorUrl().replace('http', 'ws')}/ws/terminal`,
+        ws_url: getTerminalWsUrl(),
       };
     },
     exec: async (demoId: string, command: string) => {

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
-import LearningPlayer from '@/components/LearningPlayer';
 import ChapterClient from '@/components/ChapterClient';
-import { getCourse, getPrevNextItems } from '@/lib/content-server';
+import { getCourse, getPrevNextItems, getChapterContent } from '@/lib/content-server';
+import type { RulerChapter } from '@/components/SlideReader';
 
 export default async function ChapterPage({
   params,
@@ -12,7 +12,7 @@ export default async function ChapterPage({
   const course = await getCourse(courseId);
   if (!course) return notFound();
 
-  const { current, next } = getPrevNextItems(course, chapterId);
+  const { current, prev, next } = getPrevNextItems(course, chapterId);
   if (!current) return notFound();
 
   const allChapters = course.modules.flatMap((mod) =>
@@ -21,18 +21,29 @@ export default async function ChapterPage({
   const chapterData = allChapters.find((ch) => ch.id === chapterId);
   if (!chapterData) return notFound();
 
+  const initialContent = await getChapterContent(courseId, chapterId);
+
+  const rulerChapters: RulerChapter[] = allChapters.map((ch, index) => {
+    return {
+      id: ch.id,
+      label: String(index + 1),
+      title: ch.title,
+      href: `/courses/${courseId}/chapters/${ch.id}`,
+      isCurrent: ch.id === chapterId,
+    };
+  });
+
   return (
-    <LearningPlayer
-      course={course}
+    <ChapterClient
       courseId={courseId}
-      currentItem={chapterData}
-    >
-      <ChapterClient
-        courseId={courseId}
-        chapterId={chapterId}
-        moduleId={chapterData.moduleId}
-        nextItem={next}
-      />
-    </LearningPlayer>
+      chapterId={chapterId}
+      moduleId={chapterData.moduleId}
+      chapterDescription={chapterData.description}
+      assessment={chapterData.assessment ?? null}
+      initialContent={initialContent}
+      prevItem={prev}
+      nextItem={next}
+      rulerChapters={rulerChapters}
+    />
   );
 }

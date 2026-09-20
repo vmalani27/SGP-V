@@ -18,6 +18,9 @@ const config = {
         accentStrong: '#93c5fd',
         text: '#e2e8f0',
         muted: '#94a3b8',
+        zinc: {
+          850: '#1f2024',
+        },
       },
       boxShadow: {},
       backgroundImage: {},

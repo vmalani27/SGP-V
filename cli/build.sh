@@ -17,20 +17,24 @@ build() {
     local goarch=$2
     local output_name=$3
     local env_name=${4:-dev}
-    echo "Building $output_name for $goos/$goarch [channel: $env_name]..."
-    GOOS=$goos GOARCH=$goarch go build -ldflags="-s -w -X main.defaultChannel=$env_name" -trimpath -o "$output_name" .
+    local cdn_url=${CONTENT_PUBLIC_BASE_URL:-https://d3rqfqpemi0u1s.cloudfront.net}
+    echo "Building $output_name for $goos/$goarch [channel: $env_name, cdn: $cdn_url]..."
+    CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -ldflags="-s -w -X main.defaultChannel=$env_name -X main.defaultCDNURL=$cdn_url" -trimpath -o "$output_name" .
 }
 
 case "$1" in
     all)
         target_env="${2:-dev}"
         build linux amd64 labops-linux-amd64 "$target_env"
+        build linux arm64 labops-linux-arm64 "$target_env"
         build darwin amd64 labops-darwin-amd64 "$target_env"
+        build darwin arm64 labops-darwin-arm64 "$target_env"
         build windows amd64 labops-windows-amd64.exe "$target_env"
+        build windows arm64 labops-windows-arm64.exe "$target_env"
         ;;
     clean)
         echo "Cleaning built binaries..."
-        rm -f labops labops.exe labops-linux-amd64 labops-darwin-amd64 labops-windows-amd64.exe
+        rm -f labops labops.exe labops-linux-amd64 labops-linux-arm64 labops-darwin-amd64 labops-darwin-arm64 labops-windows-amd64.exe labops-windows-arm64.exe
         ;;
     *)
         target_env="${1:-dev}"

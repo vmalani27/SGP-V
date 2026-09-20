@@ -46,6 +46,14 @@ RUN useradd -m -s /bin/bash -u 1000 student \
 # Allow student to start systemd services
 RUN mkdir -p /run/dbus && chown student:student /run/dbus
 
+# Configure Git credential storage for student user pointing to internal Gitea
+RUN git config --system credential.helper store \
+    && echo "http://student:password123@git-server:3000" > /home/student/.git-credentials \
+    && chown student:student /home/student/.git-credentials \
+    && chmod 600 /home/student/.git-credentials \
+    && echo "http://student:password123@git-server:3000" > /root/.git-credentials \
+    && chmod 600 /root/.git-credentials
+
 WORKDIR /home/student
 
 ENTRYPOINT ["/sbin/init"]

@@ -21,7 +21,7 @@ export default function CourseTopBar({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
-              href={`/courses/${courseId}`}
+              href={`/dashboard?track=${courseId}`}
               className="text-sm font-medium text-muted hover:text-accent"
             >
               {courseTitle}

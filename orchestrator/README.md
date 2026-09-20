@@ -267,7 +267,7 @@ All lab containers run with the **Sysbox** runtime (`sysbox-runc`) for Docker-in
 
 The orchestrator runs as the **`labops-orchestrator` systemd service** on the VM
 host — a host process, not a container — so the VM's Docker daemon stays
-reserved for lab containers. `provisioning/install-orchestrator.sh` seeds:
+reserved for lab containers. `vagrant/provisioning/install-orchestrator.sh` seeds:
 
 | What | Where |
 |------|-------|

@@ -1,30 +1,24 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  updateProfile,
-  type User,
-} from 'firebase/auth';
-import { auth } from './firebase';
 import { api, type Enrollment } from './api';
 
 const SESSION_COOKIE = 'session';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 14;
 
 function setSessionCookie(value: string) {
-  document.cookie = `${SESSION_COOKIE}=${value}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+  if (typeof document !== 'undefined') {
+    document.cookie = `${SESSION_COOKIE}=${value}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+  }
 }
 
-function clearSessionCookie() {
-  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+export interface LocalUser {
+  displayName: string | null;
+  email: string | null;
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: LocalUser | null;
   loading: boolean;
   isAuthenticated: boolean;
   profileComplete: boolean;
@@ -41,9 +35,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [profileComplete, setProfileComplete] = useState(false);
+  const [user, setUser] = useState<LocalUser | null>({ displayName: 'Developer', email: 'developer@local.labops' });
+  const [loading, setLoading] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(true);
   const [enrolledCourses, setEnrolledCourses] = useState<string[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
 
@@ -66,31 +60,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await api.users.sync();
       setEnrolledCourses(result.enrolledCourses);
       setProfileComplete(result.profileComplete);
+      const profile = await api.users.me();
+      if (profile?.displayName) {
+        setUser({ displayName: profile.displayName, email: 'developer@local.labops' });
+      }
     } catch {
-      // Backend may not be running — fail silently
+      // Local server state may not be ready — fail silently
     }
-    fetchEnrollments();
+    await fetchEnrollments();
   }, [fetchEnrollments]);
 
   useEffect(() => {
-    if (!auth) {
-      setLoading(false);
-      return;
-    }
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        setSessionCookie('true');
-        syncUser();
-      } else {
-        clearSessionCookie();
-        setEnrolledCourses([]);
-        setProfileComplete(false);
-        setEnrollments([]);
-      }
-      setLoading(false);
-    });
-    return unsubscribe;
+    setSessionCookie('true');
+    syncUser();
   }, [syncUser]);
 
   const refreshProfile = useCallback(async () => {
@@ -98,6 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const profile = await api.users.me();
       setProfileComplete(profile.profileComplete);
       setEnrolledCourses(profile.enrolledCourses ?? []);
+      if (profile?.displayName) {
+        setUser({ displayName: profile.displayName, email: 'developer@local.labops' });
+      }
     } catch {
       // silent
     }
@@ -111,23 +96,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // silent
     }
-    fetchEnrollments();
+    await fetchEnrollments();
   }, [fetchEnrollments]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    if (!auth) throw new Error('Firebase not configured');
-    await signInWithEmailAndPassword(auth, email, password);
-  }, []);
+  const login = useCallback(async (email: string, _password: string) => {
+    const namePart = email.split('@')[0] || 'Developer';
+    setUser({ displayName: namePart, email });
+    await api.users.updateProfile({ displayName: namePart }).catch(() => {});
+    await refreshProfile();
+  }, [refreshProfile]);
 
-  const register = useCallback(async (email: string, password: string, name: string) => {
-    if (!auth) throw new Error('Firebase not configured');
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(cred.user, { displayName: name });
-  }, []);
+  const register = useCallback(async (email: string, _password: string, name: string) => {
+    setUser({ displayName: name || 'Developer', email });
+    await api.users.updateProfile({ displayName: name || 'Developer' }).catch(() => {});
+    await refreshProfile();
+  }, [refreshProfile]);
 
   const logout = useCallback(async () => {
-    if (!auth) throw new Error('Firebase not configured');
-    await firebaseSignOut(auth);
+    setUser({ displayName: 'Developer', email: 'developer@local.labops' });
   }, []);
 
   return (
@@ -135,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         loading,
-        isAuthenticated: !!user,
+        isAuthenticated: true,
         profileComplete,
         enrolledCourses,
         enrollments,

@@ -228,24 +228,24 @@ async def terminal(websocket: WebSocket):
         # runs initgroups() on setuid. Verified live: docker exec -u student
         # lacks the docker group; `sudo -u student id` includes it.
         #
-        # Demo sessions are created-if-missing (no kill on reattach) so shell
-        # history and scrollback survive slide navigation within a chapter.
+        # Sessions are created-if-missing (never killed on reattach) so shell
+        # history, background processes, and scrollback survive accidental tab
+        # closure or reconnects.
         session_cmd = (
-            f"tmux has-session -t {tmux_session} 2>/dev/null "
-            f"|| tmux new-session -d -s {tmux_session} \"bash -l\" 2>/dev/null; "
-        ) if kind == "demo" else (
-            f"tmux has-session -t {tmux_session} 2>/dev/null "
-            f"&& tmux kill-session -t {tmux_session} 2>/dev/null || true; "
-            f"tmux new-session -d -s {tmux_session} \"bash -l\" 2>/dev/null || true; "
+            f"for i in $(seq 1 15); do "
+            f"tmux has-session -t {tmux_session} 2>/dev/null && break; "
+            f"tmux new-session -d -s {tmux_session} \"bash -l\" 2>/dev/null && break; "
+            f"sleep 0.2; "
+            f"done; "
         )
         attach_cmd = [
             "bash", "-c",
-            f"sudo -u student bash -c 'echo $$ > {pidfile}; "
+            f"sudo -H -u student bash -c 'echo $$ > {pidfile}; "
             f"{session_cmd}"
             f"tmux set-option -g mouse on 2>/dev/null; "
             f"tmux set-option -g history-limit 5000 2>/dev/null; "
             f"tmux set-option -s set-clipboard on 2>/dev/null; "
-            f"exec tmux attach-session -t {tmux_session}'",
+            f"exec tmux attach-session -t {tmux_session} 2>/dev/null || exec tmux new-session -A -s {tmux_session} \"bash -l\"'",
         ]
 
         exec_obj = await container.exec(

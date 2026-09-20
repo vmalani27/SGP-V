@@ -4,19 +4,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
-// RunLogs pulls and displays logs from Docker Compose or Vagrant VM services.
+// RunLogs displays troubleshooting logs from the workspace.
 func RunLogs() bool {
-	fmt.Println("Fetching LabOps Environment Logs...")
-	fmt.Println("==================================================")
 	foundLogs := false
 
-	// 1. Check Docker Compose
+	// 1. Check workspace logs
 	composeDir, composeFile, err := FindComposeFile()
 	if err == nil {
-		fmt.Printf("Docker Compose Logs (%s):\n", composeFile)
-		fmt.Println("--------------------------------------------------")
 		if IsDockerDaemonRunning() {
 			cmd := exec.Command("docker", "compose", "-f", composeFile, "logs", "--tail", "40")
 			cmd.Dir = composeDir
@@ -36,17 +33,27 @@ func RunLogs() bool {
 		}
 	}
 
-	// 2. Check Vagrant VM
-	vDir, err := FindVagrantfileDir()
-	if err == nil {
-		fmt.Println("\nVagrant VM Orchestrator Service Logs (systemd):")
-		fmt.Println("--------------------------------------------------")
-		orcCmd := exec.Command("vagrant", "ssh", "-c", "sudo journalctl -u labops-orchestrator -n 40 --no-pager")
-		orcCmd.Dir = vDir
-		orcCmd.Stdout = os.Stdout
-		orcCmd.Stderr = os.Stderr
-		if err := orcCmd.Run(); err == nil {
-			foundLogs = true
+	// 2. Check Vagrant VM only if explicitly requested
+	checkVagrant := false
+	for _, arg := range os.Args[2:] {
+		lower := strings.ToLower(arg)
+		if lower == "--vm" || lower == "-v" || lower == "--vagrant" {
+			checkVagrant = true
+			break
+		}
+	}
+	if checkVagrant {
+		vDir, err := FindVagrantfileDir()
+		if err == nil {
+			fmt.Println("\nVagrant VM Orchestrator Service Logs (systemd):")
+			fmt.Println("--------------------------------------------------")
+			orcCmd := exec.Command("vagrant", "ssh", "-c", "sudo journalctl -u labops-orchestrator -n 40 --no-pager")
+			orcCmd.Dir = vDir
+			orcCmd.Stdout = os.Stdout
+			orcCmd.Stderr = os.Stderr
+			if err := orcCmd.Run(); err == nil {
+				foundLogs = true
+			}
 		}
 	}
 

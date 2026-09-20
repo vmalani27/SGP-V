@@ -1,0 +1,1 @@
+docker run --name sample-runner -d -it -e REPO_URL="https://github.com/vmalani27/SGP-V" -e REG_TOKEN="BHUL5H4UQMIZQ342KRINIFTKWABAU" 586177432842.dkr.ecr.ap-south-1.amazonaws.com/vmalani27/labops-base:runner-2.337.0

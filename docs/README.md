@@ -5,10 +5,12 @@ The single source of truth for **LabOps**, the DevOps learning platform
 environments).
 
 These docs are the authoritative reference for the current `SGP-V` project.
-They reflect the real architecture: a `content-v2/` YAML source of truth, a
-content pipeline (Floci/S3 + CI publish), a `worker` that seeds Firestore, a
-purely-metadata `backend`, a `frontend` that bootstraps content from S3, and an
-`orchestrator` that runs lab containers inside a Vagrant VM (Docker + Sysbox).
+They reflect the modern local-first architecture: a `content-v2/` YAML source of truth,
+an automated CDN distribution pipeline (GitHub Actions -> AWS S3 / CloudFront CDN),
+a lightweight Go background sidecar (`sidecars/content-sync`) or CLI sync,
+a 100% local-first Next.js `frontend` (persisting user state to `~/.labops/user_state.json`),
+and an `orchestrator` that manages isolated Docker/Sysbox lab containers.
+All user interactions are unified under a single public address (`http://localhost:3000`) via Nginx reverse proxy.
 
 Docs are organized by **category** so you can quickly find the material that matters to you:
 
@@ -30,6 +32,7 @@ Guides for building, running, and troubleshooting the platform locally.
 |-----|----------------|
 | [Setup Guide](2-development/setup.md) | Prerequisites, Firebase credentials, **AWS IAM credentials** (dev/beta), Floci S3, publishing, starting the stack + VM |
 | [Development Guide](2-development/development.md) | Hot reload, volume mounts, commands, orchestrator VM lifecycle, pitfalls |
+| [Base Images](2-development/base-images.md) | Current Docker base images, stages, and lab-image inheritance |
 | [AWS S3 Private Downloads](aws-s3-private-downloads.md) | Presigned-URL content download, IAM policy + env var setup for private S3 buckets |
 | [Manual Testing](2-development/TESTING.md) | End-to-end manual test suite (worker, sync, validation, content bootstrap) |
 | [Known Issues & Fixes](2-development/bugs.md) | Resolved root causes + the open group-membership validation bug |
@@ -64,27 +67,23 @@ Historical documents kept for reference.
 
 | Doc | What it covers |
 |-----|----------------|
-| [Root README](../README.md) | Service table, architecture diagram, content-delivery flow |
-| [Service READMEs](../README.md#docs) | `backend/` · `next-app/` · `orchestrator/` · `orchestrator/schemas/` · `postman/` |
-| [Postman API suite](../postman/README.md) | End-to-end API collection for the content-delivery flow |
+| [Root README](../README.md) | System overview, architecture diagram, and service mapping |
+| [Service READMEs](../README.md#architecture--components) | `next-app/` · `orchestrator/` · `cli/` · `proxy/` · `sidecars/` |
+| [Postman API suite](../postman/README.md) | End-to-end API collection for orchestrator endpoints |
 
 ## Codebase at a glance
 
 ```
 SGP-V/
-├── backend/             # FastAPI — pure metadata API
-├── worker/              # FastAPI — S3-only content seeder
-├── orchestrator/        # FastAPI — lab container lifecycle, Sysbox orchestrator
-├── next-app/            # Next.js frontend — content bootstrap and rendering
-├── content-v2/          # Canonical course content
-├── scripts/             # Python CI scripts
-├── provisioning/        # Vagrant VM provisioning
+├── cli/                 # Go CLI binary (`labops`) — cross-platform launcher & manager
+├── next-app/            # Next.js 15 frontend — local-first player, catalog & user state
+├── orchestrator/        # FastAPI service — lab container lifecycle & WebSocket terminal
+├── proxy/               # Nginx reverse proxy routing http://localhost:3000
+├── sidecars/            # Background helper daemons (e.g., content-sync from CDN)
+├── content-v2/          # Canonical course content (Git, Docker, Linux labs)
+├── scripts/             # Validation and build scripts
 ├── postman/             # Postman test suites
-├── .github/workflows/   # CI/CD
-├── docker-compose.local.yml  # Local stack: floci + worker + backend + frontend
-├── docker-compose.dev.yml    # Dev stack: worker + backend + frontend + orchestrator (real AWS S3)
-├── docker-compose.beta.yml   # Beta stack: worker + backend + frontend (real AWS S3)
-├── environments/             # Per-env sealed config (gitignored: *.env.*, firebase keys)
-├── Vagrantfile          # Orchestrator VM
-└── docs/                # You are here
+├── .github/workflows/   # CI/CD (content publish, image build, CLI release)
+├── docker-compose.yml   # Production / local stack (frontend, orchestrator, proxy, sync)
+└── docs/                # Documentation suite
 ```

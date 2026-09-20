@@ -2,47 +2,47 @@
 setlocal EnableDelayedExpansion
 
 echo ==================================================
-echo LabOps: Pulling Images from GitHub Container Registry
+echo LabOps: Pulling Images from Amazon ECR
 echo ==================================================
 echo.
 
 set "TAG=dev"
-set "REGISTRY=ghcr.io/vmalani27/sgp-v"
+if "%ECR_REGISTRY%"=="" (
+    set "REGISTRY=public.ecr.aws/vmalani27"
+) else (
+    set "REGISTRY=%ECR_REGISTRY%"
+)
 
-echo [1/6] Pulling Backend Service (%REGISTRY%/backend:%TAG%)...
-docker pull %REGISTRY%/backend:%TAG%
-
-echo.
-echo [2/6] Pulling Frontend Service (%REGISTRY%/frontend:%TAG%)...
-docker pull %REGISTRY%/frontend:%TAG%
-
-echo.
-echo [3/6] Pulling Orchestrator Service (%REGISTRY%/orchestrator:%TAG%)...
-docker pull %REGISTRY%/orchestrator:%TAG%
+echo [1/6] Pulling Frontend Service (%REGISTRY%/labops-frontend:%TAG%)...
+docker pull %REGISTRY%/labops-frontend:%TAG%
 
 echo.
-echo [4/6] Pulling Base Ubuntu Lab Image (%REGISTRY%/lab-ubuntu:%TAG%)...
-docker pull %REGISTRY%/lab-ubuntu:%TAG%
-docker tag %REGISTRY%/lab-ubuntu:%TAG% labops-ubuntu:latest
-docker tag %REGISTRY%/lab-ubuntu:%TAG% sgp-lab-ubuntu:latest
+echo [2/6] Pulling Orchestrator Service (%REGISTRY%/labops-orchestrator:%TAG%)...
+docker pull %REGISTRY%/labops-orchestrator:%TAG%
 
 echo.
-echo [5/6] Pulling Docker-in-Docker Lab Image (%REGISTRY%/lab-docker:%TAG%)...
-docker pull %REGISTRY%/lab-docker:%TAG%
-docker tag %REGISTRY%/lab-docker:%TAG% labops-docker:latest
-docker tag %REGISTRY%/lab-docker:%TAG% sgp-lab-docker:latest
+echo [3/6] Pulling Base Ubuntu Lab Image (%REGISTRY%/labops-lab-ubuntu:%TAG%)...
+docker pull %REGISTRY%/labops-lab-ubuntu:%TAG%
+docker tag %REGISTRY%/labops-lab-ubuntu:%TAG% labops-ubuntu:latest
+docker tag %REGISTRY%/labops-lab-ubuntu:%TAG% sgp-lab-ubuntu:latest
 
 echo.
-echo [6/7] Pulling Preloaded Fundamentals Lab Image (%REGISTRY%/lab-docker-fundamentals:%TAG%)...
-docker pull %REGISTRY%/lab-docker-fundamentals:%TAG%
-docker tag %REGISTRY%/lab-docker-fundamentals:%TAG% labops-docker-fundamentals:latest
-docker tag %REGISTRY%/lab-docker-fundamentals:%TAG% sgp-lab-docker-fundamentals:latest
+echo [4/6] Pulling Docker-in-Docker Lab Image (%REGISTRY%/labops-lab-docker:%TAG%)...
+docker pull %REGISTRY%/labops-lab-docker:%TAG%
+docker tag %REGISTRY%/labops-lab-docker:%TAG% labops-docker:latest
+docker tag %REGISTRY%/labops-lab-docker:%TAG% sgp-lab-docker:latest
 
 echo.
-echo [7/7] Pulling Preloaded Docker Build Lab Image (%REGISTRY%/lab-docker-build:%TAG%)...
-docker pull %REGISTRY%/lab-docker-build:%TAG%
-docker tag %REGISTRY%/lab-docker-build:%TAG% labops-docker-build:latest
-docker tag %REGISTRY%/lab-docker-build:%TAG% sgp-lab-docker-build:latest
+echo [5/6] Pulling Preloaded Fundamentals Lab Image (%REGISTRY%/labops-lab-docker-fundamentals:%TAG%)...
+docker pull %REGISTRY%/labops-lab-docker-fundamentals:%TAG%
+docker tag %REGISTRY%/labops-lab-docker-fundamentals:%TAG% labops-docker-fundamentals:latest
+docker tag %REGISTRY%/labops-lab-docker-fundamentals:%TAG% sgp-lab-docker-fundamentals:latest
+
+echo.
+echo [6/6] Pulling Preloaded Docker Build Lab Image (%REGISTRY%/labops-lab-docker-build:%TAG%)...
+docker pull %REGISTRY%/labops-lab-docker-build:%TAG%
+docker tag %REGISTRY%/labops-lab-docker-build:%TAG% labops-docker-build:latest
+docker tag %REGISTRY%/labops-lab-docker-build:%TAG% sgp-lab-docker-build:latest
 
 echo.
 echo ==================================================

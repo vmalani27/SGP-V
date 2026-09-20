@@ -1,6 +1,14 @@
+export interface SlideEvaluation {
+  command?: string;
+  script?: string;
+  expect?: string;
+}
+
 export interface Slide {
   title: string;
   markdown: string;
+  description?: string;
+  evaluation?: SlideEvaluation;
 }
 
 export interface ChapterSlides {
@@ -67,6 +75,42 @@ export function parseChapterSlides(markdown: string): ChapterSlides {
     slides.push({ title: title || 'Chapter', markdown: leading.join('\n') });
   } else if (leading.some((l) => l.trim() !== '')) {
     slides[0].markdown = leading.join('\n') + '\n' + slides[0].markdown;
+  }
+
+  // Extract leading blockquote or Subtitle as slide description if present
+  for (const s of slides) {
+    const sLines = s.markdown.split(/\r?\n/);
+    let desc: string | undefined;
+    const remaining: string[] = [];
+    let found = false;
+
+    for (const l of sLines) {
+      const trimmed = l.trim();
+      if (!found && !desc && (trimmed.startsWith('> ') || trimmed.startsWith('Subtitle: '))) {
+        desc = trimmed.startsWith('> ') ? trimmed.slice(2).trim() : trimmed.slice(10).trim();
+        found = true;
+        continue;
+      }
+      remaining.push(l);
+    }
+
+    if (desc) {
+      s.description = desc;
+      s.markdown = remaining.join('\n');
+    }
+
+    // Check for :::evaluation block
+    const evalMatch = s.markdown.match(/:::\s*evaluation\s*\n([\s\S]*?)\n:::/);
+    if (evalMatch) {
+      const block = evalMatch[1];
+      const cmdMatch = block.match(/command:\s*(.+)/);
+      const expMatch = block.match(/expect:\s*(.+)/);
+      s.evaluation = {
+        command: cmdMatch ? cmdMatch[1].trim() : undefined,
+        expect: expMatch ? expMatch[1].trim() : undefined,
+      };
+      s.markdown = s.markdown.replace(/:::\s*evaluation\s*\n[\s\S]*?\n:::/, '').trim();
+    }
   }
 
   return { title, slides };

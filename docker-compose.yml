@@ -1,0 +1,113 @@
+x-frontend-target: ${FRONTEND_TARGET:-dev}
+services:
+  proxy:
+    image: nginx:alpine
+    container_name: labops-proxy
+    ports:
+    - "${PORT:-3000}:80"
+    volumes:
+    - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+    - frontend
+    - orchestrator
+    - git-server
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./next-app
+      target: ${FRONTEND_TARGET:-dev}
+    container_name: labops-frontend
+    expose:
+    - "3000"
+    volumes:
+    - ./next-app:/app
+    - ./out:/out:ro
+    - ${LABOPS_USER_DATA_DIR:-~/.labops}:/app/.user_data
+    - ${LABOPS_CONTENT_DIR:-~/.labops/content}:/app/.content:ro
+    - frontend_node_modules_v2:/app/node_modules
+    - frontend_next:/app/.next
+    env_file:
+    - ./environments/dev/frontend/.env.dev
+    environment:
+    - NODE_ENV=development
+    - NEXT_TELEMETRY_DISABLED=1
+    - WATCHPACK_POLLING=true
+    - NEXT_PUBLIC_ORCHESTRATOR_URL=
+    - INTERNAL_ORCHESTRATOR_URL=http://orchestrator:8000
+    - NEXT_PUBLIC_ORCHESTRATOR_SECRET=local-dev-super-secret
+    - USER_DATA_DIR=/app/.user_data
+    - CONTENT_LOCAL_DIR=/app/.content
+    depends_on:
+    - orchestrator
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+      target: ${ORCHESTRATOR_TARGET:-dev}
+    container_name: labops-orchestrator
+    privileged: true
+    user: "0:0"
+    expose:
+    - "8000"
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ./orchestrator/app:/app/app
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      LAB_PREFIX: labops-lab
+      DEMO_PREFIX: labops-demo
+      LAB_TIMEOUT_MINUTES: '40'
+      DEMO_TIMEOUT_MINUTES: '30'
+      CONTAINER_RUNTIME_MODE: privileged
+      WATCHFILES_FORCE_POLLING: 'true'
+      ORCHESTRATOR_SECRET: ${ORCHESTRATOR_SECRET:-local-dev-super-secret}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-in-production}
+    restart: unless-stopped
+
+  git-server:
+    image: gitea/gitea:latest
+    container_name: labops-git-server
+    restart: unless-stopped
+    command: >-
+      sh -c "(/bin/sh -c 'until su-exec git gitea admin user list >/dev/null 2>&1; do sleep 2; done; su-exec git gitea admin user create --username student --password password123 --email student@example.local --admin || true') & exec /usr/bin/entrypoint"
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__database__PATH=/data/gitea/gitea.db
+      - GITEA__security__INSTALL_LOCK=true
+      - GITEA__security__SECRET_KEY=labops-secret-gitea-key-prod-random
+      - GITEA__server__DOMAIN=localhost
+      - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__ROOT_URL=http://localhost:3000/git/
+      - GITEA__server__DISABLE_SSH=true
+      - GITEA__server__LFS_START_SERVER=false
+      - GITEA__service__DISABLE_REGISTRATION=false
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
+      - GITEA__service__ENABLE_CAPTCHA=false
+      - GITEA__repository__ENABLE_PUSH_CREATE_USER=true
+      - GITEA__repository__DEFAULT_PRIVATE=public
+    volumes:
+      - ${LABOPS_USER_DATA_DIR:-~/.labops}/git-data:/data
+    expose:
+      - "3000"
+    ports:
+      - "3001:3000"
+
+  content-sync:
+    build:
+      context: ./sidecars/content-sync
+    container_name: labops-content-sync
+    restart: unless-stopped
+    environment:
+      - CONTENT_PUBLIC_BASE_URL=${CONTENT_PUBLIC_BASE_URL:-https://d3rqfqpemi0u1s.cloudfront.net}
+      - CONTENT_DIR=/content
+      - SYNC_INTERVAL=${CONTENT_SYNC_INTERVAL:-15m}
+      - SYNC_ON_START=true
+    volumes:
+      - ${LABOPS_CONTENT_DIR:-~/.labops/content}:/content:rw
+volumes:
+  frontend_node_modules_v2: null
+  frontend_next: null

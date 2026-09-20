@@ -2,10 +2,10 @@
 # vi: set ft=ruby :
 
 Vagrant.configure("2") do |config|
-  config.vm.synced_folder "./orchestrator", "/opt/sgp/orchestrator"
-  config.vm.synced_folder "./next-app", "/opt/sgp/next-app"
-  config.vm.synced_folder "./cli", "/opt/sgp/cli"
-  config.vm.synced_folder "./environments", "/opt/sgp/environments"
+  config.vm.synced_folder "../orchestrator", "/opt/sgp/orchestrator"
+  config.vm.synced_folder "../next-app", "/opt/sgp/next-app"
+  config.vm.synced_folder "../cli", "/opt/sgp/cli"
+  config.vm.synced_folder "../environments", "/opt/sgp/environments"
 
   # Step 1: Base Image (Ubuntu Server 22.04 LTS for VMware)
   config.vm.box = "generic/ubuntu2204"

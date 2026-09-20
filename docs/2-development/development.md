@@ -103,7 +103,7 @@ journalctl -fu labops-orchestrator         # live logs
 sudo systemctl restart labops-orchestrator # apply config/env changes
 ```
 
-Provisioning (`provisioning/install-orchestrator.sh`) seeds:
+Provisioning (`vagrant/provisioning/install-orchestrator.sh`) seeds:
 - deps → `/opt/sgp/venv-orchestrator` (kept **outside** the synced folder so it
   never syncs back to the host),
 - env → `/opt/sgp/orchestrator.env` (the systemd unit's `EnvironmentFile`),
@@ -115,7 +115,7 @@ from compose (host port 8001 ← VM guest 8000); the backend never talks to the
 orchestrator.
 
 The VM's `ORCHESTRATOR_SECRET` is seeded into `/opt/sgp/orchestrator.env` by
-`provisioning/install-orchestrator.sh` and must equal the shared secret the
+`vagrant/provisioning/install-orchestrator.sh` and must equal the shared secret the
 frontend sends (`NEXT_PUBLIC_ORCHESTRATOR_SECRET`, default
 `local-dev-super-secret`). Older `JWT_SECRET`-based notes no longer apply — the
 orchestrator accepts only the shared secret (`app/utils/auth.py`).

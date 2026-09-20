@@ -21,17 +21,28 @@ IMAGE_ALIASES = {
     "docker-build": "labops-docker-build:latest",
     "docker": "labops-docker:latest",
     "ubuntu": "labops-ubuntu:latest",
+    "linux-basic": "labops-ubuntu:latest",
+    "docker-basic": "labops-docker:latest",
+    "docker-fundamentals": "labops-docker-fundamentals:latest",
 }
 
+import os
+
+ECR_REGISTRY = os.getenv("ECR_REGISTRY", "public.ecr.aws/i9t1l0m7/vmalani27")
+
 REMOTE_IMAGE_MAP = {
-    "labops-ubuntu:latest": "ghcr.io/vmalani27/sgp-v/lab-ubuntu:dev",
-    "labops-docker:latest": "ghcr.io/vmalani27/sgp-v/lab-docker:dev",
-    "labops-docker-fundamentals:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-fundamentals:dev",
-    "labops-docker-build:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-build:dev",
-    "sgp-lab-ubuntu:latest": "ghcr.io/vmalani27/sgp-v/lab-ubuntu:dev",
-    "sgp-lab-docker:latest": "ghcr.io/vmalani27/sgp-v/lab-docker:dev",
-    "sgp-lab-docker-fundamentals:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-fundamentals:dev",
-    "sgp-lab-docker-build:latest": "ghcr.io/vmalani27/sgp-v/lab-docker-build:dev",
+    "labops-ubuntu:latest": f"{ECR_REGISTRY}/labops-base:dev",
+    "labops-docker:latest": f"{ECR_REGISTRY}/labops-labs:docker-dev",
+    "labops-docker-fundamentals:latest": f"{ECR_REGISTRY}/labops-labs:docker-fundamentals-dev",
+    "labops-docker-build:latest": f"{ECR_REGISTRY}/labops-labs:docker-build-dev",
+    "sgp-lab-ubuntu:latest": f"{ECR_REGISTRY}/labops-base:dev",
+    "sgp-lab-docker:latest": f"{ECR_REGISTRY}/labops-labs:docker-dev",
+    "sgp-lab-docker-fundamentals:latest": f"{ECR_REGISTRY}/labops-labs:docker-fundamentals-dev",
+    "sgp-lab-docker-build:latest": f"{ECR_REGISTRY}/labops-labs:docker-build-dev",
+    "linux-basic": f"{ECR_REGISTRY}/labops-base:dev",
+    "docker-basic": f"{ECR_REGISTRY}/labops-labs:docker-dev",
+    "docker-fundamentals": f"{ECR_REGISTRY}/labops-labs:docker-fundamentals-dev",
+    "docker-build": f"{ECR_REGISTRY}/labops-labs:docker-build-dev",
 }
 
 

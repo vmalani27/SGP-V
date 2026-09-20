@@ -1,125 +1,92 @@
 # Frontend (Next.js)
 
-The UI layer for LabOps. Handles authentication, course browsing, the chapter
-and lab players, and the lab terminal experience. It **bootstraps course
-content itself** — it downloads the published artifact from S3, verifies it, and
-serves chapters/lab config from a local directory. The backend API provides
-metadata, auth, and progress; labs/demos and the terminal talk to the
-orchestrator **directly** (no backend in the loop).
+The UI layer for LabOps. Handles local developer/student profiles, course browsing, the chapter and lab players, and the interactive lab terminal experience.
+
+LabOps runs **100% local-first**:
+- **User Progress & State**: Persisted to the host machine at `~/.labops/user_state.json` (mounted to `/app/.user_data`). No cloud database (Firebase / Firestore) required.
+- **Course Content**: Synced from CloudFront CDN or bundled locally to `~/.labops/content` (mounted read-only at `/app/.content`). Served directly from disk via Next.js local content APIs.
+- **Lab Containers & Terminal**: The browser connects directly to the orchestrator via the local Nginx proxy (`/labs/*`, `/demos/*`, `/ws/terminal`). There is no intermediate cloud backend in the lab execution path.
+
+---
 
 ## What It Does
 
-| Responsibility | How |
-|----------------|-----|
-| Auth flow | Firebase client SDK (login/register/session) |
-| Content bootstrap | `lib/content-local.ts` downloads the S3 artifact, verifies `artifact_sha256`, extracts into a local content dir, writes a version marker |
-| Local content serving | Same-origin `/api/local-content/*` routes read chapters / lab instructions / lab config / tasks from the local dir — no backend content calls |
-| Catalog + TOC | From the backend's Firestore API (`GET /api/v1/courses`, `/api/v1/courses/{id}`) |
-| Chapter viewer | Slides (markdown split on `##`), theory, optional inline `:::terminal-demo` demos, completion |
-| Lab viewer | Intro → provision → running with task runner, xterm.js terminal, and toolbar (pause/resume/restart/destroy) |
-| Task runner | Renders `multiple_choice`, `terminal_action`, `port_check` tasks; validation commands run in the container via the orchestrator (`POST /labs/{id}/exec`), matching is client-side |
-| Terminal | WebSocket directly to the orchestrator (`ws(s)://<ORCHESTRATOR_URL>/ws/terminal`), ORCHESTRATOR_SECRET token sent as the first message |
-| Guided demos | `:::terminal-demo` directives in chapter markdown → orchestrator `/demos/*` API + terminal |
-| Progress tracking | Calls the backend to mark chapters and labs complete |
+| Responsibility | Implementation |
+|---|---|
+| **Local User State** | `lib/user-store.ts` reads/writes user profiles, course enrollments, chapter completions, and lab progress directly to `user_state.json`. |
+| **Local Content Serving** | `lib/content-local.ts` and `lib/content-server.ts` read `catalog.json`, courses, modules, chapters, and lab definitions directly from `/app/.content`. |
+| **Course Catalog & TOC** | Served locally via `/api/local-content/catalog` and `/api/local-content/courses/[id]`. |
+| **Chapter Viewer** | Interactive slide reader (`SlideReader.tsx`), markdown theory rendering, comprehension quizzes (`QuizSection.tsx`), and guided inline demos (`DemoTerminal.tsx`). |
+| **Lab Lifecycle & Execution** | Provisioning state machine (`LabBriefing.tsx` → `ProvisioningBoot.tsx` → `LabClient.tsx`), calling the local orchestrator API (`POST /labs/{id}/exec`, `POST /labs/{id}/lifecycle`). |
+| **Interactive Terminal** | High-performance xterm.js terminal with auto-fit, OSC 52 copy/paste, and WebSocket connection directly to the orchestrator (`/ws/terminal`). |
+| **Task Validation** | Evaluates tasks (`multiple_choice`, `terminal_action`, `port_check`). Validation commands execute securely inside the student's lab container via `POST /labs/{id}/exec`, with validation logic matching client-side. |
 
-## What It Does NOT Do
+---
 
-- Read the backend's files — the backend serves no content
-- Manage containers — calls the orchestrator directly (REST `/labs/*`, `/demos/*` + WS `/ws/terminal`); the backend is never in the lab path
-- Verify auth tokens — the backend does that with the Admin SDK
-- Track progress — the backend owns Firestore
-- Share the orchestrator secret with the backend — the orchestrator is addressed with its own URL + secret (`NEXT_PUBLIC_*`)
-
-## Data Source
+## Architecture & Data Flow
 
 ```
-content-v2 → CI → S3 (published artifact: latest.json + published/<ver>/content.tar.gz)
-                                        │
-   Frontend boot: GET /api/v1/content/version  (backend, from Firestore)
-        │ version differs from local marker?
-        ├─ yes → download tarball → verify sha256 → extract to CONTENT_LOCAL_DIR → write marker
-        └─ no  → no-op
-Chapters / lab instructions / config / tasks: /api/local-content/* (local disk)
-Catalog / TOC: backend /api/v1/courses*
-Lab lifecycle / demos / terminal: orchestrator direct (NEXT_PUBLIC_ORCHESTRATOR_URL)
+   ┌─────────────────────────────────────────────────────────┐
+   │                     Host Filesystem                     │
+   │   ~/.labops/content                 ~/.labops/user_state │
+   └──────────┬──────────────────────────────────┬───────────┘
+              │ (:ro)                            │ (:rw)
+              ▼                                  ▼
+   ┌─────────────────────────────────────────────────────────┐
+   │                   Next.js Frontend                      │
+   │  (/app/.content)                   (/app/.user_data)    │
+   │                                                         │
+   │  • lib/content-local.ts            • lib/user-store.ts  │
+   │  • /api/local-content/*            • /api/user/*        │
+   └─────────────▲─────────────────────────────▲─────────────┘
+                 │                             │
+                 │ HTTP (localhost:3000)       │
+                 ▼                             │
+   ┌───────────────────────────┐               │
+   │   Student Web Browser     ├───────────────┘
+   │   • UI / Course Player    │
+   │   • Task Runner           │
+   │   • xterm.js Terminal     │
+   └─────────────┬─────────────┘
+                 │ WebSocket & REST via Reverse Proxy
+                 ▼
+   ┌───────────────────────────┐
+   │    LabOps Orchestrator    │
+   │    • Docker / Sysbox      │
+   │    • Container Lifecycle  │
+   │    • Interactive Shells   │
+   └───────────────────────────┘
 ```
 
-### Content bootstrap (`lib/content-local.ts`)
-
-Runs on the Next.js server. On the first content request it calls
-`GET /api/v1/content/version`, compares `version` against the local version
-marker (`{CONTENT_LOCAL_DIR}/version`), and if changed downloads
-`published/{version}/content.tar.gz` via the backend-provided **presigned S3
-URL** (`download_url`, 1-hour expiry), verifies
-`sha256(gunzip(tarball))` against `artifact_sha256`, extracts into the content
-dir, and writes the marker. It also records the changelog payload so the UI can
-badge newly added/updated content. Subsequent requests are a no-op.
-`lib/content-server.ts` (`getCourseCatalog`, `getCourse`) reads catalog/TOC
-from the backend instead.
-
-> The content bootstrap **depends on backend AWS credentials**: the backend
-> signs the S3 `download_url` with its own IAM creds, so the S3 bucket can stay
-> private. If those creds are missing/invalid the download 403s and
-> `/api/local-content/*` returns `500`.
+---
 
 ## Validation Flow
 
-Client-driven, but the commands run **inside the lab container via the
-orchestrator** (`next-app/lib/api.ts` → `orchestratorFetch`). Matching happens
-client-side; the container never sees the expected answers in the clear:
+Client-driven, but verification commands run **inside the student's lab container via the orchestrator**:
 
-1. Frontend reads lab tasks from its local content (`/api/local-content/labs/{id}/tasks`).
-2. Renders the current task (multiple_choice / terminal_action / port_check).
-3. Student answers (pick an option, type a command, or follow the terminal flow).
-4. Frontend sends the validation `command` to the orchestrator
-   `POST /labs/{sessionId}/exec` (substituting `{{session_id}}` and any
-   recorded `{{recorded:*}}` values from localStorage).
-5. Orchestrator runs the command as the configured user and returns
-   `{exit_code, output}`; the frontend matches (exact/contains/regex/line_count,
-   or `expected_exit_code` when present).
-6. Correct → success animation → advance. Incorrect → `error_message` + hint → retry.
-7. All tasks complete → Submit Lab modal → record completion via the backend → destroy container → return to course.
+1. Frontend reads lab tasks from local content (`/api/local-content/labs/{id}/tasks`).
+2. Renders the active task (`multiple_choice`, `terminal_action`, or `port_check`).
+3. Student enters their answer, completes actions in the terminal, or starts a required service.
+4. Frontend requests validation by dispatching `command` to `POST /labs/{sessionId}/exec` via the orchestrator.
+5. Orchestrator executes the test as the configured user (`student`) and returns `{exit_code, output}`.
+6. The frontend verifies the exit code, regex pattern, exact match, or output line count.
+7. Upon successful completion of all tasks:
+   - State updates locally in `user_state.json`.
+   - The lab container is cleanly torn down via `DELETE /labs/{sessionId}`.
 
-## Pages
-
-| Route | Auth | Description |
-|-------|------|-------------|
-| `/` | No | Landing page with hero + value props |
-| `/login`, `/register` | No | Email/password auth |
-| `/onboarding` | Yes | Confirm display name |
-| `/dashboard` | Yes | My courses + browse courses |
-| `/courses/[courseId]` | Yes | Course detail with curriculum accordion |
-| `/courses/[courseId]/chapters/[chapterId]` | Yes | Chapter slides + theory + demos + completion |
-| `/courses/[courseId]/labs/[labId]` | Yes | Lab briefing → provisioning → terminal + task runner |
-
-## Key Components
-
-| Component | Purpose |
-|-----------|---------|
-| `Navbar.tsx` / `Footer.tsx` | Shell chrome |
-| `CourseSidebar.tsx` / `CourseTopBar.tsx` | Course layout |
-| `CourseCurriculum.tsx` / `CourseProgressHeader.tsx` | Module accordion + progress (incl. completed labs) |
-| `LearningPlayer.tsx` / `PlayerSidebar.tsx` | Chapter layout + navigation with completion status |
-| `ChapterClient.tsx` / `SlideReader.tsx` / `RichText.tsx` | Chapter slide flow + markdown rendering |
-| `QuizSection.tsx` | Static comprehension quiz (client-side grading) |
-| `DemoTerminal.tsx` | Guided `:::terminal-demo` container + terminal |
-| `LabClient.tsx` / `LabBriefing.tsx` / `ProvisioningBoot.tsx` | Lab state machine: briefing → provision → run |
-| `LabTerminal.tsx` | xterm.js WebSocket terminal (auto-fit, resize frames, osc52 paste) |
-| `LabTaskRenderer.tsx` | Steps through lab tasks; shows "Lab Complete" state |
-| `MultipleChoiceTask.tsx` / `TerminalActionTask.tsx` / `PortCheckTask.tsx` | Task cards |
-| `TaskProgress.tsx` / `TaskHelp.tsx` | Task progress indicator + hints |
-| `CelebrationOverlay.tsx` | CSS confetti/checkmark on correct answers |
-| `SubmitLabModal.tsx` | Submit Lab modal (record + destroy + return) |
+---
 
 ## Tech Stack
 
-- Next.js 15 (App Router, standalone output)
-- React 19, TypeScript, Tailwind CSS 3
-- xterm.js (terminal) + osc52 paste helpers
-- Firebase client SDK
-- `tar` / `yaml` / `js-yaml` on the server for bootstrap + local content reads
+- **Framework**: Next.js 15 (App Router, standalone output)
+- **UI Components**: React 19, TypeScript, Tailwind CSS 3, Lucide React
+- **Terminal**: xterm.js + WebLinks addon + Fit addon + OSC 52 clipboard integration
+- **Content Parsing**: `js-yaml` for YAML metadata, customized Markdown slide parser
+- **Storage**: Node.js filesystem I/O for `user_state.json` and static content files
 
-## Setup
+---
+
+## Local Development Setup
 
 ```bash
 cd next-app
@@ -129,63 +96,52 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+---
+
 ## Environment Variables
 
-Create `.env.local`:
+Default configuration is provided in `.env.sample`:
 
 ```env
-# Firebase
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
+# Orchestrator Configuration
+NEXT_PUBLIC_ORCHESTRATOR_URL=              # Leave blank when behind Nginx reverse proxy (same-origin)
+INTERNAL_ORCHESTRATOR_URL=http://orchestrator:8000
+NEXT_PUBLIC_ORCHESTRATOR_SECRET=local-dev-super-secret
 
-# API endpoints
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000   # browser → backend
-BACKEND_API_URL=http://backend:8000              # server → backend (compose)
-
-# Orchestrator (browser talks to it directly — labs/demos + terminal)
-NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8001        # browser → orchestrator
-NEXT_PUBLIC_ORCHESTRATOR_SECRET=local-dev-super-secret    # must match the orchestrator's secret
-
-# Content store (server-side)
-CONTENT_LOCAL_DIR=/app/.content                  # local artifact dir + version marker
+# Local Storage Paths
+USER_DATA_DIR=/app/.user_data              # Directory containing user_state.json
+CONTENT_LOCAL_DIR=/app/.content            # Directory containing unpacked courses & catalog.json
 ```
 
-## Key Files
+---
 
-| File | Purpose |
-|------|---------|
-| `lib/firebase.ts` | Firebase client SDK init |
-| `lib/auth-context.tsx` | AuthProvider + `useAuth` hook |
-| `lib/api.ts` | Backend API client with auto-auth |
-| `lib/task-types.ts` | Lab task / progress / validation types |
-| `lib/content-types.ts` | Course content TypeScript interfaces |
-| `lib/content-server.ts` | Catalog/TOC from backend `/api/v1/courses*` |
-| `lib/content-local.ts` | Bootstrap (download/verify/extract/marker) + local content readers |
-| `lib/chapter-slides.ts` | Split chapter markdown into slides |
-| `lib/demo-directives.ts` | Parse `:::terminal-demo` blocks into demo steps |
-| `lib/curriculum.ts` | Flatten progress maps → status + next incomplete item |
-| `app/api/local-content/*` | Same-origin routes serving local content |
-| `middleware.ts` | Route protection (redirects) |
-
-## Project Structure
+## Key Files & Directory Structure
 
 ```
 next-app/
 ├── app/
-│   ├── layout.tsx, page.tsx, middleware.ts, globals.css
-│   ├── login/ register/ onboarding/ dashboard/
-│   ├── api/local-content/{chapters,labs}/...      # local content routes
-│   └── courses/[courseId]/
-│       ├── page.tsx, CourseAccordion.tsx, CourseCurriculum.tsx, CourseProgressHeader.tsx
-│       ├── chapters/[chapterId]/page.tsx
-│       └── labs/[labId]/page.tsx                  # briefing → provision → terminal + tasks
-├── components/   # see "Key Components" above
-├── lib/          # see "Key Files" above
+│   ├── api/
+│   │   ├── local-content/                 # Local filesystem content APIs (catalog, courses, labs)
+│   │   └── user/                          # User state & progress endpoints
+│   ├── courses/[courseId]/                # Course syllabus, module tree, and chapter player
+│   │   ├── chapters/[chapterId]/page.tsx
+│   │   └── labs/[labId]/page.tsx          # Lab briefing, provision boot, and xterm terminal
+│   ├── dashboard/page.tsx                 # Enrolled courses and catalog overview
+│   ├── login/page.tsx, register/page.tsx  # Local profile & switch user flows
+│   ├── layout.tsx, globals.css
+│   └── middleware.ts
+├── components/
+│   ├── ChapterClient.tsx                  # Markdown slide renderer
+│   ├── LabClient.tsx                      # Lab lifecycle state coordinator
+│   ├── LabTerminal.tsx                    # xterm.js WebSocket terminal component
+│   ├── LabTaskRenderer.tsx                # Task step-through engine
+│   └── ...
+├── lib/
+│   ├── user-store.ts                      # Local user profile & course/lab progress manager
+│   ├── content-local.ts                   # Reads local content directory (YAML + markdown)
+│   ├── content-server.ts                  # Server-side catalog / course helper
+│   ├── task-types.ts                      # Task validation interfaces
+│   └── api.ts                             # Orchestrator and local content API clients
 ├── Dockerfile
-├── package.json
-└── next.config.mjs
+└── package.json
 ```

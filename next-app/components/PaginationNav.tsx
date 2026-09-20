@@ -52,7 +52,7 @@ export default function PaginationNav({
         </Link>
       ) : (
         <Link
-          href={`/courses/${courseId}`}
+          href={`/dashboard?track=${courseId}`}
           className="rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-bg transition hover:bg-accent/90"
         >
           Complete Course

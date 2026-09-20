@@ -2,125 +2,87 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
+	"path/filepath"
 	"runtime"
 )
 
-// PrintInstallInstructions displays platform-specific commands for missing deps.
-func PrintInstallInstructions(missingVagrant, missingHypervisor bool) {
-	fmt.Println("\nInstallation Instructions:")
-	fmt.Println("--------------------------------------------------")
-
-	switch runtime.GOOS {
-	case "windows":
-		if missingHypervisor {
-			fmt.Println("For VirtualBox (Hypervisor):")
-			fmt.Println("   Option A (Command Line): Run this in Administrator PowerShell:")
-			fmt.Println("     winget install Oracle.VirtualBox")
-			fmt.Println("   Option B (Manual): Download and install from:")
-			fmt.Println("     https://www.virtualbox.org/wiki/Downloads")
-			fmt.Println()
-		}
-		if missingVagrant {
-			fmt.Println("For Vagrant:")
-			fmt.Println("   Option A (Command Line): Run this in Administrator PowerShell:")
-			fmt.Println("     winget install HashiCorp.Vagrant")
-			fmt.Println("   Option B (Manual): Download and install from:")
-			fmt.Println("     https://developer.hashicorp.com/vagrant/downloads")
-			fmt.Println()
-		}
-		fmt.Println("Note: You may need to RESTART your computer or command prompt after installing Vagrant so the PATH updates.")
-
-	case "darwin":
-		if missingHypervisor || missingVagrant {
-			fmt.Println("Using Homebrew (recommended):")
-		}
-		if missingHypervisor {
-			fmt.Println("   For VirtualBox:")
-			fmt.Println("     brew install --cask virtualbox")
-			fmt.Println("   For VMware Fusion (alternative):")
-			fmt.Println("     brew install --cask vmware-fusion")
-			fmt.Println()
-		}
-		if missingVagrant {
-			fmt.Println("   For Vagrant:")
-			fmt.Println("     brew install vagrant")
-			fmt.Println()
-		}
-
-	case "linux":
-		fmt.Println("Linux Package Manager installation:")
-		if missingHypervisor {
-			fmt.Println("   For Debian/Ubuntu:")
-			fmt.Println("     sudo apt-get update && sudo apt-get install virtualbox")
-			fmt.Println("   For RedHat/Fedora/CentOS:")
-			fmt.Println("     sudo dnf install virtualbox")
-			fmt.Println()
-		}
-		if missingVagrant {
-			fmt.Println("   For Debian/Ubuntu:")
-			fmt.Println("     sudo apt-get install vagrant")
-			fmt.Println("   For RedHat/Fedora/CentOS:")
-			fmt.Println("     sudo dnf install vagrant")
-			fmt.Println()
-		}
-
-	default:
-		fmt.Printf("Please install Vagrant and VirtualBox/VMware manually for your platform: %s\n", runtime.GOOS)
-	}
-	fmt.Println("--------------------------------------------------")
-}
-
-// RunSetup manages downloading dependencies and pre-pulling base boxes.
+// RunSetup manages configuring local environment dependencies and pre-pulling lab images.
 func RunSetup() bool {
-	fmt.Println("Setting up LabOps Dependencies...")
+	fmt.Println("Setting up LabOps Native Environment...")
 	fmt.Println("==================================================")
 
-	hasVagrant := CheckDependency("vagrant")
-	hasVirtualBox, hasVMware := CheckHypervisorInstalled()
-
-	hasHypervisor := hasVirtualBox || hasVMware
-
-	if !hasVagrant || !hasHypervisor {
-		fmt.Println("Error: Missing required dependencies:")
-		if !hasVagrant {
-			fmt.Println("  - Vagrant is NOT installed.")
+	// 1. Verify Platform Prerequisites
+	switch runtime.GOOS {
+	case "windows":
+		fmt.Println("Target Platform: Windows (WSL2 Native Runtime)")
+		sysd, distro, err := CheckWSL2Systemd()
+		if err != nil || !sysd || distro == "" {
+			fmt.Println("\n[Action Required] WSL2 Configuration:")
+			fmt.Println("  1. Ensure WSL2 with Ubuntu is installed (e.g. 'wsl --install -d Ubuntu-22.04')")
+			fmt.Println("  2. Ensure systemd is enabled by adding to /etc/wsl.conf:")
+			fmt.Println("     [boot]")
+			fmt.Println("     systemd=true")
+			fmt.Println("  3. Restart WSL: 'wsl --shutdown'")
+			return false
 		}
-		if !hasHypervisor {
-			fmt.Println("  - No supported hypervisor (VirtualBox or VMware) was detected.")
-		}
+		fmt.Printf("  - WSL2 Linux distribution: OK (%s)\n", distro)
+		fmt.Println("  - Systemd enabled: OK")
 
-		PrintInstallInstructions(!hasVagrant, !hasHypervisor)
-		return false
+		wslReady, _ := CheckWSLDockerReady()
+		if !wslReady && !IsDockerDaemonRunning() {
+			fmt.Printf("  - Docker Engine is not running in %s or on Windows host.\n", distro)
+			fmt.Println("    Please ensure Docker is installed and running inside your WSL2 distro:")
+			fmt.Printf("    wsl -d %s -u root systemctl start docker\n", distro)
+			return false
+		}
+		fmt.Printf("  - Docker Engine: OK (WSL2: %s)\n", distro)
+
+	case "linux":
+		fmt.Println("Target Platform: Linux Native")
+		if !CheckDependency("docker") {
+			fmt.Println("Error: 'docker' CLI is not installed.")
+			fmt.Println("Please install Docker: https://docs.docker.com/engine/install/")
+			return false
+		}
+		if !IsDockerDaemonRunning() {
+			fmt.Println("Error: Docker daemon is not running. Please start it with: sudo systemctl start docker")
+			return false
+		}
+		fmt.Println("  - Docker Engine: OK")
+
+	case "darwin":
+		fmt.Println("Target Platform: macOS")
+		if !CheckDependency("docker") {
+			fmt.Println("Error: Docker Desktop is not installed.")
+			fmt.Println("Please install Docker Desktop: https://www.docker.com/products/docker-desktop/")
+			return false
+		}
+		if !IsDockerDaemonRunning() {
+			fmt.Println("Error: Docker Desktop is not running. Please start Docker Desktop.")
+			return false
+		}
+		fmt.Println("  - Docker Engine: OK")
 	}
 
-	fmt.Println("All software prerequisites (Vagrant + Hypervisor) are installed.")
-
-	// Determine provider
-	provider := "virtualbox"
-	if hasVMware && !hasVirtualBox {
-		provider = "vmware_desktop"
-	}
-
-	fmt.Printf("Pre-pulling Vagrant base box 'generic/ubuntu2204' (provider: %s)...\n", provider)
-	fmt.Println("This download is ~600MB and may take a few minutes depending on your internet connection.")
-	fmt.Println("Running: vagrant box add generic/ubuntu2204 --provider " + provider + " --clean")
-
-	cmd := exec.Command("vagrant", "box", "add", "generic/ubuntu2204", "--provider", provider, "--clean")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	
-	// Run and stream output
-	if err := cmd.Run(); err != nil {
-		// Box might already exist, check if it failed for that reason
-		fmt.Printf("\nNote: If the box was already downloaded, this check can be skipped. Box add returned: %v\n", err)
+	// 2. Ensure state directory
+	p, err := statePath()
+	if err == nil {
+		fmt.Printf("  - Configuration directory: OK (%s)\n", filepath.Dir(p))
 	}
 
 	fmt.Println("\n==================================================")
-	fmt.Println("Setup complete! You can now start the environment with:")
-	fmt.Println("   labops start")
+	fmt.Println("Local prerequisites verified!")
+	fmt.Println("Downloading managed LabOps images...")
+	fmt.Println("--------------------------------------------------")
 
+	// 3. Pre-pull managed application and lab images
+	if !RunUpdate() {
+		fmt.Println("\nWarning: Image download encountered an issue. You can re-run 'labops update' later.")
+	}
+
+	fmt.Println("\n==================================================")
+	fmt.Println("Setup complete! You can now launch LabOps with:")
+	fmt.Println("   labops start")
 	return true
 }
 

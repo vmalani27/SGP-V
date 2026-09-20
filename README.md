@@ -18,120 +18,125 @@ LabOps is a local-first, open-source KodeKloud alternative: hands-on DevOps and 
 ```mermaid
 flowchart TB
     %% Definitions
-    Student([Student Browser])
-    Developer([Content Developer])
-    
-    subgraph GitHub [GitHub Actions CI/CD Pipeline]
-        Validator[Content Validator]
-        Packager[Tarball Generator]
+    Student(["Student Web Browser\n(http://localhost:3000)"])
+    ContentDev(["Content Author / Maintainer"])
+
+    subgraph GitHub ["1. GitOps & CDN Publishing (GitHub Actions)"]
+        direction TB
+        Validator["Content Validator\n(scripts/validator.py)"]
+        Packager["Tarball & Catalog Builder\n(scripts/validate_content.py)"]
+        CloudFront[("AWS CloudFront CDN + S3\n(d3rqfqpemi0u1s.cloudfront.net)\n- latest.json\n- catalog.json\n- published/<sha>/content.tar.gz")]
+        GHCR[("GitHub Container Registry (GHCR)\n- labops-frontend\n- labops-orchestrator\n- labops-content-sync\n- labops-ubuntu\n- labops-docker")]
     end
-    
-    subgraph Cloud [Cloud Backend Infrastructure - Dev/Beta/Prod]
-        S3[(AWS S3 Content Bucket)]
-        LambdaWorker[Lambda Worker / Seeder]
-        LambdaAPI[Lambda Backend API]
-        Firestore[(Firestore DB)]
-    end
-    
-    subgraph Vagrant [Local Vagrant VM Sandbox]
-        Frontend[Next.js Frontend\n:Port 3000]
-        Orchestrator[FastAPI Orchestrator]
-        Sysbox[(Docker Engine + Sysbox)]
-        
-        subgraph Labs [Isolated Lab Containers]
-            Linux[Ubuntu Lab]
-            Git[Git Lab]
-            DinD[Docker-in-Docker]
+
+    subgraph LocalWorkspace ["2. Local Student Workspace (Docker on WSL2 / Native / Desktop)"]
+        direction TB
+
+        CLI["LabOps CLI (labops)\n[start | stop | restart | status | update | doctor | logs]"]
+
+        subgraph HostStorage ["Local Host Storage (~/.labops/)"]
+            UserState[("user_state.json\n- Local Student Profile\n- Enrolled Courses\n- Chapter Checkpoints\n- Lab Completions")]
+            ContentCache[("content/\n- Extracted Markdown\n- Course Metadata\n- Lab Task Configs")]
+        end
+
+        subgraph CoreStack ["Core Compose Services"]
+            direction LR
+            Proxy["Nginx Gateway (:3000)\n- Single host entrypoint\n- Unified HTTP & WebSocket"]
+            Frontend["Next.js Frontend\n- Local Course Catalog\n- Chapter Slides & Tasks\n- xterm.js Terminal\n- Local-First User State"]
+            Sidecar["Content-Sync Sidecar (Go)\n- Background CDN Poller\n- SHA256 Verification\n- Auto-syncs to /content"]
+            Orchestrator["FastAPI Orchestrator\n- Container Lifecycle (Docker SDK)\n- Interactive PTY (/ws/terminal)\n- Dynamic Task Verification\n- Ephemeral tmux Sessions"]
+        end
+
+        subgraph LabSandboxes ["3. Isolated Student Lab Sandbox (labops-lab-*)"]
+            direction TB
+            Init["systemd Init (PID 1)"]
+            InnerDocker["Inner Docker Daemon (dockerd)"]
+            Tmux["tmux Session (:lab) + bash shell"]
+            
+            Init --> InnerDocker
+            Init --> Tmux
         end
     end
 
     %% Pipeline Flow
-    Developer -- "Git Push (content-v2/)" --> Validator
+    ContentDev -->|"git push content-v2/"| Validator
     Validator --> Packager
-    Packager -- "1. Upload content.tar.gz" --> S3
-    Packager -- "2. Sync Webhook Trigger" --> LambdaWorker
-    LambdaWorker -- "3. Read manifest.json" --> S3
-    LambdaWorker -- "4. Seed Metadata" --> Firestore
+    Packager -->|"Publish static bundles"| CloudFront
 
-    %% App Integration Flow
-    Student -- "accesses" --> Frontend
-    Frontend -- "A. API: Fetch Course Metadata" --> LambdaAPI
-    Frontend -- "B. API: Sync Progress Data" --> LambdaAPI
-    LambdaAPI <--> Firestore
-    
-    Frontend -- "C. Direct Bootstrap: Download Tarball" --> S3
-    
-    %% Local Orchestration Flow
-    Frontend -- "D. REST / WebSocket" --> Orchestrator
-    Orchestrator -- "Manage Runtimes" --> Sysbox
-    Sysbox --> Linux
-    Sysbox --> Git
-    Sysbox --> DinD
+    %% Sync & Content Flow
+    Sidecar -->|"Poll & pull releases (latest.json)"| CloudFront
+    Sidecar -->|"Extract into shared volume"| ContentCache
+    Frontend <-->|"Read curriculum files"| ContentCache
+    Frontend <-->|"Read & persist progress"| UserState
 
-    %% Styling
-    classDef gitops fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef cloud fill:#ffe0b2,stroke:#f57c00,stroke-width:2px;
-    classDef vm fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    classDef container fill:#fafafa,stroke:#757575,stroke-width:1px;
-    
-    class GitHub,Validator,Packager gitops;
-    class Cloud,S3,LambdaWorker,LambdaAPI,Firestore cloud;
-    class Vagrant,Frontend,Orchestrator,Sysbox vm;
-    class Linux,Git,DinD container;
+    %% User Interaction Flow
+    Student <-->|"Access Learning Portal"| Proxy
+    Proxy -->|"HTTP /"| Frontend
+    Proxy -->|"WS /ws/terminal"| Orchestrator
+    Proxy -->|"REST /labs/*"| Orchestrator
+
+    %% Container Management Flow
+    Orchestrator -->|"Manage Sandboxes"| LabSandboxes
+    CLI -.->|"Supervise lifecycle"| CoreStack
 ```
-
 
 ### Content Delivery Flow
 
 ```mermaid
 sequenceDiagram
-    participant Dev as Developer
-    participant CI as CI / Scripts
-    participant S3 as S3 Bucket
-    participant FE as Frontend<br/>:3000
-    participant BE as Backend<br/>:8000
-    participant Worker as Worker<br/>:8002
-    participant FB as Firestore
-    participant User as User Browser
+    participant Dev as Content Author
+    participant CI as GitHub Actions CI
+    participant CDN as CloudFront CDN (S3)
+    participant Sync as Content-Sync Sidecar
+    participant Disk as Local Host Cache (~/.labops/)
+    participant FE as Next.js Frontend (:3000)
+    participant User as Student Browser
 
-    Note over Dev,CI: Content Publishing
-    Dev->>CI: Push content-v2/
-    CI->>S3: Build & publish artifact
-    CI->>Worker: Trigger sync (POST /sync)
-    Worker->>S3: Download artifact
-    Worker->>Worker: Verify integrity
-    Worker->>Worker: Validate structure
-    Worker->>FB: Seed metadata + contentVersion
+    Note over Dev,CDN: 1. Content Publishing (Static & Serverless)
+    Dev->>CI: Push content-v2/ (Markdown + YAML)
+    CI->>CI: Validate curriculum (scripts/validator.py)
+    CI->>CI: Build catalog.json & deterministic content.tar.gz
+    CI->>CDN: Upload latest.json, catalog.json & tarball
+    Note over CDN: Globally cached on CloudFront
 
-    Note over User,FB: Client Content Bootstrap
-    User->>FE: Open app
-    FE->>BE: GET /api/v1/content/version
-    BE->>FB: Query catalog
-    FB-->>BE: version, download_url, sha256
-    BE-->>FE: {version, download_url, artifact_sha256}
-    FE->>S3: Download artifact
-    FE->>FE: Verify sha256
-    FE->>FE: Extract & serve locally
+    Note over Sync,Disk: 2. Background Synchronization
+    Sync->>CDN: Poll latest.json (etag / version check)
+    alt New Version Available
+        Sync->>CDN: Download content.tar.gz
+        Sync->>Sync: Verify SHA256 checksum
+        Sync->>Disk: Extract to /content volume & update version marker
+    end
 
-    Note over User,FE: Lab Execution
-    User->>FE: Start lab
-    FE->>FE: Supply env config + task specs
-    FE->>FE: Validate via exec in container
-    Note right of FE: Answers never reach browser
+    Note over User,FE: 3. Local Learning & Execution
+    User->>FE: Open http://localhost:3000
+    FE->>Disk: Read course catalog & chapters from local disk
+    FE-->>User: Render course dashboard & interactive slides
+    User->>FE: Complete chapter / submit task
+    FE->>Disk: Save progress directly to ~/.labops/user_state.json (Local-first)
 ```
 
 ### Service Responsibilities
 
-| Service | Port | Responsibility |
-|---------|------|----------------|
-| **frontend** `next-app/` | 3000 | Auth, learning wizard, xterm.js terminal, **content bootstrap** — downloads the published artifact from S3, verifies its sha256, extracts locally, and serves chapters/lab config from local files |
-| **backend** `backend/` | 8000 | Pure metadata + data-location API: Firebase auth, catalog/TOC from Firestore, enrollment/progress, lab lifecycle proxy, version handshake. **Reads no content files** |
-| **worker** `worker/` | 8002 | **S3-only**: downloads the artifact, verifies integrity, validates, seeds Firestore (polling + `POST /sync`) |
-| **orchestrator** `orchestrator/` | 8001 | Docker container lifecycle, exec, WebSocket terminal — runs **inside the Vagrant VM as a systemd service** (guest `:8000` → host `:8001`), keeping the VM daemon free for lab containers |
+| Service | Host Port | Internal Port | Responsibility |
+|---------|-----------|---------------|----------------|
+| **`proxy`** `proxy/` | 3000 | 80 | Nginx reverse gateway: single unified entrypoint exposing the frontend (`/`), orchestrator REST APIs (`/labs/`, `/demos/`, `/health`), and WebSocket terminal (`/ws/terminal`). |
+| **`frontend`** `next-app/` | *(proxied)* | 3000 | Next.js 15 UI: local course catalog, chapter slide player, task runner, xterm.js terminal integration, and local user progress persistence (`user_state.json`). **Zero remote backend or database calls.** |
+| **`content-sync`** `sidecars/content-sync/` | — | — | Lightweight Go background daemon (< 8MB RAM, 0% CPU): continuously polls the CloudFront CDN (`latest.json`), verifies SHA256 integrity, and extracts content releases into the shared `/content` volume. |
+| **`orchestrator`** `orchestrator/` | *(proxied)* | 8000 | FastAPI container supervisor: manages Docker sandbox containers (`labops-lab-*`), provides authenticated WebSocket terminal PTY sessions with pre-warmed `tmux`, and executes server-side validation checks. |
+| **`cli`** `cli/` | — | — | Standalone Go executable (`labops`): local environment bootstrapper with zero plumbing exposure (`start`, `stop`, `restart`, `status`, `update`, `doctor`, `logs`). |
 
-**Content delivery:** `content-v2/` is the source of truth, published to S3 by
-CI/scripts. The worker seeds Firestore metadata; the frontend downloads the bytes
-and serves them locally. The backend never touches course files.
+---
+
+### Local-First & Zero-Cloud Design
+
+LabOps is engineered around the principle of **Zero Cloud Bills & Pure Local Autonomy**:
+
+1. **No Cloud Database (No Firestore)**: All student identity, enrolled courses, chapter checkpoints, and lab completion records are stored on the student's machine in `~/.labops/user_state.json`. Progress survives container restarts, updates, and offline environments.
+2. **No Backend Microservice**: The legacy Python backend and Lambda workers were retired. Course structure, syllabus data, and metadata are served directly by Next.js from local files or cached static `catalog.json` files.
+3. **No Auth Walls (No Firebase)**: The platform operates with instant local authentication. Students can jump directly into learning without third-party authentication cookies, login screens, or cloud dependencies.
+4. **Static CDN Content Delivery**: Course content bundles are distributed as versioned, SHA256-verified static tarballs via AWS CloudFront (`d3rqfqpemi0u1s.cloudfront.net`).
+
+---
 
 ### Container Runtime Modes & Host Security Boundaries
 
@@ -142,144 +147,91 @@ The orchestrator dynamically manages lab containers using two runtime modes cont
 | **`sysbox`** *(default / recommended)* | `sysbox-runc` | `privileged: false` | Ubuntu Host (bare-metal, cloud VM, WSL2, Vagrant VM) | Linux User Namespaces (`userns`), cgroups, `/proc` & `/sys` virtualization |
 | **`privileged`** *(fallback)* | standard `runc` | `privileged: true` | Windows / macOS via Docker Desktop | WSL2 / Hyper-V utility VM isolation boundary |
 
-#### Runtime Architecture & Fallback Hierarchy:
+#### Runtime Architecture:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│  Tier 1: Native Linux (Ubuntu 22.04 / Debian)                          │
-│  ➜ Production Target: Direct Sysbox CE + rootless userns isolation    │
+│  Tier 1: Windows + Native WSL2 (Ubuntu 22.04 LTS)                      │
+│  ➜ Preferred Windows Target: Lightweight open-source Docker engine     │
+│  ➜ ~150MB RAM, zero commercial licensing issues, native Linux speed    │
 ├────────────────────────────────────────────────────────────────────────┤
-│  Tier 2: Windows + WSL2 (Ubuntu 22.04, WSL2 Kernel ≥ 5.12)             │
-│  ➜ Development / Testing: Native Sysbox with daemon.json adjustment   │
-│  ➜ Fast, direct, zero Vagrant VM overhead                              │
+│  Tier 2: Native Linux Host (Ubuntu / Debian / Arch)                    │
+│  ➜ Direct Sysbox CE or standard Docker with user namespace isolation   │
 ├────────────────────────────────────────────────────────────────────────┤
-│  Tier 3: Docker Desktop Dev Mode                                       │
-│  ➜ Local Dev: CONTAINER_RUNTIME_MODE=privileged (WSL2 hypervisor safe) │
-├────────────────────────────────────────────────────────────────────────┤
-│  Tier 4: Vagrant VM Fallback (VirtualBox / VMware / Hyper-V)           │
-│  ➜ Universal Fallback: Completely isolated guest VM environment        │
+│  Tier 3: Docker Desktop (Windows / macOS)                              │
+│  ➜ Opportunistic: Automatically attaches to active Docker daemon       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Critical Host Security Principles:
-- **Ubuntu / Linux Hosts — NEVER use `privileged` mode**:
-  On a native Ubuntu or Linux host system (including the Vagrant Ubuntu VM guest), running containers in `privileged` mode disables user namespace isolation and grants the container root-equivalent access to host devices (`/dev`), kernel parameters, and the host filesystem. A student executing `docker run` or malicious scripts could easily escape to compromise the host. For Linux/Ubuntu, the orchestrator **must strictly use `sysbox` mode** (`sysbox-runc`), which enables rootless system containers with isolated daemons and systemd without root privilege on the host.
-- **Docker Desktop on Windows — Safe in `privileged` mode (WSL2 Security Boundary)**:
-  Running `CONTAINER_RUNTIME_MODE=privileged` on Windows Docker Desktop is safe because Docker Desktop executes inside a dedicated utility VM. The **WSL2 virtual machine itself acts as the hardware virtualization security boundary**, isolating container processes from the underlying Windows host operating system.
-
 ---
 
-> ### 💡 Fun Fact & Discovery: Native Sysbox on Windows (WSL2 without Vagrant!)
->
-> It was historically assumed that Windows developers could *only* run Sysbox by provisioning a heavyweight Vagrant / VirtualBox / VMware VM. 
-> 
-> **We validated that Windows + WSL2 (Ubuntu 22.04 LTS, Kernel $\ge$ 5.12) can run Sysbox CE natively without Vagrant.**
->
-> #### Validated WSL2 Compatibility Matrix:
-> | Component | Validated Version / Configuration |
-> |---|---|
-> | **Host OS** | Windows 10/11 + WSL2 |
-> | **Linux Distro** | Ubuntu 22.04.5 LTS (Jammy) |
-> | **WSL2 Kernel** | `6.6.87.2-microsoft-standard-WSL2` (or any kernel $\ge$ 5.12 with ID-mapped mounts) |
-> | **Docker Engine & CLI** | `29.6.1` (or compatible Docker CE) |
-> | **Sysbox CE** | `0.7.0` (`sysbox-runc`) |
-> | **Sysbox Runtime Selection** | `--runtime=sysbox-runc` |
->
-> #### The Critical Compatibility Fix (`/etc/docker/daemon.json`):
-> Recent Docker versions automatically request the Linux **Time Namespace** (`CLONE_NEWTIME`), which causes Sysbox 0.7.0 to fail with `namespace {"time" ""} does not exist`. 
-> 
-> By setting `"time-namespaces": false` in `/etc/docker/daemon.json` inside your WSL2 distro, Sysbox runs smoothly:
->
-> ```json
-> {
->   "features": {
->     "cdi": false,
->     "time-namespaces": false
->   },
->   "runtimes": {
->     "sysbox-runc": {
->       "path": "/usr/bin/sysbox-runc"
->     }
->   }
-> }
-> ```
->
-> With this simple adjustment, Windows developers can test real nested Docker and systemd labs with native Linux performance inside WSL2 — leaving Vagrant as the furthest fallback if everything else fails!
+## Quick Start (For Students & Learners)
 
----
+Running LabOps requires only the lightweight standalone CLI:
 
-## Setup (new developer)
-
-Full step-by-step guide: **[`docs/2-development/setup.md`](docs/2-development/setup.md)**
-
-Key points for a fresh clone:
-
-1. **Credentials** — you need a Firebase service-account JSON, the web API key,
-   and (for the real-AWS dev/beta stacks) **AWS IAM credentials**:
-   - Place your dev service account in `environments/dev/firebase/FIREBASE_CREDS_JSON_DEV.json`.
-   - Fill the 6 `NEXT_PUBLIC_FIREBASE_*` values in `environments/dev/frontend/.env.dev`.
-   - Fill `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and
-     `CONTENT_PUBLIC_BASE_URL` in `environments/dev/.env.dev`. The backend uses
-     these to **sign presigned S3 download URLs** on
-     `/api/v1/content/version`, so without them the content bootstrap fails with
-     a `403 Forbidden` on the S3 download. The IAM principal needs `s3:GetObject`
-     on the bucket's `published/*` (see
-     [`docs/aws-s3-private-downloads.md`](docs/aws-s3-private-downloads.md)).
-2. **Start Docker Stack** — The local environment includes the Next.js frontend, Python FastAPI backend, and Floci (LocalStack). Run:
+1. **Verify your machine**:
    ```bash
-   docker compose -f docker-compose.local.yml up -d
+   labops doctor
    ```
-3. **Deploy Local AWS Resources & Content** — We use an automated script to provision the local S3 bucket, build the Python Lambda Worker packages, publish the Layer, and upload the content to trigger the sync:
-   - On Windows: run `scripts\local\deploy_floci_lambda.bat`
-   - It will automatically seed the content to Floci and trigger the Lambda.
-4. **Start Vagrant VM** — `vagrant up` to boot the VM and orchestrator.
-5. **Open** — http://localhost:3000.
+2. **Launch your workspace**:
+   ```bash
+   labops start
+   ```
+   *LabOps automatically boots your local environment and opens `http://localhost:3000` in your browser.*
 
-## Environments & Publishing Pipeline
+3. **Check status**:
+   ```bash
+   labops status
+   ```
 
-The repository is structured with clear separation between local dev and remote environments:
-- **Local Dev**: Run via `docker-compose.local.yml`. Local scripts live in `scripts/local/`.
-- **Dev**: Pushing to the `dev` branch triggers `.github/workflows/publish-content-dev.yml` to deploy content to the Dev S3 bucket.
-- **Beta**: Pushing a tag like `v1.0.0-beta` triggers `.github/workflows/publish-content-beta.yml` to deploy content to the Beta S3 bucket and environment.
+4. **Stop when finished**:
+   ```bash
+   labops stop
+   ```
 
-## Quick Start (index)
+---
 
-| Step | See |
-|------|-----|
-| Environment + publish content + start the stack and VM | [`docs/2-development/setup.md`](docs/2-development/setup.md) |
-| Hot reload, volume mounts, commands, pitfalls | [`docs/2-development/development.md`](docs/2-development/development.md) |
-| Manual end-to-end test suite | [`docs/2-development/TESTING.md`](docs/2-development/TESTING.md) |
-| Postman API suite | [`postman/README.md`](postman/README.md) |
+## Local Development (For Contributors)
 
-## Current Status & Progress
+To run the complete platform from source:
 
-**Working**
-- **Dual Orchestrator Runtime Modes**: `sysbox` mode (`sysbox-runc`, unprivileged) for secure isolation on Ubuntu/Linux/Vagrant, and `privileged` mode fallback for Docker Desktop on Windows/macOS where the WSL2 utility VM provides the virtualization security boundary.
-- **Client Content Bootstrap**: Presigned S3 private download handshake (`GET /api/v1/content/version`), sha256 checksum verification, and local tarball extraction with zero backend content coupling.
-- **Cloud Backend & Serverless Worker**: Decoupled FastAPI metadata API backed by Firestore, and webhook-driven AWS Lambda worker (`worker/lambda_function.py`) for automatic Firestore metadata reconciliation.
-- **Multi-Environment Infrastructure**: Full separation across `local` (Floci emulation), `dev`, and `beta` environments with automated GitHub Actions CI/CD (`build-images.yml`, `publish-content-dev.yml`, `publish-content-beta.yml`) publishing to AWS S3 and GHCR.
-- **LabOps CLI Distribution**: Standalone Go CLI tool (`cli/`) with pre-compiled binaries for Windows (`labops.exe`), Linux, and macOS (`doctor`, `setup`, `start`, `stop`, `logs`).
-- **Container Lifecycle & In-Chapter Demos**: Label-based container session recovery (`com.labops.*`), real-time state validation (exit code, port, file check), and interactive chapter demo sandboxes (`labops-docker-fundamentals`, `labops-docker-build`).
-- **Course Content Progress**:
-  - *Docker Mastery*: Labs 1–13 fully implemented with active validation tasks (covering Docker Fundamentals, Building Images, and Container Networking modules).
-  - *Git Fundamentals*: Complete course structure and curriculum index established; Lab 1 active with multi-task validation.
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/vmalani27/SGP-V.git
+   cd SGP-V
+   ```
 
-**Remaining / Open**
-- Complete validation tasks for Docker Mastery (Labs 14–15: Persistent Storage) and Git Fundamentals (Labs 2–10).
-- Replace dev-only static orchestrator shared secret with short-lived session tokens issued by the backend on lab start.
-- Course content immutability enforcement (`structuralHash` verification).
-- Automated end-to-end integration test harness across the multi-environment matrix.
-- Backlog: [`docs/2-development/deferred-improvements.md`](docs/2-development/deferred-improvements.md)
+2. **Start the local stack with Docker Compose**:
+   ```bash
+   docker compose up -d
+   ```
 
-## Docs
+3. **Access the platform**:
+   - Web Learning Portal: `http://localhost:3000`
+   - Orchestrator Health Check: `http://localhost:3000/health`
+   - Content Directory: `~/.labops/content` (auto-synced from CloudFront)
+   - User State: `~/.labops/user_state.json`
 
-Role-based index (find the doc you need by what you're doing):
-[**`docs/README.md`**](docs/README.md)
+4. **Build the CLI binary**:
+   ```bash
+   cd cli
+   ./build.sh        # On Linux/macOS
+   build.bat         # On Windows
+   ```
 
-- [`docs/1-philosophy/PHASE-0.md`](docs/1-philosophy/PHASE-0.md) — problem definition + frozen decisions (*read before new work*)
-- [`docs/3-content-creation/CONTENT-PIPELINE.md`](docs/3-content-creation/CONTENT-PIPELINE.md) — content format, validation, publishing, seeding, immutability (§11)
-- [`docs/3-content-creation/CONTENT-AUTHORING.md`](docs/3-content-creation/CONTENT-AUTHORING.md) — lab/chapter authoring guide
-- [`docs/archive/CLIENT-APP-PLAN.md`](docs/archive/CLIENT-APP-PLAN.md) — historical client-side content delivery plan
-- [`docs/architecture.xml`](docs/architecture.xml) — architecture diagram (draw.io XML)
-- [`docs/2-development/bugs.md`](docs/2-development/bugs.md) — resolved root causes + open bug
-- Service READMEs: [`backend/`](backend/README.md) · [`next-app/`](next-app/README.md) · [`orchestrator/`](orchestrator/README.md) · [`orchestrator/schemas/`](orchestrator/schemas/README.md)
+---
+
+## Current Status & Roadmap
+
+**Active & Production-Ready**
+- **100% Local-First Architecture**: Complete removal of remote backends, Firestore, and Firebase authentication.
+- **Static CloudFront CDN Content Pipeline**: Automated GitHub Actions CI publishing versioned curriculum bundles to AWS S3 / CloudFront with SHA256 checksum integrity.
+- **Automated Content-Sync Sidecar**: Continuous, zero-downtime background sync service running in Go (< 8MB RAM).
+- **Unified Gateway Proxy**: Single entrypoint (`http://localhost:3000`) for Next.js, FastAPI orchestrator, and WebSocket terminal.
+- **Zero-Plumbing CLI**: User-friendly, clean CLI interface (`labops`) for environment lifecycle and system diagnostics.
+- **Interactive Lab Sandboxes**: Pre-warmed `tmux` terminal sessions, dynamic verification tasks, and container lifecycle management.
+
+**In Progress / Upcoming**
+- Complete validation test suites for advanced persistent storage and Kubernetes modules.
+- Course content immutability enforcement (`structuralHash` runtime validation).
+- Offline bundle preloader for environments without internet access.

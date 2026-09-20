@@ -25,7 +25,7 @@ export default function TaskHelp({ task }: TaskHelpProps) {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted">Need help?</p>
+      <p className="text-xs text-zinc-500 font-mono">Need help?</p>
 
       {hints.slice(0, revealed).map((hint, i) => (
         <div key={i} className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
@@ -38,7 +38,7 @@ export default function TaskHelp({ task }: TaskHelpProps) {
         {!allHintsShown && (
           <button
             onClick={() => setRevealed(revealed + 1)}
-            className="px-3 py-1.5 bg-gray-700/40 hover:bg-gray-700/60 text-muted hover:text-text rounded-lg text-xs font-medium transition-colors"
+            className="px-3 py-1.5 bg-zinc-900/80 border border-white/[0.08] hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded-lg text-xs font-medium transition-colors cursor-pointer"
           >
             {revealed === 0 ? 'Hint 1' : `Hint ${revealed + 1}`}
           </button>
@@ -47,7 +47,7 @@ export default function TaskHelp({ task }: TaskHelpProps) {
           <button
             onClick={() => setShowSolution(true)}
             disabled={showSolution}
-            className="px-3 py-1.5 bg-gray-800 border border-gray-700 hover:border-gray-600 text-muted hover:text-text rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 bg-zinc-900/80 border border-white/[0.08] hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer"
           >
             Show Solution
           </button>
@@ -55,9 +55,9 @@ export default function TaskHelp({ task }: TaskHelpProps) {
       </div>
 
       {showSolution && solution && (
-        <div className="p-3 rounded-lg bg-gray-800/50 border border-gray-700/50">
-          <p className="text-xs text-muted mb-1">Solution</p>
-          <pre className="text-sm text-text whitespace-pre-wrap break-all leading-relaxed">{solution}</pre>
+        <div className="p-3 rounded-lg bg-[#16171b]/60 border border-white/[0.05]">
+          <p className="text-xs text-zinc-500 font-mono mb-1">Solution</p>
+          <pre className="text-xs font-mono text-zinc-200 whitespace-pre-wrap break-all leading-relaxed">{solution}</pre>
         </div>
       )}
     </div>

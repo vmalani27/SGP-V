@@ -2,6 +2,7 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import CodeBlock from './CodeBlock';
 
 export default function TheorySection({
   content,
@@ -20,7 +21,7 @@ export default function TheorySection({
       </div>
 
       <article className="prose-custom max-w-none px-8 py-6">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock }}>
           {content}
         </ReactMarkdown>
       </article>

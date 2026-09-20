@@ -5,6 +5,7 @@ export interface Chapter {
   title: string;
   description: string;
   order: number;
+  assessment?: unknown;
 }
 
 // ─── Module ───────────────────────────────────────────────────────────────────
@@ -35,11 +36,13 @@ export interface ContentCourse {
   id: string;
   title: string;
   description: string;
-  level: string;
-  modules: ContentModule[];
-  /** Course enrichment for the curriculum sidebar (authored in course.yaml). */
   prerequisites?: string[];
-  environment?: string[];
+  modules: ContentModule[];
+  spec?: {
+    host: string;
+    runtime: string;
+    scope: string;
+  };
   keyTakeaways?: string[];
   quickLinks?: { label: string; href: string }[];
 }
@@ -50,7 +53,9 @@ export interface CourseCatalogEntry {
   id: string;
   title: string;
   description: string;
-  level: string;
+  totalChapters?: number;
+  totalLabs?: number;
+  modules?: unknown[];
 }
 
 // ─── Flat item type for sidebar/navigation ────────────────────────────────────

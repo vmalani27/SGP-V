@@ -1,31 +1,48 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import SlideReader from './SlideReader';
+import SlideReader, { type RulerChapter } from './SlideReader';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { itemHref } from '@/lib/content-server';
+import { itemHref } from '@/lib/content-utils';
 import type { CourseItem } from '@/lib/content-types';
 
 export default function ChapterClient({
   courseId,
   chapterId,
   moduleId,
+  chapterDescription,
+  assessment,
+  initialContent = null,
+  prevItem,
   nextItem,
+  rulerChapters = [],
 }: {
   courseId: string;
   chapterId: string;
   moduleId: string;
+  chapterDescription?: string;
+  assessment?: unknown;
+  initialContent?: string | null;
+  prevItem?: CourseItem | null;
   nextItem?: CourseItem | null;
+  rulerChapters?: RulerChapter[];
 }) {
   const router = useRouter();
-  const { refreshEnrollments } = useAuth();
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { getEnrollment, refreshEnrollments } = useAuth();
+  const enrollment = getEnrollment(courseId);
+  const [content, setContent] = useState<string | null>(initialContent);
+  const [loading, setLoading] = useState(!initialContent);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialContent) {
+      setContent(initialContent);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -48,7 +65,24 @@ export default function ChapterClient({
     return () => {
       cancelled = true;
     };
-  }, [courseId, chapterId]);
+  }, [courseId, chapterId, initialContent]);
+
+  const rulerWithCompletion = useMemo(() => {
+    const progress = (enrollment?.progress ?? {}) as Record<string, Record<string, string>>;
+    return (rulerChapters || []).map((ch) => {
+      const isCompleted = Object.values(progress).some(
+        (modProgress) => modProgress?.[ch.id] === 'completed'
+      );
+      return {
+        ...ch,
+        isCompleted,
+      };
+    });
+  }, [rulerChapters, enrollment]);
+
+  const handlePrev = prevItem
+    ? () => router.push(itemHref(courseId, prevItem))
+    : undefined;
 
   const handleCompleteAndContinue = async () => {
     try {
@@ -57,25 +91,28 @@ export default function ChapterClient({
     } catch {
       // Progress save is best-effort
     }
-    if (nextItem) {
-      router.push(itemHref(courseId, nextItem));
-    } else {
-      router.push(`/courses/${courseId}`);
-    }
+      if (nextItem) {
+        router.push(itemHref(courseId, nextItem));
+      } else {
+        router.push(`/courses/${courseId}`);
+      }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-muted text-sm">Loading chapter content...</div>
+      <div className="flex h-[calc(100vh-theme(spacing.14))] items-center justify-center bg-[#0b0c0e]">
+        <div className="flex items-center gap-3 text-zinc-500 font-mono text-xs">
+          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
+          <span>Loading briefing content...</span>
+        </div>
       </div>
     );
   }
 
   if (error || !content) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-red-400 text-sm">
+      <div className="flex h-[calc(100vh-theme(spacing.14))] items-center justify-center bg-[#0b0c0e]">
+        <div className="text-rose-400 text-sm font-mono">
           {error || 'Failed to load chapter content. Are you logged in?'}
         </div>
       </div>
@@ -83,23 +120,16 @@ export default function ChapterClient({
   }
 
   return (
-    <div className="space-y-6">
-      <SlideReader
-        content={content}
-        onComplete={handleCompleteAndContinue}
-        completeLabel={
-          nextItem
-            ? nextItem.type === 'lab'
-              ? 'Start Lab'
-              : 'Continue'
-            : 'Complete Course'
-        }
-        onCompleteIcon={
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
-          </svg>
-        }
-      />
-    </div>
+    <SlideReader
+      content={content}
+      chapterId={chapterId}
+      chapterDescription={chapterDescription}
+      assessment={assessment}
+      prevItem={prevItem}
+      nextItem={nextItem}
+      rulerChapters={rulerWithCompletion}
+      onPrev={handlePrev}
+      onComplete={handleCompleteAndContinue}
+    />
   );
 }
