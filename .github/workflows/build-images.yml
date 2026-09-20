@@ -90,8 +90,7 @@ jobs:
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - name: Build & Push Orchestrator with Kaniko
-        uses: aevea/action-kaniko@v0.3.0
-        with:
+  uses: aevea/action-kaniko@v0.14.0        with:
           image: vmalani27/labops-orchestrator
           registry: ${{ steps.login-ecr.outputs.registry }}
           tag: ${{ steps.tags.outputs.sha }}
@@ -139,8 +138,7 @@ jobs:
           EOF
 
       - name: Build & Push Frontend with Kaniko
-        uses: aevea/action-kaniko@v0.3.0
-        with:
+  uses: aevea/action-kaniko@v0.14.0        with:
           image: vmalani27/labops-frontend
           registry: ${{ steps.login-ecr.outputs.registry }}
           tag: ${{ steps.tags.outputs.sha }}
@@ -177,7 +175,7 @@ jobs:
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - name: Build & Push Content-Sync with Kaniko
-        uses: aevea/action-kaniko@v0.3.0
+        uses: aevea/action-kaniko@v0.14.0        
         with:
           image: vmalani27/labops-content-sync
           registry: ${{ steps.login-ecr.outputs.registry }}
@@ -216,7 +214,7 @@ jobs:
 
       # 1. Base Image: labops-base
       - name: Build & Push Lab Base Image with Kaniko
-        uses: aevea/action-kaniko@v0.3.0
+        uses: aevea/action-kaniko@v0.14.0
         with:
           image: vmalani27/labops-base
           registry: ${{ steps.login-ecr.outputs.registry }}
@@ -227,7 +225,7 @@ jobs:
 
       # 2. DinD Image: labops-labs:docker
       - name: Build & Push Lab Image (lab-docker) with Kaniko
-        uses: aevea/action-kaniko@v0.3.0
+        uses: aevea/action-kaniko@v0.14.0
         with:
           image: vmalani27/labops-labs
           registry: ${{ steps.login-ecr.outputs.registry }}
@@ -240,7 +238,7 @@ jobs:
 
       # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals
       - name: Build & Push Lab Image (lab-docker-fundamentals) with Kaniko
-        uses: aevea/action-kaniko@v0.3.0
+        uses: aevea/action-kaniko@v0.14.0
         with:
           image: vmalani27/labops-labs
           registry: ${{ steps.login-ecr.outputs.registry }}
@@ -253,7 +251,7 @@ jobs:
 
       # 4. Building Images Course Image: labops-labs:docker-build
       - name: Build & Push Lab Image (lab-docker-build) with Kaniko
-        uses: aevea/action-kaniko@v0.3.0
+        uses: aevea/action-kaniko@v0.14.0
         with:
           image: vmalani27/labops-labs
           registry: ${{ steps.login-ecr.outputs.registry }}
