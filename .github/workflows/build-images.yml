@@ -30,6 +30,7 @@ concurrency:
 env:
   AWS_REGION: us-east-1
   AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
+  ECR_PUBLIC_REGISTRY: public.ecr.aws/i9t1l0m7
 
 jobs:
   # ── DETECT CHANGES ──────────────────────────────────────────────
@@ -81,7 +82,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
         with:
-          type: public
+          registry-type: public
 
       - name: Determine Tags
         id: tags
@@ -91,7 +92,7 @@ jobs:
 
       - name: Build & Push Orchestrator with Kaniko
         run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
           SHA="${{ steps.tags.outputs.sha }}"
           /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator" \
@@ -120,7 +121,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
         with:
-          type: public
+          registry-type: public
 
       - name: Determine Tags
         id: tags
@@ -140,7 +141,7 @@ jobs:
 
       - name: Build & Push Frontend with Kaniko
         run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
           SHA="${{ steps.tags.outputs.sha }}"
           /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/next-app" \
@@ -168,7 +169,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
         with:
-          type: public
+          registry-type: public
 
       - name: Determine Tags
         id: tags
@@ -178,7 +179,7 @@ jobs:
 
       - name: Build & Push Content-Sync with Kaniko
         run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
           SHA="${{ steps.tags.outputs.sha }}"
           /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/sidecars/content-sync" \
@@ -206,7 +207,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
         with:
-          type: public
+          registry-type: public
 
       - name: Determine Tags
         id: tags
@@ -217,7 +218,7 @@ jobs:
       # 1. Base Image: labops-base
       - name: Build & Push Lab Base Image with Kaniko
         run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
           SHA="${{ steps.tags.outputs.sha }}"
           /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator/lab-images" \
@@ -228,7 +229,7 @@ jobs:
       # 2. DinD Image: labops-labs:docker
       - name: Build & Push Lab Image (lab-docker) with Kaniko
         run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
           SHA="${{ steps.tags.outputs.sha }}"
           /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator/lab-images" \
@@ -240,7 +241,7 @@ jobs:
       # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals
       - name: Build & Push Lab Image (lab-docker-fundamentals) with Kaniko
         run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
           SHA="${{ steps.tags.outputs.sha }}"
           /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator/lab-images" \
@@ -252,7 +253,7 @@ jobs:
       # 4. Building Images Course Image: labops-labs:docker-build
       - name: Build & Push Lab Image (lab-docker-build) with Kaniko
         run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
           SHA="${{ steps.tags.outputs.sha }}"
           /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator/lab-images" \

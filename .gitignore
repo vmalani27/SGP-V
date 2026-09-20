@@ -39,5 +39,5 @@ cli/*.exe
 *.tar
 !orchestrator/lab-images/preloads/*.tar
 *.tar.gz
-
+aws/runner/run-example.sh
 

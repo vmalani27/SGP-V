@@ -28,9 +28,7 @@
         "ecr:PutImage"
       ],
       "Resource": [
-        "arn:aws:ecr:ap-south-1:586177432842:repository/vmalani/*",
-        "arn:aws:ecr:ap-south-1:586177432842:repository/vmalani/labops-images*",
-        "arn:aws:ecr:ap-south-1:586177432842:repository/labops-*"
+        "arn:aws:ecr:*:586177432842:repository/*"
       ]
     },
     {
@@ -46,8 +44,7 @@
         "ecr-public:PutImage"
       ],
       "Resource": [
-        "arn:aws:ecr-public::586177432842:repository/vmalani27/labops*",
-        "arn:aws:ecr-public::586177432842:repository/vmalani/*"
+        "arn:aws:ecr-public::586177432842:repository/*"
       ]
     }
   ]

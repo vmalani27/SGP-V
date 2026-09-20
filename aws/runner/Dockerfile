@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-# GitHub Actions Self-Hosted Runner Dockerfile
+# GitHub Actions Self-Hosted Runner Dockerfile with Kaniko
 # ──────────────────────────────────────────────────────────────
 # Target Runtime: AWS ECS Fargate / EC2 / Local Docker
 # Base Image: Ubuntu 22.04 LTS
@@ -11,7 +11,7 @@ ARG RUNNER_VERSION=2.337.0
 ARG RUNNER_SHA256=70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install essential build tools, container tools, and AWS CLI
+# Install essential build tools, container tools (docker CLI), and AWS CLI
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -28,10 +28,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     awscli \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy Kaniko binary and ECR credential helper for daemonless container builds on Fargate
+COPY --from=gcr.io/kaniko-project/executor:v1.23.2-debug /kaniko/executor /kaniko/executor
+COPY --from=gcr.io/kaniko-project/executor:v1.23.2-debug /kaniko/docker-credential-ecr-login /kaniko/docker-credential-ecr-login
+COPY --from=gcr.io/kaniko-project/executor:v1.23.2-debug /kaniko/.docker /kaniko/.docker
+
+ENV PATH="${PATH}:/kaniko"
+ENV DOCKER_CONFIG="/kaniko/.docker"
+
 # Create runner directory & non-root user with sudo permissions
 RUN useradd -m -s /bin/bash runner \
     && echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
-    && mkdir -p /actions-runner
+    && mkdir -p /actions-runner/_work \
+    && chmod -R 777 /kaniko
 
 WORKDIR /actions-runner
 
@@ -43,9 +52,11 @@ RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L \
     && rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
     && ./bin/installdependencies.sh
 
-# Copy entrypoint script
+# Copy entrypoint script and grant full permissions to workspace
 COPY entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh && chown -R runner:runner /actions-runner
+RUN chmod +x ./entrypoint.sh \
+    && chown -R runner:runner /actions-runner \
+    && chmod -R 777 /actions-runner
 
 USER runner
 
