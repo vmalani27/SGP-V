@@ -90,7 +90,8 @@ jobs:
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - name: Build & Push Orchestrator with Kaniko
-  uses: aevea/action-kaniko@v0.14.0        with:
+        uses: aevea/action-kaniko@v0.14.0        
+        with:
           image: vmalani27/labops-orchestrator
           registry: ${{ steps.login-ecr.outputs.registry }}
           tag: ${{ steps.tags.outputs.sha }}
