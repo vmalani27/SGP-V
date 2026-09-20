@@ -63,7 +63,7 @@ jobs:
 
   # ── ORCHESTRATOR SERVICE ────────────────────────────────────────
   build-orchestrator:
-    name: Build & Push Orchestrator
+    name: Build & Push Orchestrator (Kaniko Daemonless)
     needs: changes
     if: needs.changes.outputs.orchestrator == 'true'
     runs-on: [self-hosted, aws, fargate, ap-south-1]
@@ -83,33 +83,25 @@ jobs:
         with:
           type: public
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Determine Tags
+        id: tags
+        run: |
+          SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Build & Push Orchestrator with Kaniko
+        uses: aevea/action-kaniko@v0.3.0
         with:
-          images: ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-orchestrator
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build & Push Orchestrator Image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./orchestrator
-          file: ./orchestrator/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=orchestrator
-          cache-to: type=gha,mode=max,scope=orchestrator
+          image: vmalani27/labops-orchestrator
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          tag: ${{ steps.tags.outputs.sha }}
+          tag_with_latest: true
+          path: ./orchestrator
+          dockerfile: ./orchestrator/Dockerfile
 
   # ── FRONTEND SERVICE ────────────────────────────────────────────
   build-frontend:
-    name: Build & Push Frontend
+    name: Build & Push Frontend (Kaniko Daemonless)
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: [self-hosted, aws, fargate, ap-south-1]
@@ -130,18 +122,11 @@ jobs:
         with:
           type: public
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-frontend
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Determine Tags
+        id: tags
+        run: |
+          SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - name: Materialize .env.production
         run: |
@@ -153,20 +138,19 @@ jobs:
           CONTENT_PUBLIC_BASE_URL=${{ vars.CONTENT_PUBLIC_BASE_URL || secrets.CONTENT_PUBLIC_BASE_URL || '' }}
           EOF
 
-      - name: Build & Push Frontend Image
-        uses: docker/build-push-action@v6
+      - name: Build & Push Frontend with Kaniko
+        uses: aevea/action-kaniko@v0.3.0
         with:
-          context: ./next-app
-          file: ./next-app/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+          image: vmalani27/labops-frontend
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          tag: ${{ steps.tags.outputs.sha }}
+          tag_with_latest: true
+          path: ./next-app
+          dockerfile: ./next-app/Dockerfile
 
   # ── CONTENT-SYNC SIDECAR SERVICE ────────────────────────────────
   build-content-sync:
-    name: Build & Push Content-Sync Sidecar
+    name: Build & Push Content-Sync Sidecar (Kaniko Daemonless)
     needs: changes
     if: needs.changes.outputs.content_sync == 'true'
     runs-on: [self-hosted, aws, fargate, ap-south-1]
@@ -186,33 +170,25 @@ jobs:
         with:
           type: public
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Determine Tags
+        id: tags
+        run: |
+          SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Build & Push Content-Sync with Kaniko
+        uses: aevea/action-kaniko@v0.3.0
         with:
-          images: ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-content-sync
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build & Push Content-Sync Image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./sidecars/content-sync
-          file: ./sidecars/content-sync/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=content-sync
-          cache-to: type=gha,mode=max,scope=content-sync
+          image: vmalani27/labops-content-sync
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          tag: ${{ steps.tags.outputs.sha }}
+          tag_with_latest: true
+          path: ./sidecars/content-sync
+          dockerfile: ./sidecars/content-sync/Dockerfile
 
   # ── LAB RUNTIME IMAGES ──────────────────────────────────────────
   build-lab-images:
-    name: Build & Push Lab Runtime Images
+    name: Build & Push Lab Runtime Images (Kaniko Daemonless)
     needs: changes
     if: needs.changes.outputs.lab_images == 'true'
     runs-on: [self-hosted, aws, fargate, ap-south-1]
@@ -232,75 +208,58 @@ jobs:
         with:
           type: public
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Determine Tags
         id: tags
         run: |
-          BRANCH="${GITHUB_REF_NAME}"
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
-          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      # 1. Base Image: labops-base (built and pushed to ECR Public)
-      - name: Build & Push Lab Base Image (lab-ubuntu)
-        uses: docker/build-push-action@v6
+      # 1. Base Image: labops-base
+      - name: Build & Push Lab Base Image with Kaniko
+        uses: aevea/action-kaniko@v0.3.0
         with:
-          context: ./orchestrator/lab-images
-          file: ./orchestrator/lab-images/Dockerfile.ubuntu
-          push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:${{ steps.tags.outputs.branch }}
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:latest
-          cache-from: type=gha,scope=lab-ubuntu
-          cache-to: type=gha,mode=max,scope=lab-ubuntu
+          image: vmalani27/labops-base
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          tag: ${{ steps.tags.outputs.sha }}
+          tag_with_latest: true
+          path: ./orchestrator/lab-images
+          dockerfile: ./orchestrator/lab-images/Dockerfile.ubuntu
 
-      # 2. DinD Image: labops-labs:docker (inherits from labops-base)
-      - name: Build & Push Lab Image (lab-docker)
-        uses: docker/build-push-action@v6
+      # 2. DinD Image: labops-labs:docker
+      - name: Build & Push Lab Image (lab-docker) with Kaniko
+        uses: aevea/action-kaniko@v0.3.0
         with:
-          context: ./orchestrator/lab-images
-          file: ./orchestrator/lab-images/Dockerfile.docker
-          push: true
-          build-args: |
+          image: vmalani27/labops-labs
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          tag: docker-${{ steps.tags.outputs.sha }}
+          tag_with_latest: false
+          path: ./orchestrator/lab-images
+          dockerfile: ./orchestrator/lab-images/Dockerfile.docker
+          build_args: |
             BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.branch }}
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-latest
-          cache-from: type=gha,scope=lab-docker
-          cache-to: type=gha,mode=max,scope=lab-docker
 
-      # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals (inherits from labops-base)
-      - name: Build & Push Lab Image (lab-docker-fundamentals)
-        uses: docker/build-push-action@v6
+      # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals
+      - name: Build & Push Lab Image (lab-docker-fundamentals) with Kaniko
+        uses: aevea/action-kaniko@v0.3.0
         with:
-          context: ./orchestrator/lab-images
-          file: ./orchestrator/lab-images/Dockerfile.docker-fundamentals
-          push: true
-          build-args: |
+          image: vmalani27/labops-labs
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          tag: docker-fundamentals-${{ steps.tags.outputs.sha }}
+          tag_with_latest: false
+          path: ./orchestrator/lab-images
+          dockerfile: ./orchestrator/lab-images/Dockerfile.docker-fundamentals
+          build_args: |
             BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-fundamentals-latest
-          cache-from: type=gha,scope=lab-docker-fundamentals
-          cache-to: type=gha,mode=max,scope=lab-docker-fundamentals
 
-      # 4. Building Images Course Image: labops-labs:docker-build (inherits from labops-labs:docker)
-      - name: Build & Push Lab Image (lab-docker-build)
-        uses: docker/build-push-action@v6
+      # 4. Building Images Course Image: labops-labs:docker-build
+      - name: Build & Push Lab Image (lab-docker-build) with Kaniko
+        uses: aevea/action-kaniko@v0.3.0
         with:
-          context: ./orchestrator/lab-images
-          file: ./orchestrator/lab-images/Dockerfile.docker-build
-          push: true
-          build-args: |
+          image: vmalani27/labops-labs
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          tag: docker-build-${{ steps.tags.outputs.sha }}
+          tag_with_latest: false
+          path: ./orchestrator/lab-images
+          dockerfile: ./orchestrator/lab-images/Dockerfile.docker-build
+          build_args: |
             BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-build-latest
-          cache-from: type=gha,scope=lab-docker-build
-          cache-to: type=gha,mode=max,scope=lab-docker-build
