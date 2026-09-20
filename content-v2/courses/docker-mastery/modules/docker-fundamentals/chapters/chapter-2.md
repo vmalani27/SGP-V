@@ -113,38 +113,50 @@ steps:
 
 ## Reading a Container's Configuration: docker inspect
 
-Docker records everything about a container — the image it was created from, the environment variables it was given, the command it runs, and its current state. Read it back as JSON:
+### Inspecting State & Metadata: `docker inspect`
 
+`docker inspect` returns the low-level JSON configuration and runtime state maintained by the Docker daemon for a container or image.
+
+```bash
+docker inspect demo
 ```
-docker inspect <name-or-id>
+
+The output document is divided into key top-level keys:
+
+* `.State`: Execution status, exit codes, process PID, health check status.
+* `.NetworkSettings`: Assigned IP addresses, gateway, open ports, bridge networks.
+* `.HostConfig`: Resource constraints (CPU/memory limits), bind mounts, restart policies.
+* `.Config`: Environment variables (`Env`), entrypoint, command, and working directory.
+
+---
+
+### Querying with Go Templates (`--format`)
+
+Rather than piping unparsed JSON through text utilities, target values directly using Go template path expressions:
+
+#### 1. Extract Runtime Status and PID
+
+Query whether the container is running and its host process ID:
+
+```bash
+docker inspect --format '{{.State.Status}} (PID: {{.State.Pid}})' demo
 ```
 
-The output is large, so target the part you want. The `--format` flag selects a single field with a Go template. Ask the `demo` container what it is made of and what it is doing:
+#### 2. Query Network Configuration
 
-:::terminal-demo
-id: container-lifecycle
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-steps:
-  - id: inspect-image
-    label: Read which image it came from
-    run: docker inspect demo --format '{{.Config.Image}}'
-    expect: |
-      `alpine:latest` — the image the `demo` container was created from.
-  - id: inspect-cmd
-    label: Read the command it runs
-    run: docker inspect demo --format '{{.Config.Cmd}}'
-    expect: |
-      `[sleep 300]` — the command the container is running.
-  - id: inspect-status
-    label: Read its current state
-    run: docker inspect demo --format '{{.State.Status}}'
-    expect: |
-      `running` — the container's current state.
-:::
+Extract the assigned container IP address on the default bridge network:
 
-Or pipe the full JSON through `grep` to find a section, such as the environment variables in `Config.Env`.
+```bash
+docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' demo
+```
+
+#### 3. Pretty-Print Structured Subtrees
+
+To inspect an entire complex block (such as environment variables or mount points) as clean JSON without dumping the whole schema, pipe through the `json` template function:
+
+```bash
+docker inspect --format '{{json .Config.Env}}' demo
+```
 
 ## Reading a Container's Output: docker logs
 
