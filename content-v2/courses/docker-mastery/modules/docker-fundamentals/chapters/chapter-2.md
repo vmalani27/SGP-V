@@ -1,5 +1,12 @@
 # Chapter 2: Containers
 
+:::terminal-demo
+id: container-lifecycle
+image: labops-docker:latest
+pre_pull:
+  - alpine:latest
+:::
+
 ## In this chapter, you will
 
 - Run a container and manage it by name or ID
@@ -12,7 +19,7 @@
 
 Chapter 1 covered the architecture; here we focus on the commands. `docker run <image>` does two things at once: it **creates** a container from the image and **starts** it. You already used it in Lab 1:
 
-```
+```bash
 docker run --name alpine-container alpine:latest echo GREETING_FROM_ALPINE
 ```
 
@@ -20,40 +27,25 @@ That container printed a greeting and exited. A container that finishes its comm
 
 To have something to work with, start a container that keeps running. Alpine's `sleep` command holds it open:
 
-```
+```bash
 docker run -d --name demo alpine:latest sleep 300
 ```
 
 `-d` runs it in the background (detached mode) so your terminal stays free, and `--name demo` gives it a name you can refer to. `docker run` is the command you will use for every deployment in this course.
 
-Try it — the steps below load each command into the terminal for you. Click **Run this next**, review the command, then press Enter:
+Try it — hover over any command block and click **Run** to execute it directly in the terminal, or copy and paste it into the prompt.
 
-:::terminal-demo
-id: container-lifecycle
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-state:
-  label: demo container
-  command: docker inspect -f '{{.State.Status}}' demo 2>/dev/null || echo "not created"
-steps:
-  - id: create-demo
-    label: Create and start the container
-    run: docker run -d --name demo alpine:latest sleep 300
-    expect: |
-      A long alphanumeric container ID is printed on its own line. The container is now running in the background — watch the state chip turn to `running`.
-  - id: ps-demo
-    label: Confirm it is running
-    run: docker ps
-    expect: |
-      A row for `demo` with image `alpine:latest`, command `sleep 300`, and status `Up` (or `Up N seconds`).
-:::
+Confirm that the `demo` container is actively running:
+
+```bash
+docker ps
+```
 
 ## Listing Containers: docker ps
 
 ### What Is Running
 
-```
+```bash
 docker ps
 ```
 
@@ -61,55 +53,33 @@ Lists the containers currently running — their IDs, the image they came from, 
 
 ### Everything, Including Stopped
 
-```
+```bash
 docker ps -a
 ```
 
 Adds containers that have exited. Every container you have created appears here until you remove it — including the one from Lab 1. Containers that exited are not gone; they are just not running.
 
-Run both against the `demo` container you just created:
-
-:::terminal-demo
-id: container-lifecycle
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-steps:
-  - id: ps-running
-    label: List what is running
-    run: docker ps
-    expect: |
-      The `demo` container appears with status `Up`. Only running containers show up here.
-  - id: ps-all
-    label: Include stopped containers
-    run: docker ps -a
-    expect: |
-      The same `demo` row — plus anything that has exited, including the greeting container from Lab 1. Every container you have created appears here.
-:::
+Run both against the `demo` container you just created to see the difference between active and exited states.
 
 ## Names and IDs
 
 Every container has a unique ID (a long hash) and a name. If you do not pass `--name`, Docker invents one from an adjective and a noun — something like `brave_goldberg`. You can use the name or the first few characters of the ID wherever a command expects a container.
 
-Names must be unique among existing containers. If you `docker run --name demo` again while a container named `demo` still exists, Docker refuses — remove the old one first, or pick a different name. See for yourself:
+Names must be unique among existing containers. If you `docker run --name demo` again while a container named `demo` still exists, Docker refuses — remove the old one first, or pick a different name.
 
-:::terminal-demo
-id: container-lifecycle
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-steps:
-  - id: duplicate-name
-    label: Try to reuse the name demo
-    run: docker run --name demo alpine:latest sleep 300
-    expect: |
-      Docker refuses with `Error response from daemon: Conflict. The container name "/demo" is already in use by container`. Names must be unique among existing containers.
-  - id: clean-after-error
-    label: Check nothing was created
-    run: docker ps -a
-    expect: |
-      The `demo` container is still there from before — the failed run did not create a duplicate.
-:::
+Try running a duplicate container with the same name:
+
+```bash
+docker run --name demo alpine:latest sleep 300
+```
+
+Docker will refuse with an error: `Conflict. The container name "/demo" is already in use by container`.
+
+Confirm that the failed run did not create a duplicate container:
+
+```bash
+docker ps -a
+```
 
 ## Reading a Container's Configuration: docker inspect
 
@@ -162,41 +132,37 @@ docker inspect --format '{{json .Config.Env}}' demo
 
 Containers are usually configured to print what they are doing. See what a container has written to its output:
 
-```
+```bash
 docker logs <name-or-id>
 ```
 
 This works on exited containers too — it is often the only way to find out what a container did before it stopped. To follow logs in real time (like `tail -f`), add `-f`; press `Ctrl+C` to stop following. The container keeps running.
 
-Create a container that prints a message, then read its logs:
+Create a container named `logger` that prints a message and exits:
 
-:::terminal-demo
-id: container-lifecycle
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-steps:
-  - id: run-logger
-    label: Create a container that prints a message
-    run: docker run --name logger alpine:latest echo HELLO_FROM_LOGGER
-    expect: |
-      The container runs to completion and prints `HELLO_FROM_LOGGER` — then it exits on its own.
-  - id: logs-logger
-    label: Read what it printed
-    run: docker logs logger
-    expect: |
-      `HELLO_FROM_LOGGER`. Logs work even though the container already exited.
-  - id: logs-demo
-    label: Read the sleeper's output
-    run: docker logs demo
-    expect: |
-      Nothing — the `demo` container is busy sleeping and has not printed anything yet. Output only exists if the app wrote it.
-  - id: rm-logger
-    label: Remove the logger container
-    run: docker rm logger
-    expect: |
-      `logger` is echoed — the container is gone. (You cannot remove a running container without `-f`.)
-:::
+```bash
+docker run --name logger alpine:latest echo HELLO_FROM_LOGGER
+```
+
+Read what the container printed:
+
+```bash
+docker logs logger
+```
+
+Now try reading the logs of the `demo` sleeper container you started earlier:
+
+```bash
+docker logs demo
+```
+
+Nothing is printed — the `demo` container is busy sleeping and has not printed anything yet. Output only exists if the application wrote it.
+
+Clean up the exited `logger` container:
+
+```bash
+docker rm logger
+```
 
 ## The Lifecycle
 
@@ -214,53 +180,51 @@ docker run    -->  Running  -->  docker stop  -->  Stopped  -->  docker start  -
 - **`docker restart <name-or-id>`** — stops and starts in one step.
 - **`docker rm <name-or-id>`** — deletes a stopped container; `docker rm -f` stops and removes in one shot.
 
-Watch the container move through its states — the chip in the header tracks `demo` live as you go:
+Work through the complete container lifecycle with the `demo` container:
 
-:::terminal-demo
-id: container-lifecycle
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-state:
-  label: demo container
-  command: docker inspect -f '{{.State.Status}}' demo 2>/dev/null || echo "not created"
-steps:
-  - id: locate-demo
-    label: Find the demo container
-    run: docker ps -a
-    expect: |
-      A row for `demo` — running, or `Exited` if its 300-second `sleep` ran out. Either way it still exists. If there is no row at all, run the create step on the "Running a Container" slide first.
-  - id: stop-demo
-    label: Stop it
-    run: docker stop demo
-    expect: |
-      Docker echoes `demo` and sends SIGTERM. The state chip flips to `exited`. If the container had already stopped, Docker just reports it is not running — that is the same state.
-  - id: see-stopped
-    label: See it as Exited
-    run: docker ps -a
-    expect: |
-      The `demo` row now shows `Exited (0)` — it is stopped but not gone.
-  - id: start-demo
-    label: Resume it
-    run: docker start demo
-    expect: |
-      Docker echoes `demo`. The state chip flips back to `running` — it is the *same* container with the same ID, just resumed.
-  - id: confirm-running
-    label: Confirm it is running again
-    run: docker inspect demo --format '{{.State.Status}}'
-    expect: |
-      `running` — the container came back with its original configuration intact.
-  - id: remove-demo
-    label: Remove it
-    run: docker rm -f demo
-    expect: |
-      Docker echoes `demo` — the container is deleted, and the state chip reads `not created`.
-  - id: verify-gone
-    label: Verify it is gone
-    run: docker ps -a
-    expect: |
-      No row for `demo` at all. The container no longer exists.
-:::
+#### 1. Check current status
+
+```bash
+docker ps -a
+```
+
+#### 2. Stop the container
+
+```bash
+docker stop demo
+```
+
+Docker echoes `demo` and sends SIGTERM. Check that its status changed to `Exited`:
+
+```bash
+docker ps -a
+```
+
+#### 3. Resume the container
+
+```bash
+docker start demo
+```
+
+The container is resumed with its original configuration and ID intact. Confirm it is running again:
+
+```bash
+docker inspect demo --format '{{.State.Status}}'
+```
+
+#### 4. Remove the container
+
+Force-remove the running container:
+
+```bash
+docker rm -f demo
+```
+
+Verify that it has been completely removed:
+
+```bash
+docker ps -a
+```
 
 > **Warning:** Do not let stopped containers pile up. Run `docker ps -a` periodically and remove containers you no longer need with `docker rm` — stopped containers still consume disk space.
 

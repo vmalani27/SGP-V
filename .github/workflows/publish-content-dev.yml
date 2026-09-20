@@ -22,7 +22,7 @@ jobs:
   # ── STAGE 1 · LINT ────────────────────────────────────────────────
   validate:
     name: lint / validate content
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aws, fargate, ap-south-1]
 
     steps:
       - name: Checkout
@@ -43,7 +43,7 @@ jobs:
   # ── STAGE 2 · BUILD ───────────────────────────────────────────────
   generate-manifest:
     name: build / generate manifest + tarball
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aws, fargate, ap-south-1]
     needs: validate
 
     steps:
@@ -73,7 +73,7 @@ jobs:
   # ── STAGE 3 · PUBLISH ─────────────────────────────────────────────
   publish:
     name: publish / authenticate + upload to S3
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aws, fargate, ap-south-1]
     needs: generate-manifest
 
     environment: dev

@@ -9,6 +9,7 @@ on:
     paths:
       - 'orchestrator/**'
       - 'next-app/**'
+      - 'sidecars/content-sync/**'
       - '.github/workflows/build-images.yml'
   workflow_dispatch:
     inputs:
@@ -20,11 +21,15 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  id-token: write
 
 concurrency:
   group: build-images-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  AWS_REGION: ap-south-1
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
 
 jobs:
   # ── DETECT CHANGES ──────────────────────────────────────────────
@@ -34,6 +39,7 @@ jobs:
     outputs:
       orchestrator: ${{ steps.filter.outputs.orchestrator == 'true' || github.event.inputs.force_build_all == 'true' }}
       frontend: ${{ steps.filter.outputs.frontend == 'true' || github.event.inputs.force_build_all == 'true' }}
+      content_sync: ${{ steps.filter.outputs.content_sync == 'true' || github.event.inputs.force_build_all == 'true' }}
       lab_images: ${{ steps.filter.outputs.lab_images == 'true' || github.event.inputs.force_build_all == 'true' }}
     steps:
       - name: Checkout Code
@@ -50,6 +56,8 @@ jobs:
               - 'orchestrator/requirements.txt'
             frontend:
               - 'next-app/**'
+            content_sync:
+              - 'sidecars/content-sync/**'
             lab_images:
               - 'orchestrator/lab-images/**'
 
@@ -63,24 +71,24 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set lowercase repository name
-        run: echo "REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ env.REPO_LOWER }}/orchestrator
+          images: ${{ steps.login-ecr.outputs.registry }}/labops-orchestrator
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-,format=short
@@ -108,24 +116,24 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set lowercase repository name
-        run: echo "REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ env.REPO_LOWER }}/frontend
+          images: ${{ steps.login-ecr.outputs.registry }}/labops-frontend
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-,format=short
@@ -134,16 +142,10 @@ jobs:
       - name: Materialize .env.production
         run: |
           cat << 'EOF' > next-app/.env.production
-          BACKEND_API_URL=${{ secrets.BACKEND_API_URL || vars.BACKEND_API_URL || 'https://labops-dev.onrender.com' }}
-          NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL || vars.NEXT_PUBLIC_API_BASE_URL || secrets.BACKEND_API_URL || vars.BACKEND_API_URL || 'https://labops-dev.onrender.com' }}
-          NEXT_PUBLIC_ORCHESTRATOR_URL=${{ vars.NEXT_PUBLIC_ORCHESTRATOR_URL || secrets.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8001' }}
+          NEXT_PUBLIC_ORCHESTRATOR_URL=${{ vars.NEXT_PUBLIC_ORCHESTRATOR_URL || secrets.NEXT_PUBLIC_ORCHESTRATOR_URL || '' }}
           NEXT_PUBLIC_ORCHESTRATOR_SECRET=${{ vars.NEXT_PUBLIC_ORCHESTRATOR_SECRET || secrets.NEXT_PUBLIC_ORCHESTRATOR_SECRET || 'local-dev-super-secret' }}
-          NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY || secrets.FIREBASE_API_KEY || vars.NEXT_PUBLIC_FIREBASE_API_KEY || vars.FIREBASE_API_KEY }}
-          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || vars.FIREBASE_AUTH_DOMAIN || secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || secrets.FIREBASE_AUTH_DOMAIN }}
-          NEXT_PUBLIC_FIREBASE_PROJECT_ID=${{ vars.NEXT_PUBLIC_FIREBASE_PROJECT_ID || vars.FIREBASE_PROJECT_ID || secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID || secrets.FIREBASE_PROJECT_ID }}
-          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${{ vars.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || vars.FIREBASE_STORAGE_BUCKET || secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || secrets.FIREBASE_STORAGE_BUCKET }}
-          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ vars.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || vars.FIREBASE_MESSAGING_SENDER_ID || secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || secrets.FIREBASE_MESSAGING_SENDER_ID }}
-          NEXT_PUBLIC_FIREBASE_APP_ID=${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID || vars.FIREBASE_APP_ID || secrets.NEXT_PUBLIC_FIREBASE_APP_ID || secrets.FIREBASE_APP_ID }}
+          CONTENT_LOCAL_DIR=/app/.content
+          USER_DATA_DIR=/app/.user_data
           CONTENT_PUBLIC_BASE_URL=${{ vars.CONTENT_PUBLIC_BASE_URL || secrets.CONTENT_PUBLIC_BASE_URL || '' }}
           EOF
 
@@ -158,6 +160,50 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
+  # ── CONTENT-SYNC SIDECAR SERVICE ────────────────────────────────
+  build-content-sync:
+    name: Build & Push Content-Sync Sidecar
+    needs: changes
+    if: needs.changes.outputs.content_sync == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.login-ecr.outputs.registry }}/labops-content-sync
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build & Push Content-Sync Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./sidecars/content-sync
+          file: ./sidecars/content-sync/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=content-sync
+          cache-to: type=gha,mode=max,scope=content-sync
+
   # ── LAB RUNTIME IMAGES ──────────────────────────────────────────
   build-lab-images:
     name: Build & Push Lab Runtime Images
@@ -168,18 +214,18 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set lowercase repository name
-        run: echo "REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine Tags
         id: tags
@@ -189,7 +235,7 @@ jobs:
           echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      # 1. Base Image: labops-ubuntu (built and pushed directly to GHCR)
+      # 1. Base Image: labops-lab-ubuntu (built and pushed directly to Amazon ECR)
       - name: Build & Push Lab Image (lab-ubuntu)
         uses: docker/build-push-action@v6
         with:
@@ -197,13 +243,13 @@ jobs:
           file: ./orchestrator/lab-images/Dockerfile.ubuntu
           push: true
           tags: |
-            ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.branch }}
-            ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
-            ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:latest
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:${{ steps.tags.outputs.branch }}
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:${{ steps.tags.outputs.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:latest
           cache-from: type=gha,scope=lab-ubuntu
           cache-to: type=gha,mode=max,scope=lab-ubuntu
 
-      # 2. DinD Image: labops-docker (inherits from the pushed lab-ubuntu base image)
+      # 2. DinD Image: labops-lab-docker (inherits from the pushed lab-ubuntu base image in ECR)
       - name: Build & Push Lab Image (lab-docker)
         uses: docker/build-push-action@v6
         with:
@@ -211,15 +257,15 @@ jobs:
           file: ./orchestrator/lab-images/Dockerfile.docker
           push: true
           build-args: |
-            BASE_IMAGE=ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
+            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:${{ steps.tags.outputs.sha }}
           tags: |
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker:${{ steps.tags.outputs.branch }}
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker:${{ steps.tags.outputs.sha }}
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker:latest
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker:${{ steps.tags.outputs.branch }}
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker:${{ steps.tags.outputs.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker:latest
           cache-from: type=gha,scope=lab-docker
           cache-to: type=gha,mode=max,scope=lab-docker
 
-      # 3. Preloaded Fundamentals Image: labops-docker-fundamentals
+      # 3. Preloaded Fundamentals Image: labops-lab-docker-fundamentals (inherits from lab-ubuntu)
       - name: Build & Push Lab Image (lab-docker-fundamentals)
         uses: docker/build-push-action@v6
         with:
@@ -227,15 +273,15 @@ jobs:
           file: ./orchestrator/lab-images/Dockerfile.docker-fundamentals
           push: true
           build-args: |
-            BASE_IMAGE=ghcr.io/${{ env.REPO_LOWER }}/lab-ubuntu:${{ steps.tags.outputs.sha }}
+            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:${{ steps.tags.outputs.sha }}
           tags: |
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-fundamentals:${{ steps.tags.outputs.branch }}
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-fundamentals:${{ steps.tags.outputs.sha }}
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-fundamentals:latest
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-fundamentals:${{ steps.tags.outputs.branch }}
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-fundamentals:${{ steps.tags.outputs.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-fundamentals:latest
           cache-from: type=gha,scope=lab-docker-fundamentals
           cache-to: type=gha,mode=max,scope=lab-docker-fundamentals
 
-      # 4. Building Images Course Image: labops-docker-build (inherits from lab-docker)
+      # 4. Building Images Course Image: labops-lab-docker-build (inherits from lab-docker in ECR)
       - name: Build & Push Lab Image (lab-docker-build)
         uses: docker/build-push-action@v6
         with:
@@ -243,11 +289,10 @@ jobs:
           file: ./orchestrator/lab-images/Dockerfile.docker-build
           push: true
           build-args: |
-            BASE_IMAGE=ghcr.io/${{ env.REPO_LOWER }}/lab-docker:${{ steps.tags.outputs.sha }}
+            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/labops-lab-docker:${{ steps.tags.outputs.sha }}
           tags: |
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-build:${{ steps.tags.outputs.branch }}
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-build:${{ steps.tags.outputs.sha }}
-            ghcr.io/${{ env.REPO_LOWER }}/lab-docker-build:latest
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-build:${{ steps.tags.outputs.branch }}
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-build:${{ steps.tags.outputs.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-build:latest
           cache-from: type=gha,scope=lab-docker-build
           cache-to: type=gha,mode=max,scope=lab-docker-build
-
