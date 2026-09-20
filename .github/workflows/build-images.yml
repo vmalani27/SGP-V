@@ -28,14 +28,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AWS_REGION: ap-south-1
+  AWS_REGION: us-east-1
   AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
 
 jobs:
   # ── DETECT CHANGES ──────────────────────────────────────────────
   changes:
     name: Detect Changed Components
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aws, fargate, ap-south-1]
     outputs:
       orchestrator: ${{ steps.filter.outputs.orchestrator == 'true' || github.event.inputs.force_build_all == 'true' }}
       frontend: ${{ steps.filter.outputs.frontend == 'true' || github.event.inputs.force_build_all == 'true' }}
@@ -66,7 +66,7 @@ jobs:
     name: Build & Push Orchestrator
     needs: changes
     if: needs.changes.outputs.orchestrator == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aws, fargate, ap-south-1]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -77,9 +77,11 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
+      - name: Log in to Amazon ECR Public
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          type: public
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -88,7 +90,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.login-ecr.outputs.registry }}/labops-orchestrator
+          images: ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-orchestrator
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-,format=short
@@ -110,7 +112,7 @@ jobs:
     name: Build & Push Frontend
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aws, fargate, ap-south-1]
     environment: dev
     steps:
       - name: Checkout Code
@@ -122,9 +124,11 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
+      - name: Log in to Amazon ECR Public
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          type: public
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -133,7 +137,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.login-ecr.outputs.registry }}/labops-frontend
+          images: ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-frontend
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-,format=short
@@ -165,7 +169,7 @@ jobs:
     name: Build & Push Content-Sync Sidecar
     needs: changes
     if: needs.changes.outputs.content_sync == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aws, fargate, ap-south-1]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -176,9 +180,11 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
+      - name: Log in to Amazon ECR Public
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          type: public
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -187,7 +193,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.login-ecr.outputs.registry }}/labops-content-sync
+          images: ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-content-sync
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-,format=short
@@ -209,7 +215,7 @@ jobs:
     name: Build & Push Lab Runtime Images
     needs: changes
     if: needs.changes.outputs.lab_images == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aws, fargate, ap-south-1]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -220,9 +226,11 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
+      - name: Log in to Amazon ECR Public
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          type: public
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -235,21 +243,21 @@ jobs:
           echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      # 1. Base Image: labops-lab-ubuntu (built and pushed directly to Amazon ECR)
-      - name: Build & Push Lab Image (lab-ubuntu)
+      # 1. Base Image: labops-base (built and pushed to ECR Public)
+      - name: Build & Push Lab Base Image (lab-ubuntu)
         uses: docker/build-push-action@v6
         with:
           context: ./orchestrator/lab-images
           file: ./orchestrator/lab-images/Dockerfile.ubuntu
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:${{ steps.tags.outputs.branch }}
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:${{ steps.tags.outputs.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:latest
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:${{ steps.tags.outputs.branch }}
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:latest
           cache-from: type=gha,scope=lab-ubuntu
           cache-to: type=gha,mode=max,scope=lab-ubuntu
 
-      # 2. DinD Image: labops-lab-docker (inherits from the pushed lab-ubuntu base image in ECR)
+      # 2. DinD Image: labops-labs:docker (inherits from labops-base)
       - name: Build & Push Lab Image (lab-docker)
         uses: docker/build-push-action@v6
         with:
@@ -257,15 +265,15 @@ jobs:
           file: ./orchestrator/lab-images/Dockerfile.docker
           push: true
           build-args: |
-            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:${{ steps.tags.outputs.sha }}
+            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker:${{ steps.tags.outputs.branch }}
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker:${{ steps.tags.outputs.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker:latest
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.branch }}
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-latest
           cache-from: type=gha,scope=lab-docker
           cache-to: type=gha,mode=max,scope=lab-docker
 
-      # 3. Preloaded Fundamentals Image: labops-lab-docker-fundamentals (inherits from lab-ubuntu)
+      # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals (inherits from labops-base)
       - name: Build & Push Lab Image (lab-docker-fundamentals)
         uses: docker/build-push-action@v6
         with:
@@ -273,15 +281,15 @@ jobs:
           file: ./orchestrator/lab-images/Dockerfile.docker-fundamentals
           push: true
           build-args: |
-            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/labops-lab-ubuntu:${{ steps.tags.outputs.sha }}
+            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-fundamentals:${{ steps.tags.outputs.branch }}
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-fundamentals:${{ steps.tags.outputs.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-fundamentals:latest
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-fundamentals-latest
           cache-from: type=gha,scope=lab-docker-fundamentals
           cache-to: type=gha,mode=max,scope=lab-docker-fundamentals
 
-      # 4. Building Images Course Image: labops-lab-docker-build (inherits from lab-docker in ECR)
+      # 4. Building Images Course Image: labops-labs:docker-build (inherits from labops-labs:docker)
       - name: Build & Push Lab Image (lab-docker-build)
         uses: docker/build-push-action@v6
         with:
@@ -289,10 +297,10 @@ jobs:
           file: ./orchestrator/lab-images/Dockerfile.docker-build
           push: true
           build-args: |
-            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/labops-lab-docker:${{ steps.tags.outputs.sha }}
+            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-build:${{ steps.tags.outputs.branch }}
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-build:${{ steps.tags.outputs.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/labops-lab-docker-build:latest
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/vmalani27/labops-labs:docker-build-latest
           cache-from: type=gha,scope=lab-docker-build
           cache-to: type=gha,mode=max,scope=lab-docker-build
