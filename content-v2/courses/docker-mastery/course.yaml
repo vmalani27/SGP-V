@@ -1,12 +1,12 @@
 id: docker-mastery
 title: Docker Mastery
 description: Containers, multi-stage builds, Docker Compose, and production-ready deployments.
-level: intermediate
-prerequisites:
-  - Basic Linux command-line usage (navigate directories, edit files, run commands)
-  - Comfortable with one text editor (Vim, Nano, or VS Code)
-environment:
-  - Docker Engine 27.5.1 on Ubuntu 22.04 (jammy)
+
+spec:
+  host: Ubuntu 22.04 LTS
+  runtime: Docker 27.x
+  scope: Beginners
+
 keyTakeaways:
   - Write production-ready Dockerfiles
   - Optimize container images with multi-stage builds

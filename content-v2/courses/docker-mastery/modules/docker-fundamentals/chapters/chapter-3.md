@@ -36,7 +36,7 @@ docker run \
   alpine sh -c 'echo "$GREETING, $AUDIENCE!"'
 ```
 
-If a variable is not set, the application falls back to a default baked into the image — or fails to start, if the variable is required. Name the container with `--name` (from Chapter 2) so you can inspect it and read its logs afterwards.
+If a variable is not set, the application falls back to a default configured in the image — or fails to start, if the variable is required. Name the container with `--name` (from Chapter 2) so you can inspect it and read its logs afterwards.
 
 Try it — the steps below load each command into the terminal for you. Click **Run this next**, review the command, then press Enter:
 

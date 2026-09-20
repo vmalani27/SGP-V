@@ -9,9 +9,74 @@ tags:
 environment: linux-basic
 
 objectives:
-  - Add a remote repository
-  - Push and pull commits
-  - Understand remote tracking branches
+  - Clone a remote repository
+  - Inspect remote tracking references
+  - Push new commits to origin main
+
+setup:
+  - command: >-
+      curl -s -f -u student:password123 http://git-server:3000/api/v1/repos/student/team-project >/dev/null || {
+        mkdir -p /var/tmp/seed-repo && cd /var/tmp/seed-repo &&
+        git init -b main &&
+        git config user.name "Team Lead" &&
+        git config user.email "lead@example.com" &&
+        echo -e "# Team Project\n\nShared codebase for the engineering team." > README.md &&
+        echo -e "{\n  \"name\": \"team-project\",\n  \"version\": \"1.0.0\"\n}" > package.json &&
+        git add README.md package.json &&
+        git commit -m "feat: initial team project skeleton" &&
+        git push -u http://student:password123@git-server:3000/student/team-project.git main &&
+        cd / && rm -rf /var/tmp/seed-repo ;
+      }
+
+tasks:
+  - id: clone-remote-repo
+    title: Clone the team repository
+    prompt: >-
+      The engineering team has published a starter project at 'http://git-server:3000/student/team-project.git'.
+      Clone this remote repository into your workspace at '~/team-project'.
+    type: terminal_action
+    validation:
+      command: >-
+        test -d /home/student/team-project/.git && git -C /home/student/team-project remote get-url origin 2>/dev/null | grep -q "team-project.git" && echo "CLONED"
+      match_type: exact
+      expected_output: "CLONED"
+    error_message: >-
+      The repository 'team-project' was not found in ~/team-project or does not point to origin 'team-project.git'.
+    hint: >-
+      Use 'git clone' with the full repository URL and specify 'team-project' as the destination folder.
+
+  - id: discover-remote-ref
+    title: Inspect remote tracking branches
+    prompt: >-
+      Navigate to your cloned repository in '~/team-project'. Use Git to inspect the remote-tracking branches recorded during the clone. What is the full reference name of the remote tracking branch corresponding to the upstream 'main' branch?
+    type: multiple_choice
+    options:
+      - remotes/origin/main
+      - upstream/HEAD
+      - origin/local-main
+      - refs/heads/remote-main
+    validation:
+      expected_answer: remotes/origin/main
+    error_message: >-
+      Incorrect reference name. Run 'git branch -a' in ~/team-project to view all local and remote-tracking branch references.
+    hint: >-
+      Run 'git branch -a' or 'git branch -r' inside ~/team-project to list all tracking references.
+
+  - id: push-contributor-commit
+    title: Add your contributor profile and push
+    prompt: >-
+      In '~/team-project', register your participation by creating a file named 'CONTRIBUTORS.md' containing your name.
+      Stage and commit this file with the message "docs: add student to contributors", then publish your commit to 'origin' on the 'main' branch.
+    type: terminal_action
+    validation:
+      command: >-
+        test -f /home/student/team-project/CONTRIBUTORS.md && git -C /home/student/team-project log -1 --pretty=%s | grep -qi "contributors" && test "$(git -C /home/student/team-project rev-parse main)" = "$(git -C /home/student/team-project ls-remote origin refs/heads/main | cut -f1)" && echo "PUSHED"
+      match_type: exact
+      expected_output: "PUSHED"
+    error_message: >-
+      Your commit was not detected on the remote server or CONTRIBUTORS.md is missing. Make sure you commit locally and run 'git push origin main'.
+    hint: >-
+      Create 'CONTRIBUTORS.md', stage it with 'git add', commit with 'git commit -m "docs: add student to contributors"', and transmit your work with 'git push origin main'.
 
 completion:
   required_tasks: all

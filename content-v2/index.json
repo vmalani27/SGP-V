@@ -4,14 +4,12 @@
     {
       "id": "git-fundamentals",
       "title": "Git Fundamentals",
-      "description": "From your first commit to advanced branching strategies and CI/CD integration.",
-      "level": "beginner"
+      "description": "From your first commit to advanced branching strategies and CI/CD integration."
     },
     {
       "id": "docker-mastery",
       "title": "Docker Mastery",
-      "description": "Containers, multi-stage builds, Docker Compose, and production-ready deployments.",
-      "level": "intermediate"
+      "description": "Containers, multi-stage builds, Docker Compose, and production-ready deployments."
     }
   ]
 }

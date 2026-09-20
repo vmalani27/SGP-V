@@ -2,42 +2,47 @@
 
 ## What You're Doing and Why
 
-A remote repository is a copy of the project hosted somewhere accessible to the rest of your team. Pushing your commits to a remote makes your work available to others. Pulling from a remote brings their work into your local repository. Understanding this push-pull cycle is essential for collaborating with anyone.
+A remote repository is a centralized or shared copy of a codebase hosted on a Git server accessible across your engineering team. Pushing local commits to a remote makes your work available to collaborators and CI/CD pipelines, while pulling from a remote synchronizes incoming commits from teammates into your local branches.
 
-## Background
+In this lab, you will interact directly with your team's live Git server (`git-server:3000`), clone a shared project, inspect remote tracking references, and publish your first upstream commit.
 
-Git calls the default remote `origin` by convention, though the name is arbitrary. When you clone a repository, Git automatically sets up `origin` pointing at the URL you cloned from. When you push, you are sending your local commits to the remote. When you pull, you are fetching commits from the remote and merging them into your current branch. Fetch alone downloads the commits without merging, which lets you inspect what changed before integrating it.
+---
+
+## Background & Mental Model
+
+- **Remote (`origin`)**: Git identifies remotes by shortnames. By convention, the primary upstream server you clone from is named `origin`.
+- **Remote Tracking Branches**: When you clone or fetch, Git creates local read-only snapshots of remote branches, named `origin/<branch>` (or `remotes/origin/<branch>`). These references update only when you execute network commands like `git fetch`, `git pull`, or `git push`.
+- **The Publish Workflow**:
+  1. Clone or fetch to ensure your local history is aware of the remote.
+  2. Author commits locally on your branch.
+  3. Push commits to `origin <branch>` to update the remote reference.
+
+---
 
 ## Command Reference
 
-### `git remote add origin <url>`
+### `git clone <url> [directory]`
+Clones the remote repository from `<url>`, sets up the `origin` remote automatically, and checks out the default branch into `[directory]`.
 
-Adds a remote named `origin` pointing at the specified URL.
+### `git remote -v`
+Lists all configured remotes along with their fetch and push target URLs.
 
-### `git push -u origin main`
+### `git branch -a` / `git branch -r`
+Lists branches. `-r` displays remote-tracking branches; `-a` displays both local and remote branches.
 
-Pushes the main branch to origin and sets it as the upstream so future pushes can use `git push` alone.
+### `git push -u origin <branch>`
+Pushes local commits on `<branch>` to the remote named `origin`, and sets up upstream tracking so future pushes on this branch require only `git push`.
 
-### `git pull`
-
-Fetches from the upstream remote and merges into the current branch.
-
-### `git fetch`
-
-Downloads remote changes without merging them.
-
-### `git clone <url>`
-
-Creates a local copy of a remote repository, including all branches and history.
+---
 
 ## Scenario
 
-A remote repository has been prepared for you with some existing commits. Clone it, make a change locally, and push your change back to the remote.
+The engineering team has published a starter project at:
+```
+http://git-server:3000/student/team-project.git
+```
 
-## Objective
-
-Clone the provided repository, create a commit, and push it. Verify that the remote now shows your commit.
-
-## Reflection
-
-When you run `git fetch` and then `git log origin/main`, you are looking at what the remote branch looks like without yet changing your local branch. This is a safe way to see what your colleagues have pushed before you decide to integrate their work.
+Your objective is to:
+1. Clone the repository into your workspace at `~/team-project`.
+2. Inspect the remote branches using shell tools to locate the default upstream tracking reference.
+3. Register your contribution by authoring a file named `CONTRIBUTORS.md`, committing your change, and pushing it to `origin main`.

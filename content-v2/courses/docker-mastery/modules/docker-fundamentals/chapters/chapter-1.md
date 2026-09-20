@@ -27,7 +27,7 @@ Before containers, the solution was virtual machines (VMs). A VM runs an entire 
 | **Isolation** | Hardware-level | Process-level |
 | **Overhead** | Heavy (runs full OS) | Lightweight (shares host OS kernel) |
 
-A VM is like renting an entire apartment — you get your own kitchen, bathroom, everything. A container is like renting a desk in a shared office — you get your own workspace, but you share the building's infrastructure.
+A virtual machine packages a complete guest operating system with hardware virtualization overhead. A container isolates process trees at the Linux kernel level using namespaces and control groups (cgroups), sharing the host kernel for zero virtualization overhead.
 
 Docker uses Linux kernel features (namespaces and cgroups) to create containers that are isolated from each other but share the host operating system's kernel. This is why containers are so much lighter than VMs.
 
@@ -93,16 +93,16 @@ Docker gives you two things:
 1. **A way to build images** — read-only snapshots of your application and its environment
 2. **A way to run containers** — running instances of those images
 
-An **image** is the recipe. A **container** is the meal. You can run the same image to create multiple containers, just like you can follow the same recipe to cook multiple meals.
+An **image** is a read-only template containing immutable filesystem layers. A **container** is an isolated runtime process tree with a copy-on-write (CoW) ephemeral layer mounted on top of the image's union mount filesystem. You can instantiate multiple independent containers from the same underlying image.
 
 ```
-Image (recipe)         Container (meal)
-+-----------+          +-----------+
-| App code  |          | Running   |
-| Runtime   |    -->   | app with  |
-| Libraries |          | writable  |
-| OS files  |          | layer     |
-+-----------+          +-----------+
+Image (read-only layers)   Container (CoW layer + process tree)
++-----------+              +-----------+
+| App code  |              | Running   |
+| Runtime   |     -->      | app with  |
+| Libraries |              | writable  |
+| OS files  |              | CoW layer |
++-----------+              +-----------+
 ```
 
 When you run a container, Docker adds a thin writable layer on top of the read-only image. Any changes the running application makes go into this layer. When you stop the container, this layer is discarded. The image stays unchanged.

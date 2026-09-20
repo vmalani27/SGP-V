@@ -1,8 +1,0 @@
-__pycache__
-*.pyc
-*.pyo
-environment/
-.git
-.gitignore
-.dockerignore
-Dockerfile
