@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Standalone content validation gate.
 
-Runs the exact validator the worker uses (worker/app/validator.py) as a
-plain script so CI can fail the build before content reaches the store.
+Runs the standalone validator (scripts/validator.py) as a
+pre-commit / CI gate before packaging content.
 
 Usage:
     python scripts/validate_content.py <content-dir>
@@ -13,10 +13,10 @@ Exit codes: 0 = valid, 1 = validation errors found, 2 = usage error.
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "worker"))
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
 
-from app.validator import validate_all  # noqa: E402
+from validator import validate_all  # noqa: E402
 
 
 def main() -> int:

@@ -1,6 +1,7 @@
 id: docker-mastery
 title: Docker Mastery
 description: Containers, multi-stage builds, Docker Compose, and production-ready deployments.
+level: beginner
 
 spec:
   host: Ubuntu 22.04 LTS

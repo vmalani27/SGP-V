@@ -25,12 +25,12 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-echo [3/3] Uploading content to Floci S3 (triggers Lambda worker)...
+echo [3/3] Uploading content to S3 bucket...
 aws s3 cp out\published\ s3://my-content-bucket/published/ --recursive
 aws s3 cp out\latest.json s3://my-content-bucket/latest.json
+aws s3 cp out\catalog.json s3://my-content-bucket/catalog.json
 
 echo.
 echo =======================================================
-echo [DONE] Content published! Lambda worker has been fired.
-echo View worker logs: docker logs floci
+echo [DONE] Content and Catalog published directly to S3!
 echo =======================================================
