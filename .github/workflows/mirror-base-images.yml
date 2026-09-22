@@ -1,6 +1,11 @@
 name: mirror-base-images
 
 on:
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/mirror-base-images.yml'
   schedule:
     # Run automatically every Monday at 02:00 UTC to catch upstream security patches/updates
     - cron: '0 2 * * 1'
