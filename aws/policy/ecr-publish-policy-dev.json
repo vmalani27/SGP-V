@@ -25,7 +25,8 @@
         "ecr:InitiateLayerUpload",
         "ecr:UploadLayerPart",
         "ecr:CompleteLayerUpload",
-        "ecr:PutImage"
+        "ecr:PutImage",
+        "ecr:CreateRepository"
       ],
       "Resource": [
         "arn:aws:ecr:*:586177432842:repository/*"
@@ -41,7 +42,8 @@
         "ecr-public:InitiateLayerUpload",
         "ecr-public:UploadLayerPart",
         "ecr-public:CompleteLayerUpload",
-        "ecr-public:PutImage"
+        "ecr-public:PutImage",
+        "ecr-public:CreateRepository"
       ],
       "Resource": [
         "arn:aws:ecr-public::586177432842:repository/*"
