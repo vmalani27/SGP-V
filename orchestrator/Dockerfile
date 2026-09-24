@@ -3,7 +3,7 @@
 ###############################################################################
 # builder - compile wheels and install dependencies
 ###############################################################################
-FROM python:3.12-alpine AS builder
+FROM public.ecr.aws/i9t1l0m7/vmalani27/labops-base:python-3.12-alpine AS builder
 
 WORKDIR /build
 
@@ -20,7 +20,7 @@ RUN python -m venv /opt/venv && \
 ###############################################################################
 # base - runtime dependencies and user setup
 ###############################################################################
-FROM python:3.12-alpine AS base
+FROM public.ecr.aws/i9t1l0m7/vmalani27/labops-base:python-3.12-alpine AS base
 
 WORKDIR /app
 

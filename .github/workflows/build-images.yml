@@ -64,7 +64,7 @@ jobs:
 
   # ── ORCHESTRATOR SERVICE ────────────────────────────────────────
   build-orchestrator:
-    name: Build & Push Orchestrator (Kaniko Native)
+    name: Build & Push Orchestrator (Kaniko)
     needs: changes
     if: needs.changes.outputs.orchestrator == 'true'
     runs-on: [self-hosted, aws, fargate, ap-south-1]
@@ -90,19 +90,17 @@ jobs:
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      - name: Build & Push Orchestrator with Kaniko
+      - name: Build & Push Orchestrator Image with Kaniko
         run: |
-          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
-          SHA="${{ steps.tags.outputs.sha }}"
-          /kaniko/executor \
+          sudo /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator" \
             --dockerfile "${GITHUB_WORKSPACE}/orchestrator/Dockerfile" \
-            --destination "${REGISTRY}/vmalani27/labops-orchestrator:${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-orchestrator:latest"
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:latest"
 
   # ── FRONTEND SERVICE ────────────────────────────────────────────
   build-frontend:
-    name: Build & Push Frontend (Kaniko Native)
+    name: Build & Push Frontend (Kaniko)
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: [self-hosted, aws, fargate, ap-south-1]
@@ -139,19 +137,17 @@ jobs:
           CONTENT_PUBLIC_BASE_URL=${{ vars.CONTENT_PUBLIC_BASE_URL || secrets.CONTENT_PUBLIC_BASE_URL || '' }}
           EOF
 
-      - name: Build & Push Frontend with Kaniko
+      - name: Build & Push Frontend Image with Kaniko
         run: |
-          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
-          SHA="${{ steps.tags.outputs.sha }}"
-          /kaniko/executor \
+          sudo /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/next-app" \
             --dockerfile "${GITHUB_WORKSPACE}/next-app/Dockerfile" \
-            --destination "${REGISTRY}/vmalani27/labops-frontend:${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-frontend:latest"
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:latest"
 
   # ── CONTENT-SYNC SIDECAR SERVICE ────────────────────────────────
   build-content-sync:
-    name: Build & Push Content-Sync Sidecar (Kaniko Native)
+    name: Build & Push Content-Sync Sidecar (Kaniko)
     needs: changes
     if: needs.changes.outputs.content_sync == 'true'
     runs-on: [self-hosted, aws, fargate, ap-south-1]
@@ -177,19 +173,17 @@ jobs:
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      - name: Build & Push Content-Sync with Kaniko
+      - name: Build & Push Content-Sync Image with Kaniko
         run: |
-          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
-          SHA="${{ steps.tags.outputs.sha }}"
-          /kaniko/executor \
+          sudo /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/sidecars/content-sync" \
             --dockerfile "${GITHUB_WORKSPACE}/sidecars/content-sync/Dockerfile" \
-            --destination "${REGISTRY}/vmalani27/labops-content-sync:${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-content-sync:latest"
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:latest"
 
   # ── LAB RUNTIME IMAGES ──────────────────────────────────────────
   build-lab-images:
-    name: Build & Push Lab Runtime Images (Kaniko Native)
+    name: Build & Push Lab Runtime Images (Kaniko)
     needs: changes
     if: needs.changes.outputs.lab_images == 'true'
     runs-on: [self-hosted, aws, fargate, ap-south-1]
@@ -212,52 +206,50 @@ jobs:
       - name: Determine Tags
         id: tags
         run: |
+          BRANCH="${GITHUB_REF_NAME}"
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       # 1. Base Image: labops-base
-      - name: Build & Push Lab Base Image with Kaniko
+      - name: Build & Push Lab Base Image (lab-ubuntu) with Kaniko
         run: |
-          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
-          SHA="${{ steps.tags.outputs.sha }}"
-          /kaniko/executor \
+          sudo /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator/lab-images" \
             --dockerfile "${GITHUB_WORKSPACE}/orchestrator/lab-images/Dockerfile.ubuntu" \
-            --destination "${REGISTRY}/vmalani27/labops-base:${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-base:latest"
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.branch }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:latest"
 
       # 2. DinD Image: labops-labs:docker
       - name: Build & Push Lab Image (lab-docker) with Kaniko
         run: |
-          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
-          SHA="${{ steps.tags.outputs.sha }}"
-          /kaniko/executor \
+          sudo /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator/lab-images" \
             --dockerfile "${GITHUB_WORKSPACE}/orchestrator/lab-images/Dockerfile.docker" \
-            --build-arg BASE_IMAGE="${REGISTRY}/vmalani27/labops-base:${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-labs:docker-${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-labs:docker-latest"
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.branch }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-latest"
 
       # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals
       - name: Build & Push Lab Image (lab-docker-fundamentals) with Kaniko
         run: |
-          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
-          SHA="${{ steps.tags.outputs.sha }}"
-          /kaniko/executor \
+          sudo /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator/lab-images" \
             --dockerfile "${GITHUB_WORKSPACE}/orchestrator/lab-images/Dockerfile.docker-fundamentals" \
-            --build-arg BASE_IMAGE="${REGISTRY}/vmalani27/labops-base:${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-labs:docker-fundamentals-${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-labs:docker-fundamentals-latest"
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-latest"
 
       # 4. Building Images Course Image: labops-labs:docker-build
       - name: Build & Push Lab Image (lab-docker-build) with Kaniko
         run: |
-          REGISTRY="${{ env.ECR_PUBLIC_REGISTRY }}"
-          SHA="${{ steps.tags.outputs.sha }}"
-          /kaniko/executor \
+          sudo /kaniko/executor \
             --context "${GITHUB_WORKSPACE}/orchestrator/lab-images" \
             --dockerfile "${GITHUB_WORKSPACE}/orchestrator/lab-images/Dockerfile.docker-build" \
-            --build-arg BASE_IMAGE="${REGISTRY}/vmalani27/labops-labs:docker-${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-labs:docker-build-${SHA}" \
-            --destination "${REGISTRY}/vmalani27/labops-labs:docker-build-latest"
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}" \
+            --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-latest"

@@ -1,7 +1,7 @@
 ###############################################################################
 # deps - install locked dependencies
 ###############################################################################
-FROM node:20-alpine AS deps
+FROM public.ecr.aws/i9t1l0m7/vmalani27/labops-base:node-20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
@@ -30,7 +30,7 @@ RUN npm run build
 ###############################################################################
 # runtime - secure non-root production runner
 ###############################################################################
-FROM node:20-alpine AS runtime
+FROM public.ecr.aws/i9t1l0m7/vmalani27/labops-base:node-20-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
