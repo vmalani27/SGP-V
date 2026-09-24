@@ -89,25 +89,44 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Log to DynamoDB and Send Telegram Alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           TAG="${{ matrix.image.tag }}"
-          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
-          HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:$TAG" 2>/dev/null || echo "unknown")
+          CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+          HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+          CRIT_VAL=$(echo "${CRITICAL_COUNT:-0}" | tr -dc '0-9')
+          [ -z "$CRIT_VAL" ] && CRIT_VAL="0"
+          HIGH_VAL=$(echo "${HIGH_COUNT:-0}" | tr -dc '0-9')
+          [ -z "$HIGH_VAL" ] && HIGH_VAL="0"
+
+          DIGEST=$(jq -r '.Metadata.RepoDigests[0] // empty' trivy-results.json 2>/dev/null || true)
+          if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
+            DIGEST=$(docker inspect --format='{{range .RepoDigests}}{{.}}{{end}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:$TAG" 2>/dev/null || true)
+          fi
+          DIGEST=$(echo "$DIGEST" | tr -d '\r\n"' | xargs)
+          [ -z "$DIGEST" ] && DIGEST="unknown"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          CRIT_VAL="${CRITICAL_COUNT:-0}"
-          HIGH_VAL="${HIGH_COUNT:-0}"
+
+          jq -n \
+            --arg tag "$TAG" \
+            --arg ts "$TIMESTAMP" \
+            --arg dig "$DIGEST" \
+            --arg crit "$CRIT_VAL" \
+            --arg high "$HIGH_VAL" \
+            '{
+              image_tag: {S: $tag},
+              timestamp: {S: $ts},
+              digest: {S: $dig},
+              critical_vulnerabilities: {N: $crit},
+              high_vulnerabilities: {N: $high}
+            }' > item.json
 
           # Push audit record to DynamoDB (composite key: image_tag + timestamp)
           aws dynamodb put-item \
             --table-name ${{ env.DYNAMODB_TABLE }} \
-            --item '{
-              "image_tag": {"S": "'"$TAG"'"},
-              "timestamp": {"S": "'"$TIMESTAMP"'"},
-              "digest": {"S": "'"$DIGEST"'"},
-              "critical_vulnerabilities": {"N": "'"$CRIT_VAL"'"},
-              "high_vulnerabilities": {"N": "'"$HIGH_VAL"'"}
-            }' \
+            --item file://item.json \
             --region ${{ env.DYNAMODB_REGION }}
 
           # Send Telegram Notification if configured
@@ -173,24 +192,43 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Log to DynamoDB and Send Telegram Alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           TAG="${{ github.event.inputs.target_tag }}"
-          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
-          HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:$TAG" 2>/dev/null || echo "unknown")
+          CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+          HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+          CRIT_VAL=$(echo "${CRITICAL_COUNT:-0}" | tr -dc '0-9')
+          [ -z "$CRIT_VAL" ] && CRIT_VAL="0"
+          HIGH_VAL=$(echo "${HIGH_COUNT:-0}" | tr -dc '0-9')
+          [ -z "$HIGH_VAL" ] && HIGH_VAL="0"
+
+          DIGEST=$(jq -r '.Metadata.RepoDigests[0] // empty' trivy-results.json 2>/dev/null || true)
+          if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
+            DIGEST=$(docker inspect --format='{{range .RepoDigests}}{{.}}{{end}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:$TAG" 2>/dev/null || true)
+          fi
+          DIGEST=$(echo "$DIGEST" | tr -d '\r\n"' | xargs)
+          [ -z "$DIGEST" ] && DIGEST="unknown"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          CRIT_VAL="${CRITICAL_COUNT:-0}"
-          HIGH_VAL="${HIGH_COUNT:-0}"
+
+          jq -n \
+            --arg tag "$TAG" \
+            --arg ts "$TIMESTAMP" \
+            --arg dig "$DIGEST" \
+            --arg crit "$CRIT_VAL" \
+            --arg high "$HIGH_VAL" \
+            '{
+              image_tag: {S: $tag},
+              timestamp: {S: $ts},
+              digest: {S: $dig},
+              critical_vulnerabilities: {N: $crit},
+              high_vulnerabilities: {N: $high}
+            }' > item.json
 
           aws dynamodb put-item \
             --table-name ${{ env.DYNAMODB_TABLE }} \
-            --item '{
-              "image_tag": {"S": "'"$TAG"'"},
-              "timestamp": {"S": "'"$TIMESTAMP"'"},
-              "digest": {"S": "'"$DIGEST"'"},
-              "critical_vulnerabilities": {"N": "'"$CRIT_VAL"'"},
-              "high_vulnerabilities": {"N": "'"$HIGH_VAL"'"}
-            }' \
+            --item file://item.json \
             --region ${{ env.DYNAMODB_REGION }}
 
           if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then

@@ -42,10 +42,10 @@ jobs:
     name: Detect Changed Components
     runs-on: ubuntu-latest
     outputs:
-      orchestrator: ${{ steps.filter.outputs.orchestrator == 'true' || github.event.inputs.force_build_all == 'true' }}
-      frontend: ${{ steps.filter.outputs.frontend == 'true' || github.event.inputs.force_build_all == 'true' }}
-      content_sync: ${{ steps.filter.outputs.content_sync == 'true' || github.event.inputs.force_build_all == 'true' }}
-      lab_images: ${{ steps.filter.outputs.lab_images == 'true' || github.event.inputs.force_build_all == 'true' }}
+      orchestrator: ${{ steps.filter.outputs.orchestrator == 'true' || steps.filter.outputs.workflow == 'true' || github.event.inputs.force_build_all == 'true' }}
+      frontend: ${{ steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflow == 'true' || github.event.inputs.force_build_all == 'true' }}
+      content_sync: ${{ steps.filter.outputs.content_sync == 'true' || steps.filter.outputs.workflow == 'true' || github.event.inputs.force_build_all == 'true' }}
+      lab_images: ${{ steps.filter.outputs.lab_images == 'true' || steps.filter.outputs.workflow == 'true' || github.event.inputs.force_build_all == 'true' }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -55,6 +55,8 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
+            workflow:
+              - '.github/workflows/build-images.yml'
             orchestrator:
               - 'orchestrator/app/**'
               - 'orchestrator/Dockerfile'
@@ -279,6 +281,9 @@ jobs:
     if: always() && !cancelled() && (needs.build-orchestrator.result == 'success' || needs.build-frontend.result == 'success' || needs.build-content-sync.result == 'success' || needs.build-lab-images.result == 'success')
     runs-on: ubuntu-latest
     environment: dev
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -296,6 +301,9 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Scan Images, Record to DynamoDB & Send Telegram Alerts
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -304,9 +312,14 @@ jobs:
           [ "${{ needs.changes.outputs.orchestrator }}" == "true" ] && [ "${{ needs.build-orchestrator.result }}" == "success" ] && IMAGES+=("vmalani27/labops-orchestrator:${SHA}")
           [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ] && IMAGES+=("vmalani27/labops-frontend:${SHA}")
           [ "${{ needs.changes.outputs.content_sync }}" == "true" ] && [ "${{ needs.build-content-sync.result }}" == "success" ] && IMAGES+=("vmalani27/labops-content-sync:${SHA}")
-          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("vmalani27/labops-base:${SHA}" "vmalani27/labops-labs:docker-${SHA}")
+          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("vmalani27/labops-base:${SHA}" "vmalani27/labops-labs:docker-${SHA}" "vmalani27/labops-labs:docker-fundamentals-${SHA}" "vmalani27/labops-labs:docker-build-${SHA}")
 
           echo "==> Built images to audit: ${IMAGES[@]}"
+
+          if [ ${#IMAGES[@]} -eq 0 ]; then
+            echo "[-] No images marked for audit. Exiting cleanly."
+            exit 0
+          fi
 
           for IMAGE in "${IMAGES[@]}"; do
             FULL_REF="${{ env.ECR_PUBLIC_REGISTRY }}/${IMAGE}"
@@ -317,26 +330,45 @@ jobs:
 
             trivy image --severity CRITICAL,HIGH --format json -o trivy-results.json "${FULL_REF}" || true
 
-            CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
-            HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
-            CRIT_VAL="${CRITICAL_COUNT:-0}"
-            HIGH_VAL="${HIGH_COUNT:-0}"
-            DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${FULL_REF}" 2>/dev/null || echo "unknown")
+            CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+            HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+            CRIT_VAL=$(echo "${CRITICAL_COUNT:-0}" | tr -dc '0-9')
+            [ -z "$CRIT_VAL" ] && CRIT_VAL="0"
+            HIGH_VAL=$(echo "${HIGH_COUNT:-0}" | tr -dc '0-9')
+            [ -z "$HIGH_VAL" ] && HIGH_VAL="0"
+
+            DIGEST=$(jq -r '.Metadata.RepoDigests[0] // empty' trivy-results.json 2>/dev/null || true)
+            if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
+              DIGEST=$(docker inspect --format='{{range .RepoDigests}}{{.}}{{end}}' "${FULL_REF}" 2>/dev/null || true)
+            fi
+            if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
+              DIGEST=$(docker manifest inspect "${FULL_REF}" 2>/dev/null | jq -r '.manifests[0].digest // .config.digest // empty' 2>/dev/null || true)
+            fi
+            DIGEST=$(echo "$DIGEST" | tr -d '\r\n"' | xargs)
+            [ -z "$DIGEST" ] && DIGEST="unknown"
 
             echo "  - Critical Vulnerabilities : ${CRIT_VAL}"
             echo "  - High Vulnerabilities     : ${HIGH_VAL}"
             echo "  - Image Digest             : ${DIGEST}"
 
-            # Log to DynamoDB
+            # Log to DynamoDB using a clean jq-generated JSON payload
+            jq -n \
+              --arg tag "${IMAGE}" \
+              --arg ts "${TIMESTAMP}" \
+              --arg dig "${DIGEST}" \
+              --arg crit "${CRIT_VAL}" \
+              --arg high "${HIGH_VAL}" \
+              '{
+                image_tag: {S: $tag},
+                timestamp: {S: $ts},
+                digest: {S: $dig},
+                critical_vulnerabilities: {N: $crit},
+                high_vulnerabilities: {N: $high}
+              }' > item.json
+
             aws dynamodb put-item \
               --table-name ${{ env.DYNAMODB_TABLE }} \
-              --item '{
-                "image_tag": {"S": "'"${IMAGE}"'"},
-                "timestamp": {"S": "'"${TIMESTAMP}"'"},
-                "digest": {"S": "'"${DIGEST}"'"},
-                "critical_vulnerabilities": {"N": "'"${CRIT_VAL}"'"},
-                "high_vulnerabilities": {"N": "'"${HIGH_VAL}"'"}
-              }' \
+              --item file://item.json \
               --region ${{ env.DYNAMODB_REGION }}
 
             echo "  [✔] Audit recorded in DynamoDB table: ${{ env.DYNAMODB_TABLE }}"
