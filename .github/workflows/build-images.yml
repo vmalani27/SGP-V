@@ -31,6 +31,10 @@ env:
   AWS_REGION: us-east-1
   AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
   ECR_PUBLIC_REGISTRY: public.ecr.aws/i9t1l0m7
+  DYNAMODB_REGION: ap-south-1
+  DYNAMODB_TABLE: labops-image-audit
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
 jobs:
   # ── DETECT CHANGES ──────────────────────────────────────────────
@@ -253,3 +257,85 @@ jobs:
             --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}" \
             --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}" \
             --destination "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-latest"
+
+  # ── AUDIT & NOTIFY ──────────────────────────────────────────────
+  audit-and-notify:
+    name: Audit Images (Trivy, DynamoDB & Telegram)
+    needs: [changes, build-orchestrator, build-frontend, build-content-sync, build-lab-images]
+    if: always() && !cancelled() && (needs.build-orchestrator.result == 'success' || needs.build-frontend.result == 'success' || needs.build-content-sync.result == 'success' || needs.build-lab-images.result == 'success')
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Scan Images, Record to DynamoDB & Send Telegram Alerts
+        run: |
+          SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          IMAGES=()
+          [ "${{ needs.changes.outputs.orchestrator }}" == "true" ] && [ "${{ needs.build-orchestrator.result }}" == "success" ] && IMAGES+=("vmalani27/labops-orchestrator:${SHA}")
+          [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ] && IMAGES+=("vmalani27/labops-frontend:${SHA}")
+          [ "${{ needs.changes.outputs.content_sync }}" == "true" ] && [ "${{ needs.build-content-sync.result }}" == "success" ] && IMAGES+=("vmalani27/labops-content-sync:${SHA}")
+          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("vmalani27/labops-base:${SHA}" "vmalani27/labops-labs:docker-${SHA}")
+
+          echo "==> Built images to audit: ${IMAGES[@]}"
+
+          for IMAGE in "${IMAGES[@]}"; do
+            FULL_REF="${{ env.ECR_PUBLIC_REGISTRY }}/${IMAGE}"
+            echo ""
+            echo "=========================================================="
+            echo "==> Scanning with Trivy: ${FULL_REF}"
+            echo "=========================================================="
+
+            trivy image --severity CRITICAL,HIGH --format json -o trivy-results.json "${FULL_REF}" || true
+
+            CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+            HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+            CRIT_VAL="${CRITICAL_COUNT:-0}"
+            HIGH_VAL="${HIGH_COUNT:-0}"
+            DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${FULL_REF}" 2>/dev/null || echo "unknown")
+
+            echo "  - Critical Vulnerabilities : ${CRIT_VAL}"
+            echo "  - High Vulnerabilities     : ${HIGH_VAL}"
+            echo "  - Image Digest             : ${DIGEST}"
+
+            # Log to DynamoDB
+            aws dynamodb put-item \
+              --table-name ${{ env.DYNAMODB_TABLE }} \
+              --item '{
+                "image_tag": {"S": "'"${IMAGE}"'"},
+                "timestamp": {"S": "'"${TIMESTAMP}"'"},
+                "digest": {"S": "'"${DIGEST}"'"},
+                "critical_vulnerabilities": {"N": "'"${CRIT_VAL}"'"},
+                "high_vulnerabilities": {"N": "'"${HIGH_VAL}"'"}
+              }' \
+              --region ${{ env.DYNAMODB_REGION }}
+
+            echo "  [✔] Audit recorded in DynamoDB table: ${{ env.DYNAMODB_TABLE }}"
+
+            # Send Telegram Alert if configured
+            if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
+              MESSAGE="🚨 *LabOps Service Built & Audited*%0A%0A📦 *Image:* \`${IMAGE}\`%0A🔴 *Critical:* ${CRIT_VAL}%0A🟠 *High:* ${HIGH_VAL}%0A🕒 *Time:* ${TIMESTAMP}"
+              RESP=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                -d "chat_id=${TELEGRAM_CHAT_ID}" \
+                -d "text=${MESSAGE}" \
+                -d "parse_mode=Markdown")
+              echo "  [✔] Telegram API Response: ${RESP}"
+            else
+              echo "  [-] Skipping Telegram notification: TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID secrets not configured in repository."
+            fi
+          done

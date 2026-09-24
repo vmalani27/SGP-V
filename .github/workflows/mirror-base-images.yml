@@ -40,6 +40,7 @@ jobs:
     name: Mirror ${{ matrix.image.tag }}
     if: "${{ github.event.inputs.specific_image == '' }}"
     runs-on: ubuntu-latest
+    environment: dev
     strategy:
       fail-fast: false
       matrix:
@@ -111,11 +112,14 @@ jobs:
 
           # Send Telegram Notification if configured
           if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
-            MESSAGE="LabOps Mirror Synced%0A%0ATag: \`$TAG\`%0ACritical Vulns: $CRIT_VAL%0AHigh Vulns: $HIGH_VAL%0ATimestamp: $TIMESTAMP"
-            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            MESSAGE="*LabOps Mirror Synced*%0A%0A*Tag:* \`$TAG\`%0A*Critical Vulns:* $CRIT_VAL%0A*High Vulns:* $HIGH_VAL%0A*Timestamp:* $TIMESTAMP"
+            RESP=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
               -d "chat_id=${TELEGRAM_CHAT_ID}" \
               -d "text=${MESSAGE}" \
-              -d "parse_mode=Markdown" || true
+              -d "parse_mode=Markdown")
+            echo "  [✔] Telegram API Response: ${RESP}"
+          else
+            echo "  [-] Skipping Telegram alert: TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID secrets not configured in repository."
           fi
 
   # ── 2. SINGLE ON-DEMAND MIRROR JOB ─────────────────────────────────
@@ -123,6 +127,7 @@ jobs:
     name: Mirror Single Image (${{ github.event.inputs.specific_image }})
     if: "${{ github.event.inputs.specific_image != '' }}"
     runs-on: ubuntu-latest
+    environment: dev
     steps:
       - name: Validate Inputs
         run: |
@@ -189,9 +194,12 @@ jobs:
             --region ${{ env.DYNAMODB_REGION }}
 
           if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
-            MESSAGE="LabOps Single Mirror Synced%0A%0ATag: \`$TAG\`%0ACritical Vulns: $CRIT_VAL%0AHigh Vulns: $HIGH_VAL%0ATimestamp: $TIMESTAMP"
-            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            MESSAGE="*LabOps Single Mirror Synced*%0A%0A*Tag:* \`$TAG\`%0A*Critical Vulns:* $CRIT_VAL%0A*High Vulns:* $HIGH_VAL%0A*Timestamp:* $TIMESTAMP"
+            RESP=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
               -d "chat_id=${TELEGRAM_CHAT_ID}" \
               -d "text=${MESSAGE}" \
-              -d "parse_mode=Markdown" || true
+              -d "parse_mode=Markdown")
+            echo "  [✔] Telegram API Response: ${RESP}"
+          else
+            echo "  [-] Skipping Telegram alert: TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID secrets not configured in repository."
           fi
