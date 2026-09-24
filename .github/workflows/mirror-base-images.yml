@@ -29,6 +29,10 @@ env:
   AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
   ECR_PUBLIC_REGISTRY: public.ecr.aws/i9t1l0m7
   TARGET_REPO: vmalani27/labops-base
+  DYNAMODB_REGION: ap-south-1
+  DYNAMODB_TABLE: labops-image-audit
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
 jobs:
   # ── 1. MATRIX MIRROR JOB ───────────────────────────────────────────
@@ -40,11 +44,11 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { source: "ubuntu:22.04",       tag: "ubuntu-22.04"        }
-          - { source: "python:3.12-alpine",  tag: "python-3.12-alpine"  }
-          - { source: "node:20-alpine",      tag: "node-20-alpine"      }
-          - { source: "golang:1.23-alpine",  tag: "golang-1.23-alpine"  }
-          - { source: "alpine:3.20",         tag: "alpine-3.20"         }
+          - { source: "ubuntu:22.04",       tag: "ubuntu-22.04"         }
+          - { source: "python:3.12-alpine",  tag: "python-3.12-alpine"   }
+          - { source: "node:20-alpine",      tag: "node-20-alpine"       }
+          - { source: "golang:1.23-alpine",  tag: "golang-1.23-alpine"   }
+          - { source: "alpine:3.20",         tag: "alpine-3.20"          }
 
     steps:
       - name: Configure AWS credentials
@@ -74,6 +78,45 @@ jobs:
 
           echo "==> Mirror Complete! Verification Digest:"
           docker inspect --format='{{index .RepoDigests 0}}' "${DEST}" || true
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ matrix.image.tag }}'
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Log to DynamoDB and Send Telegram Alert
+        run: |
+          TAG="${{ matrix.image.tag }}"
+          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+          HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:$TAG" 2>/dev/null || echo "unknown")
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CRIT_VAL="${CRITICAL_COUNT:-0}"
+          HIGH_VAL="${HIGH_COUNT:-0}"
+
+          # Push audit record to DynamoDB (composite key: image_tag + timestamp)
+          aws dynamodb put-item \
+            --table-name ${{ env.DYNAMODB_TABLE }} \
+            --item '{
+              "image_tag": {"S": "'"$TAG"'"},
+              "timestamp": {"S": "'"$TIMESTAMP"'"},
+              "digest": {"S": "'"$DIGEST"'"},
+              "critical_vulnerabilities": {"N": "'"$CRIT_VAL"'"},
+              "high_vulnerabilities": {"N": "'"$HIGH_VAL"'"}
+            }' \
+            --region ${{ env.DYNAMODB_REGION }}
+
+          # Send Telegram Notification if configured
+          if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
+            MESSAGE="LabOps Mirror Synced%0A%0ATag: \`$TAG\`%0ACritical Vulns: $CRIT_VAL%0AHigh Vulns: $HIGH_VAL%0ATimestamp: $TIMESTAMP"
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}" \
+              -d "text=${MESSAGE}" \
+              -d "parse_mode=Markdown" || true
+          fi
 
   # ── 2. SINGLE ON-DEMAND MIRROR JOB ─────────────────────────────────
   mirror-single:
@@ -115,3 +158,40 @@ jobs:
 
           echo "==> Mirror Complete! Verification Digest:"
           docker inspect --format='{{index .RepoDigests 0}}' "${DEST}" || true
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ github.event.inputs.target_tag }}'
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Log to DynamoDB and Send Telegram Alert
+        run: |
+          TAG="${{ github.event.inputs.target_tag }}"
+          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+          HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:$TAG" 2>/dev/null || echo "unknown")
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CRIT_VAL="${CRITICAL_COUNT:-0}"
+          HIGH_VAL="${HIGH_COUNT:-0}"
+
+          aws dynamodb put-item \
+            --table-name ${{ env.DYNAMODB_TABLE }} \
+            --item '{
+              "image_tag": {"S": "'"$TAG"'"},
+              "timestamp": {"S": "'"$TIMESTAMP"'"},
+              "digest": {"S": "'"$DIGEST"'"},
+              "critical_vulnerabilities": {"N": "'"$CRIT_VAL"'"},
+              "high_vulnerabilities": {"N": "'"$HIGH_VAL"'"}
+            }' \
+            --region ${{ env.DYNAMODB_REGION }}
+
+          if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
+            MESSAGE="LabOps Single Mirror Synced%0A%0ATag: \`$TAG\`%0ACritical Vulns: $CRIT_VAL%0AHigh Vulns: $HIGH_VAL%0ATimestamp: $TIMESTAMP"
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}" \
+              -d "text=${MESSAGE}" \
+              -d "parse_mode=Markdown" || true
+          fi
