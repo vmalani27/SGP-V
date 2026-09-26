@@ -103,11 +103,9 @@ jobs:
           docker build \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:latest" \
             -f ./orchestrator/Dockerfile ./orchestrator
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.sha }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:latest"
 
   # ── FRONTEND SERVICE ────────────────────────────────────────────
   build-frontend:
@@ -155,11 +153,9 @@ jobs:
           docker build \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:latest" \
             -f ./next-app/Dockerfile ./next-app
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.sha }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:latest"
 
   # ── CONTENT-SYNC SIDECAR SERVICE ────────────────────────────────
   build-content-sync:
@@ -197,11 +193,9 @@ jobs:
           docker build \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:latest" \
             -f ./sidecars/content-sync/Dockerfile ./sidecars/content-sync
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.sha }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:latest"
 
   # ── LAB RUNTIME IMAGES ──────────────────────────────────────────
   build-lab-images:
@@ -240,11 +234,9 @@ jobs:
           docker build \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:latest" \
             -f ./orchestrator/lab-images/Dockerfile.ubuntu ./orchestrator/lab-images
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:latest"
 
       # 2. DinD Image: labops-labs:docker
       - name: Build & Push Lab Image (lab-docker)
@@ -253,11 +245,9 @@ jobs:
             --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-latest" \
             -f ./orchestrator/lab-images/Dockerfile.docker ./orchestrator/lab-images
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-latest"
 
       # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals
       - name: Build & Push Lab Image (lab-docker-fundamentals)
@@ -266,11 +256,9 @@ jobs:
             --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-latest" \
             -f ./orchestrator/lab-images/Dockerfile.docker-fundamentals ./orchestrator/lab-images
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-latest"
 
       # 4. Building Images Course Image: labops-labs:docker-build
       - name: Build & Push Lab Image (lab-docker-build)
@@ -279,11 +267,9 @@ jobs:
             --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-latest" \
             -f ./orchestrator/lab-images/Dockerfile.docker-build ./orchestrator/lab-images
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-latest"
 
   # ── AUDIT & NOTIFY ──────────────────────────────────────────────
   audit-and-notify:
@@ -338,6 +324,17 @@ jobs:
             trivy image --severity CRITICAL,HIGH --format json -o trivy-results.json "${FULL_REF}" || true
             trivy image --severity CRITICAL,HIGH --format sarif -o "sarif-results/${SAFE_NAME}.sarif" "${FULL_REF}" || true
 
+            # Inject unique analysis category into SARIF automationDetails so GitHub Code Scanning distinguishes runs
+            if [ -f "sarif-results/${SAFE_NAME}.sarif" ] && [ -s "sarif-results/${SAFE_NAME}.sarif" ]; then
+              jq --arg cat "${IMAGE}" '
+                if (.runs | length) > 1 then
+                  .runs = [ range(0; .runs | length) as $i | .runs[$i] | .automationDetails = {"id": "\($cat)/\($i)"} ]
+                else
+                  .runs = [ .runs[]? | .automationDetails = {"id": $cat} ]
+                end
+              ' "sarif-results/${SAFE_NAME}.sarif" > "sarif-results/${SAFE_NAME}.sarif.tmp" && mv "sarif-results/${SAFE_NAME}.sarif.tmp" "sarif-results/${SAFE_NAME}.sarif"
+            fi
+
             CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
             HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
             CRIT_VAL=$(echo "${CRITICAL_COUNT:-0}" | tr -dc '0-9')
@@ -383,7 +380,7 @@ jobs:
           done
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('sarif-results/*.sarif') != ''
         with:
           sarif_file: 'sarif-results'
