@@ -22,19 +22,18 @@ on:
 permissions:
   contents: read
   id-token: write
+  security-events: write
 
 concurrency:
   group: build-images-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  AWS_REGION: us-east-1
+  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION || 'us-east-1' }}
   AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
-  ECR_PUBLIC_REGISTRY: public.ecr.aws/i9t1l0m7
-  DYNAMODB_REGION: ap-south-1
-  DYNAMODB_TABLE: labops-image-audit
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY || 'public.ecr.aws/i9t1l0m7' }}
+  DYNAMODB_REGION: ${{ vars.DYNAMODB_REGION || 'ap-south-1' }}
+  DYNAMODB_TABLE: ${{ vars.DYNAMODB_TABLE || 'labops-image-audit' }}
 
 jobs:
   # ── DETECT CHANGES ──────────────────────────────────────────────
@@ -83,7 +82,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
 
       - name: Log in to Amazon ECR Public
         id: login-ecr
@@ -94,15 +93,19 @@ jobs:
       - name: Determine Tags
         id: tags
         run: |
+          BRANCH="${GITHUB_REF_NAME}"
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - name: Build & Push Orchestrator Image
         run: |
           docker build \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.sha }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:latest" \
             -f ./orchestrator/Dockerfile ./orchestrator
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.sha }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:latest"
 
@@ -121,7 +124,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
 
       - name: Log in to Amazon ECR Public
         id: login-ecr
@@ -132,7 +135,9 @@ jobs:
       - name: Determine Tags
         id: tags
         run: |
+          BRANCH="${GITHUB_REF_NAME}"
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - name: Materialize .env.production
@@ -148,9 +153,11 @@ jobs:
       - name: Build & Push Frontend Image
         run: |
           docker build \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.sha }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:latest" \
             -f ./next-app/Dockerfile ./next-app
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.sha }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:latest"
 
@@ -169,7 +176,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
 
       - name: Log in to Amazon ECR Public
         id: login-ecr
@@ -180,15 +187,19 @@ jobs:
       - name: Determine Tags
         id: tags
         run: |
+          BRANCH="${GITHUB_REF_NAME}"
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - name: Build & Push Content-Sync Image
         run: |
           docker build \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.sha }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:latest" \
             -f ./sidecars/content-sync/Dockerfile ./sidecars/content-sync
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.sha }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:latest"
 
@@ -207,7 +218,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
 
       - name: Log in to Amazon ECR Public
         id: login-ecr
@@ -276,20 +287,17 @@ jobs:
 
   # ── AUDIT & NOTIFY ──────────────────────────────────────────────
   audit-and-notify:
-    name: Audit Images (Trivy, DynamoDB & Telegram)
+    name: Audit Images (Trivy, DynamoDB & Security Tab)
     needs: [changes, build-orchestrator, build-frontend, build-content-sync, build-lab-images]
     if: always() && !cancelled() && (needs.build-orchestrator.result == 'success' || needs.build-frontend.result == 'success' || needs.build-content-sync.result == 'success' || needs.build-lab-images.result == 'success')
     runs-on: ubuntu-latest
     environment: dev
-    env:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
 
       - name: Log in to Amazon ECR Public
         uses: aws-actions/amazon-ecr-login@v2
@@ -300,11 +308,9 @@ jobs:
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Scan Images, Record to DynamoDB & Send Telegram Alerts
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Scan Images & Record to DynamoDB
         run: |
+          mkdir -p sarif-results
           SHA="sha-$(echo ${GITHUB_SHA} | cut -c1-7)"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -323,12 +329,14 @@ jobs:
 
           for IMAGE in "${IMAGES[@]}"; do
             FULL_REF="${{ env.ECR_PUBLIC_REGISTRY }}/${IMAGE}"
+            SAFE_NAME=$(echo "${IMAGE}" | tr '/:' '--')
             echo ""
             echo "=========================================================="
             echo "==> Scanning with Trivy: ${FULL_REF}"
             echo "=========================================================="
 
             trivy image --severity CRITICAL,HIGH --format json -o trivy-results.json "${FULL_REF}" || true
+            trivy image --severity CRITICAL,HIGH --format sarif -o "sarif-results/${SAFE_NAME}.sarif" "${FULL_REF}" || true
 
             CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
             HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
@@ -371,17 +379,11 @@ jobs:
               --item file://item.json \
               --region ${{ env.DYNAMODB_REGION }}
 
-            echo "  [✔] Audit recorded in DynamoDB table: ${{ env.DYNAMODB_TABLE }}"
-
-            # Send Telegram Alert if configured
-            if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
-              MESSAGE="🚨 *LabOps Service Built & Audited*%0A%0A📦 *Image:* \`${IMAGE}\`%0A🔴 *Critical:* ${CRIT_VAL}%0A🟠 *High:* ${HIGH_VAL}%0A🕒 *Time:* ${TIMESTAMP}"
-              RESP=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-                -d "chat_id=${TELEGRAM_CHAT_ID}" \
-                -d "text=${MESSAGE}" \
-                -d "parse_mode=Markdown")
-              echo "  [✔] Telegram API Response: ${RESP}"
-            else
-              echo "  [-] Skipping Telegram notification: TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID secrets not configured in repository."
-            fi
+            echo "  [OK] Audit recorded in DynamoDB table: ${{ env.DYNAMODB_TABLE }}"
           done
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'sarif-results'

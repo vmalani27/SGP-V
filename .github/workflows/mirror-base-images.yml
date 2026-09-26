@@ -23,16 +23,15 @@ on:
 permissions:
   contents: read
   id-token: write
+  security-events: write
 
 env:
-  AWS_REGION: us-east-1
+  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION || 'us-east-1' }}
   AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
-  ECR_PUBLIC_REGISTRY: public.ecr.aws/i9t1l0m7
+  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY || 'public.ecr.aws/i9t1l0m7' }}
   TARGET_REPO: vmalani27/labops-base
-  DYNAMODB_REGION: ap-south-1
-  DYNAMODB_TABLE: labops-image-audit
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  DYNAMODB_REGION: ${{ vars.DYNAMODB_REGION || 'ap-south-1' }}
+  DYNAMODB_TABLE: ${{ vars.DYNAMODB_TABLE || 'labops-image-audit' }}
 
 jobs:
   # ── 1. MATRIX MIRROR JOB ───────────────────────────────────────────
@@ -56,7 +55,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
 
       - name: Log in to Amazon ECR Public
         uses: aws-actions/amazon-ecr-login@v2
@@ -80,7 +79,15 @@ jobs:
           echo "==> Mirror Complete! Verification Digest:"
           docker inspect --format='{{index .RepoDigests 0}}' "${DEST}" || true
 
-      - name: Run Trivy Vulnerability Scanner
+      - name: Run Trivy Vulnerability Scanner (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ matrix.image.tag }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Run Trivy Vulnerability Scanner (JSON for DynamoDB)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ matrix.image.tag }}'
@@ -88,10 +95,14 @@ jobs:
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH'
 
-      - name: Log to DynamoDB and Send Telegram Alert
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: '${{ matrix.image.tag }}'
+
+      - name: Log to DynamoDB
         run: |
           TAG="${{ matrix.image.tag }}"
           CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
@@ -128,18 +139,7 @@ jobs:
             --table-name ${{ env.DYNAMODB_TABLE }} \
             --item file://item.json \
             --region ${{ env.DYNAMODB_REGION }}
-
-          # Send Telegram Notification if configured
-          if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
-            MESSAGE="*LabOps Mirror Synced*%0A%0A*Tag:* \`$TAG\`%0A*Critical Vulns:* $CRIT_VAL%0A*High Vulns:* $HIGH_VAL%0A*Timestamp:* $TIMESTAMP"
-            RESP=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-              -d "chat_id=${TELEGRAM_CHAT_ID}" \
-              -d "text=${MESSAGE}" \
-              -d "parse_mode=Markdown")
-            echo "  [✔] Telegram API Response: ${RESP}"
-          else
-            echo "  [-] Skipping Telegram alert: TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID secrets not configured in repository."
-          fi
+          echo "  [OK] Audit recorded in DynamoDB table: ${{ env.DYNAMODB_TABLE }}"
 
   # ── 2. SINGLE ON-DEMAND MIRROR JOB ─────────────────────────────────
   mirror-single:
@@ -159,7 +159,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
 
       - name: Log in to Amazon ECR Public
         uses: aws-actions/amazon-ecr-login@v2
@@ -183,7 +183,15 @@ jobs:
           echo "==> Mirror Complete! Verification Digest:"
           docker inspect --format='{{index .RepoDigests 0}}' "${DEST}" || true
 
-      - name: Run Trivy Vulnerability Scanner
+      - name: Run Trivy Vulnerability Scanner (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ github.event.inputs.target_tag }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Run Trivy Vulnerability Scanner (JSON for DynamoDB)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ github.event.inputs.target_tag }}'
@@ -191,10 +199,14 @@ jobs:
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH'
 
-      - name: Log to DynamoDB and Send Telegram Alert
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: '${{ github.event.inputs.target_tag }}'
+
+      - name: Log to DynamoDB
         run: |
           TAG="${{ github.event.inputs.target_tag }}"
           CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
@@ -230,14 +242,4 @@ jobs:
             --table-name ${{ env.DYNAMODB_TABLE }} \
             --item file://item.json \
             --region ${{ env.DYNAMODB_REGION }}
-
-          if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
-            MESSAGE="*LabOps Single Mirror Synced*%0A%0A*Tag:* \`$TAG\`%0A*Critical Vulns:* $CRIT_VAL%0A*High Vulns:* $HIGH_VAL%0A*Timestamp:* $TIMESTAMP"
-            RESP=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-              -d "chat_id=${TELEGRAM_CHAT_ID}" \
-              -d "text=${MESSAGE}" \
-              -d "parse_mode=Markdown")
-            echo "  [✔] Telegram API Response: ${RESP}"
-          else
-            echo "  [-] Skipping Telegram alert: TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID secrets not configured in repository."
-          fi
+          echo "  [OK] Audit recorded in DynamoDB table: ${{ env.DYNAMODB_TABLE }}"
