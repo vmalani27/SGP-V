@@ -51,11 +51,13 @@ RUN apt-get update && apt-get install -y \
 # Enable systemd multi-user target
 RUN systemctl set-default multi-user.target
 
-# Create student user (UID 1000) with passwordless sudo
-RUN useradd -m -s /bin/bash -u 1000 student \
+# Ensure student user (UID 1000) exists with passwordless sudo
+RUN id -u student >/dev/null 2>&1 || ( \
+    useradd -m -s /bin/bash -u 1000 student \
     && echo "student:student" | chpasswd \
     && usermod -aG sudo student \
-    && echo "student ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/student
+    && echo "student ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/student \
+)
 
 # ── Git global config for the student user ──────────────────────────────────
 # Baked in so students can commit immediately without a setup ceremony.
