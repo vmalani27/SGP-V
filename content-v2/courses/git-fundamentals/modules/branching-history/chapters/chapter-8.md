@@ -1,98 +1,177 @@
-﻿# Chapter 8: Bringing Work Together
+# Chapter 8: Bringing Work Together
 
-## In this chapter, you will
+:::terminal-demo
+id: git-merging
+image: labops-git-fundamentals:latest
+:::
 
-- Merge a feature branch back into `main`
-- Understand fast-forward vs. three-way merges
-- Resolve merge conflicts with confidence
+> **Before this chapter:** You should be comfortable creating, switching, and committing on branches (`git branch`, `git switch`) from Chapter 7.
 
-## Why Merging Exists
+## The Situation
 
-You built a feature on a branch. It is tested and ready. Now you need to integrate it back into `main` so the rest of the team can use it. That is what merging does — it combines the histories of two branches.
+You and a teammate both branch off `main` on Monday morning to work on different tasks. You add a request timeout in `config.py`. Your teammate modifies the database connection pool in the same section of `config.py` and merges their branch into `main` on Tuesday afternoon.
 
-## How Git Decides What to Do
+When you finish your work and try to merge your branch into `main`, Git encounters conflicting modifications to the exact same lines. It cannot guess whether your timeout should replace the pool configuration, come after it, or be discarded.
 
-When you run `git merge feature/search`, Git looks at three points:
+Merging is the mechanism for combining the histories of separate branches. When changes touch different files or different lines, Git merges them automatically. When changes overlap, Git pauses and hands control to you.
 
-1. **The merge base** — the last commit that both branches share
-2. **Your current branch tip** — where you are now (e.g., `main`)
-3. **The branch you are merging in** — where `feature/search` is
+## How Git Decides: Merge Base and Graph Traversal
 
-Git then figures out what changed on each side since they diverged and tries to combine them.
+When you run `git merge feature/timeout` from `main`, Git identifies three commits in the graph:
+
+```
+        C --- D  (feature/timeout)
+       /
+A --- B          (merge base)
+       \
+        E        (main, HEAD)
+```
+
+1. **The merge base (`B`)**: The most recent ancestor commit shared by both branches.
+2. **Current branch tip (`E`)**: Where `main` currently points.
+3. **Target branch tip (`D`)**: The latest commit on `feature/timeout`.
+
+Git compares the changes introduced between `B` and `E` against the changes introduced between `B` and `D`.
 
 ## Fast-Forward Merges
 
-If the branch you are merging has not diverged — meaning `main` has no new commits since the branch was created — Git does a **fast-forward**. It simply moves the `main` pointer forward to the feature branch's commit.
+If `main` has not moved since you created the feature branch, no divergent work exists:
 
 ```
-Before:  main: A --- B
-                    \
-feature:            C --- D
+Before merge:
+main:     A --- B
+                 \
+feature:          C --- D (HEAD -> feature/timeout)
 
-After:   main: A --- B --- C --- D
-                               (HEAD -> main)
+Command:
+git switch main
+git merge feature/timeout
+
+After merge:
+main:     A --- B --- C --- D (HEAD -> main, feature/timeout)
 ```
 
-No merge commit is created. The history looks linear. This is the cleanest outcome.
+Because `B` was both the merge base and the tip of `main`, Git does not need to reconcile two histories. It performs a **fast-forward**: it advances the `main` pointer directly to commit `D`. No new commit is created, and the commit history remains linear.
+
+If your team policy requires an explicit merge commit even for non-divergent branches, you can enforce it with:
+
+```bash
+git merge --no-ff feature/timeout
+```
 
 ## Three-Way Merges
 
-If both branches have new commits since they diverged, Git creates a **merge commit** — a special commit with two parents that ties the two histories together.
+When both branches have new commits since diverging, a simple pointer move is impossible:
 
 ```
-Before:  main: A --- B --- E
-                    \
-feature:            C --- D
+Before merge:
+main:     A --- B --- E (HEAD -> main)
+                 \
+feature:          C --- D
 
-After:   main: A --- B --- E --- M  (merge commit)
-                    \           /
-feature:            C --- D ---
+Command:
+git merge feature/timeout
+
+After merge:
+main:     A --- B --- E ------- M (HEAD -> main)
+                 \             /
+feature:          C --- D ----
 ```
 
-The merge commit `M` records that it combined `E` and `D`. Your history now shows exactly when and how the feature was integrated.
+Git reads the snapshot at merge base `B`, applies the non-overlapping diffs from both `E` and `D`, and creates a new **merge commit (`M`)**. Merge commit `M` has two parents: `E` and `D`.
 
-## Merge Conflicts
+If there are no overlapping changes, Git opens your editor to write a commit message (or uses a default like `Merge branch 'feature/timeout'`), and completes the merge automatically.
 
-A conflict happens when both branches changed the same lines in the same file. Git cannot figure out which version is correct, so it pauses and asks you to decide.
+## Resolving Merge Conflicts
 
-When this happens, Git marks the conflicted file with conflict markers:
+When both branches alter the exact same lines in a file, Git halts the merge process and reports the conflict:
 
 ```
+Auto-merging config.py
+CONFLICT (content): Merge conflict in config.py
+Automatic merge failed; fix conflicts and then commit the result.
+```
+
+Check the repository status:
+
+```bash
+git status
+```
+
+```
+Unmerged paths:
+  (use "git add <file>..." to mark resolution)
+	both modified:   config.py
+```
+
+### The Conflict Markers
+
+Open `config.py` in your editor. Git marks the collision with conflict markers:
+
+```python
+def configure_app():
 <<<<<<< HEAD
-This is what is on your current branch
+    # Your current branch (main)
+    db_pool_size = 20
+    db_timeout = 30
 =======
-This is what is on the branch you are merging in
->>>>>>> feature/search
+    # The incoming branch (feature/timeout)
+    request_timeout = 5.0
+>>>>>>> feature/timeout
+    return True
 ```
 
-Your job is to:
+The syntax follows a fixed structure:
+- `<<<<<<< HEAD`: Marks the start of the lines present on your current branch (`main`).
+- `=======`: The separator between the two conflicting versions.
+- `>>>>>>> feature/timeout`: Marks the end of the incoming branch's changes.
 
-1. Open the file and find the conflict markers
-2. Decide which version to keep (or combine them)
-3. Remove the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
-4. Stage the resolved file: `git add <file>`
-5. Commit: `git commit`
+### Resolution Steps
 
-> **Tip:** Most merge conflicts are simple. Usually one person changed a line and the other person changed the same line. Read both versions, pick the right one, and move on. Do not overthink it.
+1. **Edit the file**: Remove the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) and combine the logic so both required settings are retained:
+   ```python
+   def configure_app():
+       db_pool_size = 20
+       db_timeout = 30
+       request_timeout = 5.0
+       return True
+   ```
+2. **Stage the resolved file**:
+   ```bash
+   git add config.py
+   ```
+   Staging the file informs Git that the conflict on that path is resolved.
+3. **Complete the merge**:
+   ```bash
+   git commit
+   ```
+   Git automatically generates a commit message identifying the merged branch and conflicts resolved. Save and close the editor.
 
-## The Merge Workflow
+### Aborting a Merge
 
+If you run into an unexpected conflict or need to verify the code before continuing, return the repository to the state prior to running `git merge`:
+
+```bash
+git merge --abort
 ```
-git switch main
-git merge feature/search
-# If conflicts: resolve them, git add, git commit
-git branch -d feature/search
-```
 
-That is it. You merged, resolved if needed, and cleaned up the branch.
+This clears all conflict markers and restores your working directory to the commit where `HEAD` was before the merge was attempted.
 
-> **Warning:** Do not panic when you see a conflict. It does not mean something is broken. It means Git needs your input to resolve an ambiguity. Take a breath, read the file, and make a decision.
+## How Teams Use This
 
-> **Try This:** Create a branch, change a line in a file, commit it. Switch back to `main`, change the *same* line differently, commit it. Now merge the branch. Git will show you a conflict. Resolve it by choosing one version, then complete the merge.
+**Pull Request Merge Strategies.** When merging branches on GitHub, GitLab, or Bitbucket, teams configure one of three merge strategies:
+- **Create a merge commit (`git merge --no-ff`)**: Retains all commits from the feature branch plus an explicit merge commit tying the two lines together.
+- **Squash and merge**: Condenses all commits on the feature branch into a single commit on `main`. Keeps `main` history clean while discarding intermediate checkpoint commits.
+- **Rebase and merge**: Replays feature branch commits on top of `main`, preserving individual commits with linear history.
+
+**Short-Lived Branches.** The longer a branch diverges from `main`, the larger the volume of conflicting code accumulated across the team. Merging branches within 1–2 days and regularly pulling updates from `main` into your feature branch keeps conflicts small and localized to recent edits.
+
+**CI Validation on Merge Branches.** Modern CI platforms do not just test your feature branch tip; they create a temporary merge commit between your branch and `main` (`refs/pull/<id>/merge`) and run tests against the synthesized result. This detects semantic conflicts (where Git merges code without syntax errors, but the combined logic breaks tests) before the PR is approved.
 
 ## Key Takeaways
 
-- Merging combines two branches' histories into one
-- Fast-forward merges are simple pointer moves; three-way merges create merge commits
-- Conflicts happen when both branches change the same lines
-- Resolve conflicts by editing the file, removing markers, staging, and committing
+- Fast-forward merges move the branch pointer directly forward when history has not diverged.
+- Three-way merges create a merge commit with two parents when both branches have unique commits.
+- Conflicts occur when separate branches change the same lines of a file; Git marks the collision with `<<<<<<<`, `=======`, and `>>>>>>>`.
+- Resolve conflicts by editing the file, deleting the markers, staging with `git add`, and running `git commit`.
+- `git merge --abort` cancels a merge in progress and restores the repository state before the merge began.

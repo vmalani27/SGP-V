@@ -1,5 +1,10 @@
 # Chapter 4: Building Clean Commits
 
+:::terminal-demo
+id: git-clean-commits
+image: labops-git-fundamentals:latest
+:::
+
 > **Before this chapter:** You should know `git add`, `git commit`, `git status`, and `git diff` from Chapter 3.
 
 ## The Problem With One File, Two Changes

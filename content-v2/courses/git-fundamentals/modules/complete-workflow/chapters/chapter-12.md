@@ -1,4 +1,9 @@
-﻿# Chapter 12: Your Daily Git Routine
+# Chapter 12: Your Daily Git Routine
+
+:::terminal-demo
+id: git-full-team-workflow
+image: labops-git-fundamentals:latest
+:::
 
 ## In this chapter, you will
 

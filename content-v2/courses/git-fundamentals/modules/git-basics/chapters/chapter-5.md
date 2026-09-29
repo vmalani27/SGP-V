@@ -1,5 +1,10 @@
 # Chapter 5: Keeping Unwanted Files Out
 
+:::terminal-demo
+id: git-unwanted-files
+image: labops-git-fundamentals:latest
+:::
+
 > **Before this chapter:** You should be comfortable with `git add`, `git commit`, and `git status` from Chapter 3.
 
 ## The Problem

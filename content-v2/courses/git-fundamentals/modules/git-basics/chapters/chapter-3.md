@@ -1,5 +1,10 @@
 # Chapter 3: What Goes Into a Commit
 
+:::terminal-demo
+id: git-what-goes-into-commit
+image: labops-git-fundamentals:latest
+:::
+
 > **Before this chapter:** You should know the three Git areas — working directory, staging area, and repository — and be comfortable with `git add` and `git commit`.
 
 ## The Problem With `git add .`

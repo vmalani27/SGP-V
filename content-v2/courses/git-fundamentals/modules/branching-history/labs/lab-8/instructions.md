@@ -1,35 +1,45 @@
-# Lab 6: Merging and Resolving Conflicts
-
-## What You're Doing and Why
-
-Merging combines the work from one branch into another. When two branches change different parts of the codebase, Git can merge them automatically. When they change the same lines, Git cannot decide which version is correct and asks you to resolve the conflict manually. Conflict resolution is a daily skill for any developer working on a team.
-
-## Background
-
-When a conflict occurs, Git pauses the merge and marks the conflicting sections in the file with conflict markers. The section between `<<<<<<<` and `=======` is the content from your current branch. The section between `=======` and `>>>>>>>` is the content from the branch being merged. Your job is to edit the file to produce the correct result, remove the conflict markers, stage the resolved file, and complete the merge with a commit.
-
-## Command Reference
-
-### `git merge <branch>`
-
-Merges the specified branch into the currently active branch.
-
-### `git status`
-
-During a merge conflict, shows which files have conflicts that need to be resolved.
-
-### `git merge --abort`
-
-Cancels a merge in progress and returns the repository to the state before the merge started.
+# Lab 8: Merging and Resolving Conflicts
 
 ## Scenario
 
-Two branches have each modified the same line in a file. Merge one branch into the other, resolve the conflict by combining both changes, and complete the merge.
+You maintain a backend service in `/home/student/service-repo`. Two feature branches are ready for integration into `main`:
+1. `feature/logging`: Contains logging initialization. Because no other commits landed on `main` after this branch was created, it can be merged directly via a fast-forward merge.
+2. `feature/timeout`: Updates service timeouts in `app.py`. Meanwhile, a teammate committed new worker scaling settings to the same line in `app.py` on `main`. Merging this branch will trigger a merge conflict that you must resolve by combining both changes.
 
-## Objective
+## What You'll Do
 
-Produce a merge conflict deliberately, resolve it correctly, and complete the merge. The final file should contain the intended result from both branches.
+- Fast-forward merge `feature/logging` into `main` and delete the merged branch
+- Merge `feature/timeout` into `main` and inspect the conflict state
+- Identify the conflict markers inside `app.py`
+- Manually resolve the collision by keeping both changes (`timeout = 30` and `workers = 4`)
+- Stage the resolved file and commit the merge
+- Clean up the merged `feature/timeout` branch
 
-## Reflection
+## Operational Specifications
 
-A conflict is not an error. It is Git telling you that it cannot make a decision that requires human judgment. Professional developers encounter conflicts regularly. The important skill is reading the conflict markers carefully and producing a result that is logically correct, not just syntactically valid.
+### 1. Fast-Forward Merge
+- On branch `main`, run `git merge feature/logging`.
+- Verify the history advances linearly.
+- Delete the merged branch using `git branch -d feature/logging`.
+
+### 2. Trigger Conflict
+- Attempt to merge `feature/timeout` while on `main`.
+- Confirm `git status` reports `both modified: app.py`.
+
+### 3. Resolve and Commit
+- Remove all conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>> feature/timeout`).
+- Ensure both `timeout = 30` and `workers = 4` are preserved in `app.py`.
+- Stage `app.py` with `git add app.py` and commit with `git commit`.
+
+### 4. Branch Cleanup
+- Remove `feature/timeout` using `git branch -d feature/timeout`.
+
+## Acceptance Criteria Table
+
+| Requirement | Verification Check |
+| :--- | :--- |
+| Fast-forward merge completed | `git log --oneline` shows logging commit on main |
+| Conflict encountered | Repository enters merge state (`MERGE_HEAD` present) |
+| Conflict resolved | Conflict markers removed and both settings present in `app.py` |
+| Merge commit created | Latest commit on `main` has two parent commits |
+| Feature branches cleaned up | `git branch` lists only `main` |

@@ -1,4 +1,9 @@
-﻿# Chapter 9: Sharing Your Work
+# Chapter 9: Sharing Your Work
+
+:::terminal-demo
+id: git-push-pull
+image: labops-git-fundamentals:latest
+:::
 
 ## In this chapter, you will
 

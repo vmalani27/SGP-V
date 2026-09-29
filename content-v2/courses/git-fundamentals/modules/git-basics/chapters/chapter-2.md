@@ -1,5 +1,10 @@
 # Chapter 2: Your First Repository
 
+:::terminal-demo
+id: git-first-repo
+image: labops-git-fundamentals:latest
+:::
+
 > **Before this chapter:** You should be comfortable in a terminal — `cd`, `mkdir`, creating files with a text editor.
 
 ## The Real Reason You Need This

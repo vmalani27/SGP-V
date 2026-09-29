@@ -1,18 +1,244 @@
 id: lab-8
-title: Merging and Resolving Conflicts
+title: "Merging and Resolving Conflicts"
 difficulty: intermediate
-estimated_time: 20
+estimated_time: 25
 xp: 75
 tags:
   - git
   - branches
   - merge
 environment: git-fundamentals
+summary: >
+  Integrate feature branches into main by performing a fast-forward merge,
+  handling a divergent merge conflict, and manually resolving conflicting lines.
 
 objectives:
-  - Merge a branch into main
-  - Resolve a merge conflict manually
-  - Understand fast-forward vs. merge commits
+  - Perform a fast-forward merge and verify linear history
+  - Trigger and diagnose a merge conflict using git status and conflict markers
+  - Manually resolve conflict markers and finalize the merge commit
+  - Delete merged feature branches
+
+setup:
+  - command: >
+      mkdir -p /home/student/service-repo && cd /home/student/service-repo &&
+      git init &&
+      git config user.email "student@lab.local" &&
+      git config user.name "Student" &&
+      printf 'def init_service():\n    print("Starting service v1.0")\n    timeout = 10\n    workers = 2\n    return True\n' > app.py &&
+      git add app.py &&
+      git commit -m "Initial service setup" &&
+      git branch feature/logging &&
+      git checkout feature/logging &&
+      printf '# Standard logging module\nimport logging\nlogging.basicConfig(level=logging.INFO)\n\ndef init_service():\n    logging.info("Starting service v1.0")\n    timeout = 10\n    workers = 2\n    return True\n' > app.py &&
+      git commit -am "Add structured logging to init_service" &&
+      git checkout main &&
+      git checkout -b feature/timeout &&
+      printf '# Standard logging module\nimport logging\nlogging.basicConfig(level=logging.INFO)\n\ndef init_service():\n    logging.info("Starting service v1.0")\n    timeout = 30\n    workers = 2\n    return True\n' > app.py &&
+      git commit -am "Increase default request timeout to 30s" &&
+      git checkout main &&
+      printf 'def init_service():\n    print("Starting service v1.0")\n    timeout = 10\n    workers = 4\n    return True\n' > app.py &&
+      git commit -am "Scale worker count to 4"
 
 completion:
   required_tasks: all
+
+tasks:
+  - id: fast-forward-merge
+    summary: Fast-forward merge feature/logging into main
+    prompt: >-
+      You have a branch `feature/logging` that introduced logging changes before
+      other work started on `main`. Inspect the branches and merge `feature/logging`
+      into `main`.
+
+      Because `main` had not diverged when `feature/logging` was created, Git can
+      simply advance the branch pointer forward without generating a merge commit.
+
+      Work inside `/home/student/service-repo`. Make sure you are on `main`,
+      execute the merge, and then delete the `feature/logging` branch with
+      `git branch -d`.
+    type: terminal_action
+    hints:
+      - "Run `git checkout main` or `git switch main` to make sure you are on main"
+      - "Run `git merge feature/logging` to merge the branch"
+      - "Delete the merged branch with `git branch -d feature/logging`"
+    solution:
+      command: "cd /home/student/service-repo && git checkout main && git merge feature/logging && git branch -d feature/logging"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/service-repo')
+
+        # Confirm on main
+        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, text=True).stdout.strip()
+        if branch != 'main':
+            print('RESULT_FAIL: not on main branch')
+            sys.exit(1)
+
+        # Check that the logging commit is in main's history
+        log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True).stdout
+        if 'Add structured logging' not in log:
+            print('RESULT_FAIL: feature/logging was not merged into main')
+            sys.exit(1)
+
+        # Check feature/logging was deleted
+        branches = subprocess.run(['git', 'branch'], capture_output=True, text=True).stdout
+        if 'feature/logging' in branches:
+            print('RESULT_FAIL: feature/logging branch was not deleted')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Ensure you switch to `main`, run `git merge feature/logging`, and delete
+      `feature/logging` with `git branch -d feature/logging`.
+
+  - id: trigger-merge-conflict
+    summary: Attempt to merge feature/timeout to trigger a conflict
+    prompt: >-
+      Now you want to integrate `feature/timeout` into `main`. However, both
+      `main` and `feature/timeout` altered the same lines in `app.py`.
+
+      Run `git merge feature/timeout` from the `main` branch. Git will halt the
+      automatic merge and notify you of a merge conflict in `app.py`.
+
+      Leave the repository in the conflicted state so you can inspect it.
+    type: terminal_action
+    hints:
+      - "Ensure you are on branch `main`"
+      - "Run `git merge feature/timeout`"
+      - "Do not commit or abort yet — observe the conflict message"
+    solution:
+      command: "cd /home/student/service-repo && git merge feature/timeout"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/service-repo')
+
+        # Check for MERGE_HEAD
+        if not os.path.exists('.git/MERGE_HEAD'):
+            print('RESULT_FAIL: repo is not currently in a merge state — run git merge feature/timeout')
+            sys.exit(1)
+
+        status = subprocess.run(['git', 'status'], capture_output=True, text=True).stdout
+        if 'both modified' not in status or 'app.py' not in status:
+            print('RESULT_FAIL: app.py is not marked as conflicted in git status')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run `git merge feature/timeout` while on `main`. Git should report a
+      merge conflict in `app.py`. Do not resolve or abort it yet.
+
+  - id: identify-conflict-marker
+    summary: Identify which section represents the current branch in conflict markers
+    prompt: >-
+      When a conflict occurs in Git, conflict markers are written directly into
+      the file around the conflicting lines.
+
+      Which marker indicates the beginning of the lines coming from your currently
+      active branch (`HEAD`)?
+    type: multiple_choice
+    options:
+      - "<<<<<<< HEAD"
+      - ">>>>>>> HEAD"
+      - "======= HEAD"
+      - "||||||| HEAD"
+    validation:
+      expected_answer: "<<<<<<< HEAD"
+    hints:
+      - "The marker starts with seven less-than symbols pointing to your current branch"
+
+  - id: resolve-and-commit
+    summary: Manually resolve the conflict in app.py and complete the merge
+    prompt: >-
+      Open `app.py` in `/home/student/service-repo`.
+
+      Resolve the conflict by:
+      1. Keeping the `timeout = 30` setting from `feature/timeout`
+      2. Keeping the `workers = 4` setting from `main`
+      3. Removing all conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>> feature/timeout`)
+
+      Once resolved:
+      - Run `git add app.py` to mark the conflict as resolved
+      - Run `git commit` (or `git commit -m "Merge branch 'feature/timeout'"`) to record the merge commit
+    type: terminal_action
+    hints:
+      - "Edit app.py to remove the <<<<<<<, =======, and >>>>>>> lines"
+      - "Ensure both `timeout = 30` and `workers = 4` are present in app.py"
+      - "Run `git add app.py` then `git commit`"
+    solution:
+      command: "cd /home/student/service-repo && printf 'def init_service():\\n    print(\"Starting service v1.0\")\\n    timeout = 30\\n    workers = 4\\n    return True\\n' > app.py && git add app.py && git commit -m \"Merge branch 'feature/timeout'\""
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/service-repo')
+
+        # Check MERGE_HEAD is gone
+        if os.path.exists('.git/MERGE_HEAD'):
+            print('RESULT_FAIL: merge is still in progress — did you run git commit?')
+            sys.exit(1)
+
+        # Check file content
+        content = open('app.py').read()
+        for marker in ['<<<<<<<', '=======', '>>>>>>>']:
+            if marker in content:
+                print(f'RESULT_FAIL: conflict marker {marker} still present in app.py')
+                sys.exit(1)
+
+        if 'timeout = 30' not in content:
+            print('RESULT_FAIL: expected timeout = 30 in app.py')
+            sys.exit(1)
+
+        if 'workers = 4' not in content:
+            print('RESULT_FAIL: expected workers = 4 in app.py')
+            sys.exit(1)
+
+        # Check that latest commit is a merge commit (has 2 parents)
+        parents = subprocess.run(['git', 'rev-parse', 'HEAD^@'], capture_output=True, text=True).stdout.strip().split()
+        if len(parents) < 2:
+            print('RESULT_FAIL: latest commit is not a merge commit (has fewer than 2 parents)')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Ensure `app.py` has conflict markers removed, contains `timeout = 30` and
+      `workers = 4`, is staged with `git add app.py`, and committed with `git commit`.
+
+  - id: cleanup-branch
+    summary: Delete the feature/timeout branch
+    prompt: >-
+      Now that `feature/timeout` has been successfully merged into `main`, delete
+      the branch using `git branch -d feature/timeout`.
+    type: terminal_action
+    hints:
+      - "Run `git branch -d feature/timeout`"
+    solution:
+      command: "cd /home/student/service-repo && git branch -d feature/timeout"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/service-repo')
+
+        branches = subprocess.run(['git', 'branch'], capture_output=True, text=True).stdout
+        if 'feature/timeout' in branches:
+            print('RESULT_FAIL: feature/timeout branch is still present')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run `git branch -d feature/timeout` to remove the merged branch.
