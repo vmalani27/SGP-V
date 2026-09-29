@@ -6,12 +6,152 @@ xp: 60
 tags:
   - git
   - fundamentals
-environment: linux-basic
+environment: git-fundamentals
 
 objectives:
   - Initialize a Git repository
-  - Create files and stage them
-  - Make your first commit
+  - Create files and commit them with clear messages
+  - Use git restore to recover from an accidental change
+
+tasks:
+  - id: init-repo
+    summary: Initialize a new Git repository at ~/workspace/my-project.
+    prompt: >-
+      Create the directory `~/workspace/my-project` and initialize a Git repository inside it.
+      This is where your next commits will live.
+    type: terminal_action
+    validation:
+      command: >-
+        test -d ~/workspace/my-project/.git && echo REPO_READY
+      match_type: exact
+      expected_output: REPO_READY
+    error_message: >-
+      No Git repository found at ~/workspace/my-project. Run: mkdir -p ~/workspace/my-project && cd ~/workspace/my-project && git init
+
+  - id: first-commit
+    summary: Create a file and make your first commit.
+    prompt: >-
+      Inside `~/workspace/my-project`, create a file named `README.md` with any content.
+      Stage it and commit it with a meaningful message (not 'update', 'fix', or 'WIP').
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+
+        result = subprocess.run(
+            ['git', 'log', '--oneline'],
+            capture_output=True, cwd=os.path.expanduser('~/workspace/my-project')
+        )
+        if result.returncode != 0:
+            print('Not a git repo or no commits.')
+            sys.exit(0)
+
+        log = result.stdout.decode().strip()
+        if not log:
+            print('No commits found.')
+            sys.exit(0)
+
+        # Reject empty or vague messages
+        msg = log.split(' ', 1)[1].lower() if ' ' in log else ''
+        vague = {'update', 'fix', 'wip', 'commit', 'changes', 'stuff', 'test'}
+        if msg.strip() in vague or len(msg.strip()) < 5:
+            print('Commit message is too vague. Write something meaningful.')
+            sys.exit(0)
+
+        # Check README.md exists and was committed
+        check = subprocess.run(
+            ['git', 'show', 'HEAD:README.md'],
+            capture_output=True, cwd=os.path.expanduser('~/workspace/my-project')
+        )
+        if check.returncode != 0:
+            print('README.md was not committed.')
+            sys.exit(0)
+
+        print('FIRST_COMMIT_OK')
+        "
+      match_type: exact
+      expected_output: FIRST_COMMIT_OK
+    error_message: >-
+      Either README.md was not committed, or the commit message is too vague. Write a message that explains what the file is.
+
+  - id: second-commit
+    summary: Make a second commit so your log has history to inspect.
+    prompt: >-
+      Add a second file named `notes.md` to `~/workspace/my-project` with any content.
+      Stage and commit it with a different, meaningful message.
+
+      Then run `git log --oneline` to confirm both commits appear.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+
+        result = subprocess.run(
+            ['git', 'log', '--oneline'],
+            capture_output=True, cwd=os.path.expanduser('~/workspace/my-project')
+        )
+        log = result.stdout.decode().strip().splitlines()
+        if len(log) < 2:
+            print(f'Expected at least 2 commits, found {len(log)}.')
+            sys.exit(0)
+
+        check = subprocess.run(
+            ['git', 'show', 'HEAD:notes.md'],
+            capture_output=True, cwd=os.path.expanduser('~/workspace/my-project')
+        )
+        if check.returncode != 0:
+            print('notes.md was not committed.')
+            sys.exit(0)
+
+        print('TWO_COMMITS_OK')
+        "
+      match_type: exact
+      expected_output: TWO_COMMITS_OK
+    error_message: >-
+      notes.md was not committed, or there are fewer than 2 commits in the log.
+
+  - id: restore-accidental-change
+    summary: Break a file and recover it using git restore.
+    prompt: >-
+      This is the recovery scenario from the chapter.
+
+      In `~/workspace/my-project`, open `README.md` and delete all its content (or overwrite it
+      with garbage). Then use `git restore` to undo the change and bring back the committed version.
+
+      Run `git diff` before restoring to see the damage. After restoring, `git diff` should show nothing.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+
+        # Check working tree is clean (no unstaged changes to README.md)
+        result = subprocess.run(
+            ['git', 'diff', '--name-only'],
+            capture_output=True, cwd=os.path.expanduser('~/workspace/my-project')
+        )
+        modified = result.stdout.decode().strip()
+        if 'README.md' in modified:
+            print('README.md still has uncommitted changes — restore did not work.')
+            sys.exit(0)
+
+        # Check README.md has content (not empty)
+        check = subprocess.run(
+            ['git', 'show', 'HEAD:README.md'],
+            capture_output=True, cwd=os.path.expanduser('~/workspace/my-project')
+        )
+        if not check.stdout.strip():
+            print('README.md in HEAD is empty — something went wrong.')
+            sys.exit(0)
+
+        print('RESTORE_OK')
+        "
+      match_type: exact
+      expected_output: RESTORE_OK
+    error_message: >-
+      README.md still shows as modified. Run: git restore README.md — then verify with git diff.
 
 completion:
   required_tasks: all

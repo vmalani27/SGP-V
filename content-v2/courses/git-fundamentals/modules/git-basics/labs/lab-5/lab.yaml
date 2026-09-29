@@ -1,0 +1,202 @@
+id: lab-5
+title: "Keeping Unwanted Files Out with .gitignore"
+difficulty: beginner
+estimated_time: 20
+xp: 70
+tags:
+  - git
+  - gitignore
+  - fundamentals
+environment: git-fundamentals
+summary: >
+  Practice the full .gitignore workflow: observe untracked files, create
+  ignore rules, verify ignored status, and stop tracking a file that was
+  already committed.
+
+objectives:
+  - Create a .gitignore that prevents secrets and build artifacts from being staged
+  - Understand the difference between untracked and ignored files
+  - Use git rm --cached to stop tracking an already-committed file
+
+setup:
+  - command: >
+      mkdir -p /home/student/webapp && cd /home/student/webapp &&
+      git init &&
+      git config user.email "student@lab.local" &&
+      git config user.name "Student" &&
+      echo "def main(): pass" > app.py &&
+      git add app.py &&
+      git commit -m "Initial app" &&
+      echo "DB_PASSWORD=supersecret123" > .env &&
+      echo "token=ghp_realtoken" > .env.local &&
+      mkdir -p __pycache__ &&
+      echo "bytecode" > __pycache__/app.cpython-311.pyc &&
+      echo "bytecode" > app.pyc
+
+completion:
+  required_tasks: all
+
+tasks:
+  - id: observe-untracked
+    summary: See what Git sees before .gitignore exists
+    prompt: >-
+      The repository has four files that should never be committed:
+      .env, .env.local, app.pyc, and __pycache__/app.cpython-311.pyc
+
+      Run git status inside /home/student/webapp to see how Git currently
+      sees these files. They will appear as untracked — Git knows they exist
+      but is not tracking them yet. A git add . would stage all of them.
+    type: terminal_action
+    hints:
+      - "Run git status — all four files should appear under Untracked files"
+    solution:
+      command: "cd /home/student/webapp && git status"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/webapp')
+        result = subprocess.run(['git', 'status'], capture_output=True, text=True)
+        if '.env' in result.stdout and 'Untracked' in result.stdout:
+            print('RESULT_OK')
+        else:
+            print('RESULT_FAIL: run git status inside /home/student/webapp')
+            sys.exit(1)
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run git status inside /home/student/webapp. You should see .env,
+      .env.local, app.pyc, and __pycache__/ listed as untracked files.
+
+  - id: create-gitignore
+    summary: Create a .gitignore that covers secrets and Python build artifacts
+    prompt: >-
+      Create a .gitignore file in /home/student/webapp that ignores:
+      - .env and .env.* (secrets)
+      - *.pyc (Python bytecode)
+      - __pycache__/ (Python cache directory)
+
+      After creating it, run git status again. The .env, .env.local, app.pyc,
+      and __pycache__/ entries should disappear from the output. Only .gitignore
+      itself should appear as a new untracked file.
+    type: terminal_action
+    hints:
+      - "Create the file with: printf '.env\\n.env.*\\n*.pyc\\n__pycache__/\\n' > .gitignore"
+      - "After creating it, git status should show .gitignore as the only new file"
+    solution:
+      command: "cd /home/student/webapp && printf '.env\\n.env.*\\n*.pyc\\n__pycache__/\\n' > .gitignore"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/webapp')
+
+        if not os.path.exists('.gitignore'):
+            print('RESULT_FAIL: .gitignore not found')
+            sys.exit(1)
+
+        content = open('.gitignore').read()
+        for pattern in ['.env', '*.pyc', '__pycache__']:
+            if pattern not in content:
+                print(f'RESULT_FAIL: .gitignore missing pattern: {pattern}')
+                sys.exit(1)
+
+        # .env should no longer appear as untracked
+        status = subprocess.run(['git', 'status'], capture_output=True, text=True).stdout
+        if '.env' in status and 'Untracked' in status:
+            # check if .env appears in untracked section
+            lines = status.split('\n')
+            in_untracked = False
+            for line in lines:
+                if 'Untracked files' in line:
+                    in_untracked = True
+                if in_untracked and '.env' in line and '.gitignore' not in line:
+                    print('RESULT_FAIL: .env still appearing as untracked — check .gitignore patterns')
+                    sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Create .gitignore with patterns for .env, .env.*, *.pyc, and __pycache__/.
+      After creating it, git status should show only .gitignore as a new file.
+
+  - id: check-ignored
+    summary: Confirm what is being ignored
+    prompt: >-
+      git status --ignored shows files that are actively being ignored by
+      .gitignore patterns, in addition to regular status output.
+
+      Run it inside /home/student/webapp to confirm .env, .env.local, app.pyc,
+      and __pycache__/ are all in the ignored list.
+    type: terminal_action
+    hints:
+      - "git status --ignored shows the ignored files section"
+    solution:
+      command: "cd /home/student/webapp && git status --ignored"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/webapp')
+        result = subprocess.run(['git', 'status', '--ignored'], capture_output=True, text=True)
+        if 'Ignored files' in result.stdout and '.env' in result.stdout:
+            print('RESULT_OK')
+        else:
+            print('RESULT_FAIL: run git status --ignored')
+            sys.exit(1)
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run git status --ignored inside /home/student/webapp. You should see
+      an Ignored files section listing .env, .env.local, app.pyc, and __pycache__/.
+
+  - id: untrack-already-committed
+    summary: Stop tracking a file that was already committed
+    prompt: >-
+      Suppose app.py had contained a secret that was committed in the initial
+      commit. Adding app.py to .gitignore would do nothing — Git is already
+      tracking it.
+
+      Simulate this: add .env to the repository by staging and committing it
+      (git add --force .env, then commit). This represents what happens when
+      someone commits a secret before setting up .gitignore.
+
+      Then use git rm --cached .env to stop tracking it, and commit that removal.
+      After this: .env should still exist on disk but should not appear in
+      git diff or git status as a tracked file.
+    type: terminal_action
+    hints:
+      - "git add --force .env bypasses .gitignore and stages the file"
+      - "After committing it, git rm --cached .env removes it from tracking"
+      - "Commit the removal with git commit -m 'Remove .env from tracking'"
+    solution:
+      command: "cd /home/student/webapp && git add --force .env && git commit -m 'Accidentally commit .env' && git rm --cached .env && git commit -m 'Remove .env from tracking'"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/webapp')
+
+        # .env should still exist on disk
+        if not os.path.exists('.env'):
+            print('RESULT_FAIL: .env was deleted from disk — git rm --cached should leave the file intact')
+            sys.exit(1)
+
+        # .env should not be tracked
+        tracked = subprocess.run(['git', 'ls-files', '.env'], capture_output=True, text=True).stdout
+        if tracked.strip():
+            print('RESULT_FAIL: .env is still tracked — run git rm --cached .env and commit')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Use git add --force .env to stage it despite .gitignore, commit it,
+      then run git rm --cached .env and commit again. After both commits,
+      .env should exist on disk but not be tracked by Git.

@@ -6,7 +6,7 @@ xp: 50
 tags:
   - git
   - fundamentals
-environment: linux-basic
+environment: git-fundamentals
 
 objectives:
   - Set your global Git username

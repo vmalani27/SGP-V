@@ -1,154 +1,141 @@
 id: lab-2
-title: Inspecting & Managing Containers
+title: Diagnosing a Container Failure
 difficulty: beginner
-environment: docker-basic
+environment: docker-fundamentals
 
 setup:
   - command: "usermod -aG docker student"
   - command: >-
-      docker run -d --name mystery
-      -e MYSTERY_FLAVOR=vanilla
-      -e MYSTERY_LEVEL=$((RANDOM % 50 + 1))
+      docker run -d --name api-service
+      -e DB_HOST=postgres-db
+      -e DB_PORT=5432
       alpine:latest sleep 3600
-  - command: "docker run --name expired alpine:latest echo setup complete"
+  - command: >-
+      docker run --name payment-api alpine:latest sh -c
+      'echo "INFO: payment-api starting up" &&
+       echo "INFO: loading config from /app/config.yaml" &&
+       echo "ERROR: config file not found at /app/config.yaml" &&
+       echo "FATAL: cannot start without configuration" &&
+       exit 127'
 
 objectives:
-  - Differentiate active from terminated container instances
-  - Query container configuration and runtime state via docker inspect
-  - Capture container log output for diagnostic triage
-  - Execute container lifecycle transitions (stop and resume)
-  - Perform clean container removal and process namespace teardown
+  - Use docker ps -a to find containers in any state
+  - Use docker logs to read what a container printed before it crashed
+  - Use docker inspect to extract exit codes and configuration
+  - Identify the root cause of a container failure from evidence alone
 
 tasks:
-  - id: differentiate-container-states
-    summary: Identify the command to list all containers regardless of status.
+  - id: find-all-containers
+    summary: Locate both the running and exited containers.
     prompt: >-
-      Two containers (`mystery` and `expired`) currently exist in the environment.
-      Which command lists all containers on the host, including those that have terminated?
+      You have just taken over a system. You know two containers should exist:
+      `api-service` and `payment-api`. Run `docker ps` — only one appears.
+
+      Which command shows ALL containers, including ones that have exited?
     type: multiple_choice
     options:
       - "docker ps -a"
-      - "docker ps --running"
-      - "docker inspect --all"
-      - "docker container status"
+      - "docker ps --all-states"
+      - "docker container list --exited"
+      - "docker inspect --running=false"
     validation:
       expected_answer: "docker ps -a"
     error_message: >-
-      The selected command does not list both running and exited containers.
+      The correct command is docker ps -a. The -a flag shows all containers regardless of status.
 
-  - id: inspect-runtime-metadata
-    summary: Extract the base image name of the mystery container into a file.
+  - id: read-crash-logs
+    summary: Read the logs from the crashed payment-api container.
     prompt: >-
-      Inspect the running `mystery` container to determine the base image from which
-      it was created. Save the exact image name (e.g. `alpine:latest`) into a file
-      named `~/mystery-image.txt`.
+      The `payment-api` container has exited. Run the command to read what it
+      printed before it stopped, then save its last log line to `~/crash-reason.txt`.
     type: terminal_action
     validation:
       command: |-
         python3 -c "
         import os, sys
-
-        path = os.path.expanduser('~/mystery-image.txt')
+        path = os.path.expanduser('~/crash-reason.txt')
         if not os.path.isfile(path):
             print('File missing.')
             sys.exit(0)
-
         with open(path) as f:
             content = f.read().strip()
-
-        if content in ('alpine', 'alpine:latest'):
-            print('IMAGE_EXTRACTED')
+        if 'cannot start' in content.lower() or 'config' in content.lower() or 'fatal' in content.lower():
+            print('LOGS_READ')
         else:
-            print('Incorrect image name.')
+            print('File does not contain the crash reason from docker logs.')
         "
       match_type: exact
-      expected_output: IMAGE_EXTRACTED
+      expected_output: LOGS_READ
     error_message: >-
-      The file ~/mystery-image.txt is missing or does not contain the base image of container 'mystery'.
+      ~/crash-reason.txt is missing or does not contain the crash reason. Run docker logs payment-api and save the relevant line.
 
-  - id: triage-container-logs
-    summary: Extract the standard output logs of the expired container.
+  - id: check-exit-code
+    summary: Identify what exit code payment-api exited with.
     prompt: >-
-      The container `expired` ran a short task and terminated. Capture its complete
-      standard output logs and write them to a file named `~/expired.log`.
+      Use `docker inspect` to find out the exact exit code `payment-api` recorded when it crashed.
+      Save the exit code as a plain number to `~/exit-code.txt`.
     type: terminal_action
     validation:
       command: |-
         python3 -c "
         import os, sys
-
-        path = os.path.expanduser('~/expired.log')
+        path = os.path.expanduser('~/exit-code.txt')
         if not os.path.isfile(path):
             print('File missing.')
             sys.exit(0)
-
         with open(path) as f:
             content = f.read().strip()
-
-        if 'setup complete' in content:
-            print('LOGS_EXTRACTED')
+        if content == '127':
+            print('EXIT_CODE_OK')
         else:
-            print('Incorrect logs.')
+            print(f'Expected 127, got: {content}')
         "
       match_type: exact
-      expected_output: LOGS_EXTRACTED
+      expected_output: EXIT_CODE_OK
     error_message: >-
-      The file ~/expired.log is missing or does not contain the output logs from container 'expired'.
+      ~/exit-code.txt should contain 127. Use: docker inspect payment-api --format '{{.State.ExitCode}}'
 
-  - id: execute-lifecycle-transitions
-    summary: Stop and resume the existing mystery container entity.
+  - id: diagnose-root-cause
+    summary: Identify what exit code 127 means in this context.
     prompt: >-
-      Perform the following lifecycle transition on `mystery`:
-      1. Stop the running `mystery` container gracefully.
-      2. Verify it is stopped, then start the container again.
-      3. The container must end in an active running state without having been recreated.
+      `payment-api` exited with code 127. The logs show it tried to load a config file.
+      What does exit code 127 tell you about the root cause?
+    type: multiple_choice
+    options:
+      - "The application tried to run a command or access a file that was not found — the config file at /app/config.yaml does not exist in the image."
+      - "The container was killed by the Docker daemon due to memory limits."
+      - "The container exited cleanly after completing its job."
+      - "The container lost network connectivity to the database."
+    validation:
+      expected_answer: "The application tried to run a command or access a file that was not found — the config file at /app/config.yaml does not exist in the image."
+    error_message: >-
+      Exit code 127 in shell means 'command not found' or a missing file. Combined with the log output, the config file is not present in the image.
+
+  - id: inspect-running-container
+    summary: Extract the DB_HOST environment variable from api-service.
+    prompt: >-
+      `api-service` is still running. Use `docker inspect` with a `--format` flag to extract
+      only its environment variables as JSON, then save the value of `DB_HOST` to `~/db-host.txt`.
     type: terminal_action
     validation:
       command: |-
         python3 -c "
-        import subprocess, json, sys
-
-        r = subprocess.run(['docker', 'inspect', 'mystery'], capture_output=True)
-        if r.returncode != 0:
-            print('Container not found.')
+        import os, sys
+        path = os.path.expanduser('~/db-host.txt')
+        if not os.path.isfile(path):
+            print('File missing.')
             sys.exit(0)
-
-        data = json.loads(r.stdout.decode('utf-8'))[0]
-        if not data['State']['Running']:
-            print('Container is not running.')
-            sys.exit(0)
-
-        if data['RestartCount'] == 0 and data['State']['FinishedAt'] == '0001-01-01T00:00:00Z':
-            print('Container was never stopped.')
-            sys.exit(0)
-
-        print('LIFECYCLE_OK')
+        with open(path) as f:
+            content = f.read().strip()
+        if content == 'postgres-db':
+            print('INSPECT_OK')
+        else:
+            print(f'Expected postgres-db, got: {content}')
         "
       match_type: exact
-      expected_output: LIFECYCLE_OK
+      expected_output: INSPECT_OK
     error_message: >-
-      The container 'mystery' is not running or was not stopped and restarted.
+      ~/db-host.txt should contain 'postgres-db'. Use docker inspect api-service --format '{{.Config.Env}}' and extract DB_HOST.
 
-  - id: teardown-container
-    summary: Completely remove all container instances from the host.
-    prompt: >-
-      Clean up the environment by stopping and removing both `mystery` and `expired`
-      so that zero container instances remain on the system (even in exited status).
-    type: terminal_action
-    validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys
-
-        r = subprocess.run(['docker', 'ps', '-aq'], capture_output=True)
-        out = r.stdout.decode('utf-8').strip()
-        if out != '':
-            print('Containers still exist.')
-            sys.exit(0)
-
-        print('TEARDOWN_OK')
-        "
-      match_type: exact
-      expected_output: TEARDOWN_OK
-    error_message: >-
-      One or more container instances still exist on the host system.
+completion:
+  required_tasks: all

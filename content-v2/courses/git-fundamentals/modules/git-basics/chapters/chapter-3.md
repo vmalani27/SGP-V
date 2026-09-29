@@ -1,97 +1,130 @@
-# Chapter 3: Controlling What Gets Saved
+# Chapter 3: What Goes Into a Commit
 
-## In this chapter, you will
+> **Before this chapter:** You should know the three Git areas — working directory, staging area, and repository — and be comfortable with `git add` and `git commit`.
 
-- Use selective staging to create precise commits
-- Understand what `git status` is telling you
-- Set up `.gitignore` to keep junk out of your history
+## The Problem With `git add .`
 
-## Why Staging Exists
+It is a Friday afternoon. You fix a critical authentication bug in `auth.py`. While you are in there, you also notice the button color in `styles.css` is wrong and fix that too. Then you add some debug logging to `api.py` that you meant to remove.
 
-Imagine you are working on a project. You fix a bug in `auth.js` and also tweak the button color in `styles.css`. These are two unrelated changes.
+If you run `git add .` and commit everything, your history has one commit that says "fix auth bug" — but it also contains the CSS change and the debug logging. Three months later, when someone needs to understand why the auth behavior changed, they pull up that commit and find a pile of unrelated changes.
 
-Without staging, you would have to commit both changes together. Your commit message would be something like "fix button and auth bug", which is confusing for anyone reading the history later.
+A commit contains exactly what you staged — not everything you changed.
 
-Staging lets you choose exactly what goes into each commit. You can stage `auth.js`, commit it with the message "Fix login redirect bug", then stage `styles.css` and commit it with "Update button hover color". Clean, focused history.
-
-This is not an extra step to slow you down. It is a precision tool that makes your history useful.
-
-## Selective Staging in Practice
-
-Start with a file that has multiple changes:
+## Staging as a Precision Tool
 
 ```
+Working Directory  →  Staging Area  →  Repository
+  (all your edits)    (what you chose)  (what's saved)
+```
+
+You stage `auth.py`:
+```bash
+git add auth.py
+git commit -m "Fix login redirect loop when session expires"
+```
+
+Then you stage `styles.css`:
+```bash
+git add styles.css
+git commit -m "Fix button hover color on dashboard"
+```
+
+Then you discard `api.py`:
+```bash
+git restore api.py
+```
+
+Three changes made in the same afternoon. Two commits, one discarded.
+
+## `git status` — Read It Before Every Operation
+
+```bash
 git status
 ```
 
-Git shows you which files are modified but not staged. To stage specific files:
+It shows every file in three categories:
 
 ```
-git add auth.js
+Changes to be committed:        ← staged, goes into the next commit
+  modified:   auth.py
+
+Changes not staged for commit:  ← modified, but not staged yet
+  modified:   api.py
+
+Untracked files:                ← new files Git does not know about
+  debug.log
 ```
 
-To stage only part of a file (interactive staging):
+The sequence that catches people:
 
-```
-git add -p
-```
+```bash
+# You've changed three files. You stage two.
+git add auth.py styles.css
+git commit -m "Fix auth and button colour"
 
-Git will walk you through each changed chunk and ask whether you want to stage it. Press `y` to stage, `n` to skip, `s` to split the chunk further.
-
-> **Tip:** Interactive staging (`git add -p`) is one of the most useful Git skills. It lets you create atomic commits from a single file that has multiple unrelated changes.
-
-## What `git status` Is Really Telling You
-
-`git status` is your dashboard. It shows you:
-
-- **Untracked files** — new files Git does not know about yet
-- **Changes not staged for commit** — modified files that are not in the staging area
-- **Changes to be committed** — files in the staging area, ready to commit
-
-The workflow:
-
-1. Edit files (they become "modified")
-2. Run `git status` to see what changed
-3. Run `git add` on the files you want to commit
-4. Run `git status` again to confirm what is staged
-5. Run `git commit`
-
-Check `git status` before *and* after every operation. It will save you from confusion.
-
-## Ignoring Files You Never Want to Track
-
-Some files should never be committed: compiled binaries, `node_modules/`, `.env` files with secrets, OS junk like `.DS_Store`.
-
-Create a `.gitignore` file in your project root:
-
-```
-node_modules/
-.env
-*.log
-.DS_Store
+# Now you check status
+git status
 ```
 
-Git will completely ignore files and folders matching these patterns. They will not show up in `git status` and will never be committed.
+```
+Changes not staged for commit:
+  modified:   config.py
+```
 
-> **Warning:** If you already committed a file and *then* added it to `.gitignore`, Git will keep tracking it. You need to remove it from tracking first with `git rm --cached <file>`. The `.gitignore` only prevents Git from *starting* to track new files.
+`config.py` was part of the fix. It did not make it into the commit. Now the change is split across two commits — or worse, you push and `config.py` is left in a broken state on your branch.
 
-> **Try This:** Create a `.env` file with some fake secrets in your project. Verify that `git status` does not list it. Then create a `temp.log` file and verify that `*.log` in your `.gitignore` hides it too.
+Run `git status` before `git add` to see what is changed. Run it again after `git add` to confirm what is staged. Run it one more time before `git commit` to make sure nothing is missing.
+
+## `git diff` — Read the Change Before Staging It
+
+Before staging a file, you can read exactly what changed:
+
+```bash
+git diff auth.py
+```
+
+This shows unstaged changes — lines removed (`-`) and lines added (`+`). Once you have staged the file, `git diff` no longer shows it. To see what is staged and about to be committed:
+
+```bash
+git diff --staged
+```
+
+Use both together to understand where every change is before committing.
+
+## `git restore` — Discard or Unstage
+
+To discard changes in the working directory (the file goes back to its last committed state):
+
+```bash
+git restore auth.py
+```
+
+
+> `git restore <file>` discards unstaged changes in your working directory permanently. If there is any chance you want those changes back, stash them or commit them to a separate branch before restoring.
+
+To move a staged file back to the working directory without discarding it:
+
+```bash
+git restore --staged auth.py
+```
+
+The change is still in the file — it just left the staging area.
 
 ## The Full Picture
 
-Here is how the three areas connect with the commands you now know:
-
 ```
-Edit files --> git add --> git commit
-(working)    (staging)   (repository)
-
-git status   shows you what is in each area
-.gitignore   tells Git what to skip entirely
+git status              see what is where
+git diff <file>         see unstaged changes in a file
+git diff --staged       see what is staged for the next commit
+git add <file>          stage a specific file
+git restore <file>      discard working directory changes (permanent)
+git restore --staged    move a file back from staging to working directory
 ```
 
 ## Key Takeaways
 
-- Staging lets you choose which changes go into each commit
-- Use `git add -p` to stage parts of a file for atomic commits
-- `git status` is your most important command — check it before and after every operation
-- `.gitignore` prevents files from being tracked; use `git rm --cached` to stop tracking files that were already committed
+- A commit contains what you staged, not everything you changed
+- `git status` shows the state of every file — check it before and after every operation
+- `git diff` shows unstaged changes; `git diff --staged` shows what is about to be committed
+- `git restore <file>` discards working directory changes permanently
+- `git restore --staged <file>` unstages without losing changes

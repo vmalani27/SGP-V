@@ -1,17 +1,210 @@
 id: lab-3
-title: Staging Selectively and Understanding the Working Tree
+title: "Staging Selectively: Clean Commits from a Messy Working Tree"
 difficulty: beginner
-estimated_time: 15
-xp: 60
+estimated_time: 20
+xp: 70
 tags:
   - git
+  - staging
   - fundamentals
-environment: linux-basic
+environment: git-fundamentals
+summary: >
+  You have just fixed three unrelated things in one sitting. Stage them
+  as separate, atomic commits so reviewers can follow what changed and why.
 
 objectives:
-  - Stage files selectively with git add
-  - Use .gitignore to exclude files
-  - Understand the working tree and the staging area
+  - Stage individual files to create atomic commits
+  - Use git status and git diff to understand the working tree state
+  - Discard unwanted working tree changes with git restore
+
+setup:
+  - command: >
+      mkdir -p /home/student/webapp && cd /home/student/webapp &&
+      git init &&
+      git config user.email "student@lab.local" &&
+      git config user.name "Student" &&
+      printf 'def authenticate(user, password):\n    if password == "":\n        return False\n    return check_db(user, password)\n' > auth.py &&
+      printf 'body { font-family: sans-serif; }\n.button { background: red; color: white; }\n' > styles.css &&
+      printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("Request received: %s", req)\n    return handle(req)\n' > api.py &&
+      git add auth.py styles.css api.py &&
+      git commit -m "Initial application files" &&
+      printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n' > auth.py &&
+      printf 'body { font-family: sans-serif; }\n.button { background: #2563eb; color: white; }\n' > styles.css &&
+      printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("DEBUG: raw request dump: %s", req)\n    logging.debug("DEBUG: entering process_request")\n    return handle(req)\n' > api.py
 
 completion:
   required_tasks: all
+
+tasks:
+  - id: survey-the-damage
+    summary: Understand what is changed before touching anything
+    prompt: >-
+      You sit down Monday morning and find three files modified but not committed:
+      auth.py, styles.css, and api.py. Before you stage anything, understand
+      exactly what changed in each file.
+
+      Run git status to see which files are modified, then run git diff to read
+      the actual changes. Your goal is to know what each file changed before
+      committing anything.
+
+      Work inside /home/student/webapp.
+    type: terminal_action
+    hints:
+      - "Run git status first to see the state of the working tree"
+      - "Then run git diff to read the line-by-line changes"
+      - "You can also run git diff auth.py to focus on one file at a time"
+    solution:
+      command: "cd /home/student/webapp && git status && git diff"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/webapp')
+        result = subprocess.run(['git', 'status'], capture_output=True, text=True)
+        if 'modified' in result.stdout and 'auth.py' in result.stdout:
+            print('RESULT_OK')
+        else:
+            print('RESULT_FAIL')
+            sys.exit(1)
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run git status inside /home/student/webapp. You should see three modified
+      files. Make sure you are in the right directory.
+
+  - id: commit-auth-fix
+    summary: Stage and commit only the authentication fix
+    prompt: >-
+      auth.py has one real fix: the empty password check was changed from
+      checking password == "" to using not password, which also catches None.
+
+      Stage only auth.py and commit it with a clear message. Leave styles.css
+      and api.py unstaged — they belong in separate commits.
+
+      After committing, run git status to confirm only two files remain modified.
+    type: terminal_action
+    hints:
+      - "Use git add auth.py to stage only that one file"
+      - "Write a commit message describing what changed, not just the filename"
+      - "After committing, git status should show styles.css and api.py still modified"
+    solution:
+      command: "cd /home/student/webapp && git add auth.py && git commit -m 'Fix empty-string password check to also reject None'"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/webapp')
+
+        log = subprocess.run(['git', 'log', '--oneline', '-1', '--name-only'], capture_output=True, text=True).stdout
+        if 'auth.py' not in log:
+            print('RESULT_FAIL: auth.py not in last commit')
+            sys.exit(1)
+
+        status = subprocess.run(['git', 'status'], capture_output=True, text=True).stdout
+        if 'styles.css' not in status or 'api.py' not in status:
+            print('RESULT_FAIL: expected styles.css and api.py still modified')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Make sure you staged ONLY auth.py before committing. styles.css and api.py
+      should still show as modified in git status after the commit.
+
+  - id: commit-css-fix
+    summary: Stage and commit the CSS colour change separately
+    prompt: >-
+      styles.css changed the button colour from red to a proper blue (#2563eb).
+      That is a separate concern from the auth fix and deserves its own commit.
+
+      Stage styles.css and commit it. api.py should remain unstaged.
+    type: terminal_action
+    hints:
+      - "Run git add styles.css then git commit with a message describing the visual change"
+      - "Check git status after to confirm only api.py is left modified"
+    solution:
+      command: "cd /home/student/webapp && git add styles.css && git commit -m 'Fix button colour from red to brand blue'"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/webapp')
+
+        log = subprocess.run(['git', 'log', '--oneline', '-2', '--name-only'], capture_output=True, text=True).stdout
+        if 'styles.css' not in log:
+            print('RESULT_FAIL: styles.css not committed yet')
+            sys.exit(1)
+
+        status = subprocess.run(['git', 'status'], capture_output=True, text=True).stdout
+        if 'api.py' not in status:
+            print('RESULT_FAIL: api.py should still be modified')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Stage and commit styles.css. api.py should still appear as modified in
+      git status — do not stage it yet.
+
+  - id: discard-debug-changes
+    summary: Discard the debug noise in api.py using git restore
+    prompt: >-
+      api.py has debug log lines added for local testing. They should
+      not be committed — debug noise in version history makes it harder to trace
+      real changes later.
+
+      Your task:
+      Discard the changes in api.py entirely using git restore.
+
+      After running git restore, api.py should be clean with no modifications,
+      and git diff api.py should produce no output.
+    type: terminal_action
+    hints:
+      - "Run git restore api.py to discard unstaged working directory changes"
+      - "After restoring, git diff api.py should produce no output"
+    solution:
+      command: "cd /home/student/webapp && git restore api.py"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/webapp')
+
+        diff = subprocess.run(['git', 'diff', 'api.py'], capture_output=True, text=True).stdout
+        if diff.strip():
+            print('RESULT_FAIL: api.py still has changes - run git restore api.py')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run `git restore api.py` to discard the debug changes. After restoring,
+      `git diff api.py` should produce no output.
+
+  - id: read-the-history
+    summary: Confirm the commit history tells a clean story
+    prompt: >-
+      Run git log --oneline inside /home/student/webapp. You should see exactly
+      three commits, each describing one logical change. This is what a reviewer
+      sees when they open your pull request.
+
+      Which command shows ONLY the files changed in the most recent commit,
+      without showing the full line-level diff?
+    type: multiple_choice
+    options:
+      - "git log --oneline -1 --name-only"
+      - "git diff HEAD"
+      - "git status --short"
+      - "git show --stat"
+    validation:
+      expected_answer: "git log --oneline -1 --name-only"
+    hints:
+      - "You want the commit metadata and file list — not the line-level diff"
+      - "git show --stat is also useful but shows the diff summary too"

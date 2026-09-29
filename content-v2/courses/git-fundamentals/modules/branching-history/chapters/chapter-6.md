@@ -1,98 +1,140 @@
-# Chapter 6: Bringing Work Together
+﻿# Chapter 6: Fixing Mistakes Without Panic
 
-## In this chapter, you will
+> **Before this chapter:** You should know the three Git areas — working directory, staging area, and repository — and be comfortable with `git add`, `git commit`, and `git log`.
 
-- Merge a feature branch back into `main`
-- Understand fast-forward vs. three-way merges
-- Resolve merge conflicts with confidence
+## Nothing Is Permanent Until You Push
 
-## Why Merging Exists
+The most important thing to know before this chapter: almost every mistake you can make in Git is reversible, as long as you have not pushed to a shared branch yet. Once you push, other people may have pulled your commit — changing it then rewrites shared history and causes problems for them. Before the push, you are free to fix anything.
 
-You built a feature on a branch. It is tested and ready. Now you need to integrate it back into `main` so the rest of the team can use it. That is what merging does — it combines the histories of two branches.
+This chapter gives you the right tool for each type of mistake, depending on where your changes are.
 
-## How Git Decides What to Do
+## The Situation: You Broke the Deployment Config
 
-When you run `git merge feature/search`, Git looks at three points:
+You are updating a Kubernetes manifest. You accidentally delete a required field, save the file, and stage it. Then you realize the mistake. Which tool do you reach for?
 
-1. **The merge base** — the last commit that both branches share
-2. **Your current branch tip** — where you are now (e.g., `main`)
-3. **The branch you are merging in** — where `feature/search` is
+It depends on exactly where you are in the workflow.
 
-Git then figures out what changed on each side since they diverged and tries to combine them.
+---
 
-## Fast-Forward Merges
+## Level 1: You Changed a File, Did Not Stage It Yet
 
-If the branch you are merging has not diverged — meaning `main` has no new commits since the branch was created — Git does a **fast-forward**. It simply moves the `main` pointer forward to the feature branch's commit.
+You edited `deployment.yaml` and it is now broken. You have not staged it. The last committed version is fine.
 
-```
-Before:  main: A --- B
-                    \
-feature:            C --- D
-
-After:   main: A --- B --- C --- D
-                               (HEAD -> main)
+```bash
+git restore deployment.yaml
 ```
 
-No merge commit is created. The history looks linear. This is the cleanest outcome.
+The file goes back to exactly how it was in the last commit. The change is gone from your working directory — there is no undo for this.
 
-## Three-Way Merges
+> **Warning:** `git restore` on a working directory file is permanent. The change you discard is gone. If there is any chance you want it back, commit it first (even on a throwaway branch), then restore.
 
-If both branches have new commits since they diverged, Git creates a **merge commit** — a special commit with two parents that ties the two histories together.
+---
 
-```
-Before:  main: A --- B --- E
-                    \
-feature:            C --- D
+## Level 2: You Staged a File, Want to Unstage It
 
-After:   main: A --- B --- E --- M  (merge commit)
-                    \           /
-feature:            C --- D ---
+You ran `git add deployment.yaml` and then changed your mind — you want to revise it before committing.
+
+```bash
+git restore --staged deployment.yaml
 ```
 
-The merge commit `M` records that it combined `E` and `D`. Your history now shows exactly when and how the feature was integrated.
+The file moves back from the staging area to the working directory. Your changes are still there — you just unstaged them. Nothing is lost.
 
-## Merge Conflicts
+---
 
-A conflict happens when both branches changed the same lines in the same file. Git cannot figure out which version is correct, so it pauses and asks you to decide.
+## Level 3: You Just Committed, Want to Fix It
 
-When this happens, Git marks the conflicted file with conflict markers:
+You committed but the message is wrong, or you forgot to include a file, or you committed the wrong version.
 
-```
-<<<<<<< HEAD
-This is what is on your current branch
-=======
-This is what is on the branch you are merging in
->>>>>>> feature/search
+**Fix the message:**
+```bash
+git commit --amend -m "Correct commit message here"
 ```
 
-Your job is to:
-
-1. Open the file and find the conflict markers
-2. Decide which version to keep (or combine them)
-3. Remove the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
-4. Stage the resolved file: `git add <file>`
-5. Commit: `git commit`
-
-> **Tip:** Most merge conflicts are simple. Usually one person changed a line and the other person changed the same line. Read both versions, pick the right one, and move on. Do not overthink it.
-
-## The Merge Workflow
-
-```
-git switch main
-git merge feature/search
-# If conflicts: resolve them, git add, git commit
-git branch -d feature/search
+**Add a forgotten file:**
+```bash
+git add forgotten-config.yaml
+git commit --amend --no-edit
 ```
 
-That is it. You merged, resolved if needed, and cleaned up the branch.
+`--no-edit` keeps the original message. The forgotten file gets folded into the commit as if it was always there.
 
-> **Warning:** Do not panic when you see a conflict. It does not mean something is broken. It means Git needs your input to resolve an ambiguity. Take a breath, read the file, and make a decision.
+> **Warning:** Only amend commits that have not been pushed. Amending rewrites the commit (it gets a new SHA). If you already pushed it and someone pulled, their history diverges from yours. This causes a painful merge situation. The rule: if it is pushed, use `git revert` instead.
 
-> **Try This:** Create a branch, change a line in a file, commit it. Switch back to `main`, change the *same* line differently, commit it. Now merge the branch. Git will show you a conflict. Resolve it by choosing one version, then complete the merge.
+---
+
+## Level 4: You Need to Undo a Pushed Commit
+
+You pushed a commit that broke the CI pipeline and you need to undo it without rewriting history:
+
+```bash
+git revert <commit-hash>
+```
+
+`git revert` creates a new commit that is the exact inverse of the specified commit — it undoes the change by adding a new commit, not by erasing the old one. History stays intact. Other people who pulled the original commit are not affected.
+
+This is the safe undo for shared branches.
+
+---
+
+## The Reflog: Nothing Is Truly Gone
+
+The reflog is Git's local safety net. It records every position `HEAD` has ever been at — including after resets, branch deletions, and amends.
+
+```bash
+git reflog
+```
+
+Output:
+```
+abc1234 HEAD@{0}: commit (amend): Fix deployment config field
+def5678 HEAD@{1}: commit: Fix deployment config field
+9ab0cde HEAD@{2}: commit: Add initial manifest
+```
+
+If you ran `git reset --hard` and thought you lost commits, check the reflog. The old commits are still there, referenced by their SHA.
+
+```bash
+git checkout def5678
+```
+
+Or to restore a branch to a previous state:
+```bash
+git reset --hard def5678
+```
+
+The reflog is local and expires after 90 days. It does not sync to remote. But within that window it has saved countless engineers from what looked like catastrophic mistakes.
+
+> **In real incidents:** When someone says "I accidentally force-pushed over main and wiped three days of commits" — the first thing you do is check the reflog on any machine that had the commits. They are almost certainly still there.
+
+## The Decision Tree
+
+| Situation | Command |
+|---|---|
+| Changed a file, not staged, want to discard | `git restore <file>` |
+| Staged a file, want to unstage | `git restore --staged <file>` |
+| Last commit has wrong message or missing file, not pushed | `git commit --amend` |
+| Last commit is wrong, already pushed | `git revert <hash>` |
+| Reset and now can't find commits | `git reflog` |
+
+## How Teams Use This
+
+**The accidental secret commit.** Someone commits a `.env` file containing a real database password and pushes to GitHub. The instinct is to delete the file and push again. That does not work — the password is in the history forever, indexed by GitHub and potentially already scraped by bots within seconds. The correct response: rotate the credential immediately (before doing anything else), then use `git filter-repo` or open a GitHub support ticket to purge the history. `git revert` alone is not enough here. GitHub has secret scanning that will alert you when this happens — but rotation is the only real fix.
+
+**Force-push incidents.** `git push --force` on a shared branch is one of the most disruptive things you can do to a team. It rewrites remote history, causing everyone else's `git pull` to fail with a diverged history error. Most companies have branch protection rules that block force-push to `main`. If you need to amend a commit on a feature branch that nobody else has pulled, `--force-with-lease` is the safer option — it refuses to push if the remote has changes you have not fetched.
+
+**The reflog as an on-call tool.** When an engineer says "I just reset --hard and lost a week of commits," the correct immediate response is `git reflog`. The commits are still in the object store for 90 days. You can recover them with `git checkout <sha>` or `git reset --hard <sha>`. This has saved real production work — it is not a theoretical command.
+
+**Code review and revert history.** On teams that require PRs, `git revert` is the standard way to undo a merged change. It creates an auditable record in the commit history: "this was reverted and why." Simply deleting code and committing does the same thing functionally, but loses the connection to the original change. Reviewers and future engineers can trace the decision.
+
+> [!TIP]
+> Set up branch protection on your `main` branch on GitHub: require PR reviews, block direct push, and enable secret scanning. These guardrails prevent the entire class of mistakes this chapter teaches you to fix.
 
 ## Key Takeaways
 
-- Merging combines two branches' histories into one
-- Fast-forward merges are simple pointer moves; three-way merges create merge commits
-- Conflicts happen when both branches change the same lines
-- Resolve conflicts by editing the file, removing markers, staging, and committing
+- Nothing is permanent until you push — local mistakes are almost always recoverable
+- `git restore <file>` discards working directory changes (gone, no undo)
+- `git restore --staged <file>` unstages without losing changes
+- `git commit --amend` fixes the last commit — only safe before pushing
+- `git revert` undoes a pushed commit safely by adding a new commit
+- `git reflog` is your ultimate safety net — it remembers every position HEAD has ever been

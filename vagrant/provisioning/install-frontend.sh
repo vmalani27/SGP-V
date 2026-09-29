@@ -55,7 +55,7 @@ REMOTE_FRONTEND="${ECR_REGISTRY:-public.ecr.aws/vmalani27}/labops-frontend:dev"
 echo "==> Fetching Next.js frontend production image..."
 if docker pull "$REMOTE_FRONTEND" 2>/dev/null; then
   docker tag "$REMOTE_FRONTEND" "${IMAGE_NAME}:prod"
-  echo "  - [✓] Pulled pre-built image from ECR ($REMOTE_FRONTEND)"
+  echo "  - [OK] Pulled pre-built image from ECR ($REMOTE_FRONTEND)"
 else
   echo "  - [!] Could not pull from ECR, building locally..."
   docker build \

@@ -1,4 +1,4 @@
-# Chapter 10: Your Daily Git Routine
+﻿# Chapter 12: Your Daily Git Routine
 
 ## In this chapter, you will
 

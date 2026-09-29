@@ -19,7 +19,7 @@ pull_or_build() {
   echo "  -> Fetching $local_tag..."
   if docker pull "$remote_img" 2>/dev/null; then
     docker tag "$remote_img" "$local_tag"
-    echo "     [✔] Pulled $remote_img -> $local_tag"
+    echo "     [OK] Pulled $remote_img -> $local_tag"
   else
     echo "     [!] Could not pull $remote_img, building locally..."
     docker build -t "$local_tag" -f "$LAB_IMAGES_DIR/$dockerfile" "$LAB_IMAGES_DIR"

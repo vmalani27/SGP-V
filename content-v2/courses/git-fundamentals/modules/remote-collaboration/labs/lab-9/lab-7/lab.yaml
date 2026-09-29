@@ -6,7 +6,7 @@ xp: 70
 tags:
   - git
   - remotes
-environment: linux-basic
+environment: git-fundamentals
 
 objectives:
   - Clone a remote repository

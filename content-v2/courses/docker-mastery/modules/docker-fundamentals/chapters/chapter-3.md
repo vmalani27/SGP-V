@@ -1,189 +1,301 @@
 # Chapter 3: Configuring Containers
 
-## In this chapter, you will
-
-- Pass configuration to containers with environment variables
-- Override the command a container runs at startup
-- Publish container ports to the host with port mappings
-
-## Why Configuration Matters
-
-The same nginx image can serve a personal blog, a company homepage, or an API gateway. The difference is configuration. Containers receive their configuration as environment variables — key-value pairs the application reads when it starts.
-
-Think of environment variables as settings knobs: the image provides the defaults, and you turn the knobs when you run the container, without rebuilding anything.
-
-## Environment Variables
-
-Use the `-e` flag to set an environment variable:
-
-```
-docker run -e GREETING=hello alpine printenv GREETING
-```
-
-`printenv GREETING` reads the variable and prints its value:
-
-```
-# Output:
-hello
-```
-
-You can pass several variables — each `-e` sets one:
-
-```
-docker run \
-  -e GREETING=hello \
-  -e AUDIENCE=world \
-  alpine sh -c 'echo "$GREETING, $AUDIENCE!"'
-```
-
-If a variable is not set, the application falls back to a default configured in the image — or fails to start, if the variable is required. Name the container with `--name` (from Chapter 2) so you can inspect it and read its logs afterwards.
-
-Try it — the steps below load each command into the terminal for you. Click **Run this next**, review the command, then press Enter:
-
-:::terminal-demo
-id: configuring-containers
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-steps:
-  - id: pass-env
-    label: Pass an environment variable
-    run: docker run --rm -e GREETING=hello alpine printenv GREETING
-    expect: |
-      `hello` is printed — the variable was injected when the container
-      started, then the container exited and was removed (`--rm`).
-  - id: pass-many-env
-    label: Pass several environment variables
-    run: docker run --rm -e GREETING=hello -e AUDIENCE=world alpine sh -c 'echo "$GREETING, $AUDIENCE!"'
-    expect: |
-      `hello, world!` — each `-e` flag sets one variable the application reads
-      at startup.
-:::
-
-## Overriding the Command
-
-The command you write after the image name replaces the image's default command:
-
-```
-docker run alpine echo lab-3 complete
-```
-
-The image's default command is what runs when you write no command: nginx's default starts the web server, alpine's default is an interactive shell. `echo lab-3 complete` runs instead, prints, and the container exits.
-
-The command is part of the container's configuration, so you can read it back afterwards:
-
-```
-docker inspect <name> --format '{{.Config.Cmd}}'
-```
-
-See for yourself — the override runs instead of the image's default, and the command you set is part of the container's configuration:
-
-:::terminal-demo
-id: configuring-containers
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-steps:
-  - id: override-cmd
-    label: Override the image's default command
-    run: docker run --rm alpine echo lab-3 complete
-    expect: |
-      `lab-3 complete` is printed. The command after the image name replaces
-      the image's default command, then the container exits on its own.
-  - id: create-cmd-demo
-    label: Create a container to inspect
-    run: docker run -d --name cmd-demo alpine sleep 300
-    expect: |
-      A container ID is printed — `cmd-demo` is running `sleep 300` in the
-      background so it stays up long enough to inspect.
-  - id: inspect-cmd
-    label: Read the command back
-    run: docker inspect cmd-demo --format '{{.Config.Cmd}}'
-    expect: |
-      `[sleep 300]` — the command you passed at `run` time is stored in the
-      container's configuration.
-  - id: remove-cmd-demo
-    label: Remove it
-    run: docker rm -f cmd-demo
-    expect: |
-      `cmd-demo` is echoed — the container is gone.
-:::
-
-## Publishing Ports
-
-A container runs in its own network namespace. By default nothing inside it is reachable from outside — the network is sealed off. To expose a port, publish it when you run the container:
-
-```
-docker run -d --name web -p 9090:80 nginx:alpine
-```
-
-`-p HOST:CONTAINER` maps a host port to a container port: host port `9090` forwards to port `80` inside the container, where nginx listens by default. `-d` keeps the web server running in the background.
-
-To confirm the mapping:
-
-```
-docker port web
-# 80/tcp -> 0.0.0.0:9090
-```
-
-The `PORTS` column of `docker ps` shows the same information. Open `http://localhost:9090` and you will see the nginx welcome page. Use multiple `-p` flags to publish more than one port.
-
-Try it — run nginx with a published port, then confirm the mapping and read back the configuration you passed:
-
 :::terminal-demo
 id: configuring-containers
 image: labops-docker:latest
 pre_pull:
   - alpine:latest
   - nginx:alpine
-state:
-  label: web container
-  command: docker inspect -f '{{.State.Status}}' web 2>/dev/null || echo "not created"
-steps:
-  - id: run-web
-    label: Publish a port and run nginx
-    run: docker run -d --name web -p 9090:80 -e SITE_MODE=production nginx:alpine
-    expect: |
-      A container ID is printed and the state chip flips to `running`. Host
-      port `9090` now forwards to port `80` inside the container.
-  - id: check-port
-    label: Confirm the port mapping
-    run: docker port web
-    expect: |
-      `80/tcp -> 0.0.0.0:9090` — the host port forwards to the container port.
-      `docker ps` shows the same mapping in its `PORTS` column.
-  - id: inspect-env
-    label: Read the environment variable back
-    run: docker inspect web | grep SITE_MODE
-    expect: |
-      A line reading `"SITE_MODE=production"` inside the `Env` array — the
-      configuration you passed at `run` time is part of the container's config.
-  - id: see-logs
-    label: Read the web server logs
-    run: docker logs web
-    expect: |
-      nginx startup lines, ending with something like `start worker processes`
-      — the server is up and serving.
-  - id: stop-web
-    label: Stop and remove it
-    run: docker stop web && docker rm web
-    expect: |
-      `web` is echoed twice and the state chip reads `not created` — the
-      container is gone.
-examples:
-  - docker ps
-  - docker run --rm -e SITE_MODE=production alpine printenv SITE_MODE
-  - docker inspect web --format '{{json .HostConfig.PortBindings}}'
 :::
 
-> **Tip:** If a container exits immediately after starting, check its logs with `docker logs` (from Chapter 2) — the application usually prints why it failed, often a missing environment variable or a bad command.
+---
 
-> **Try This:** Run `docker run -d --name site -p 9090:80 -e SITE_MODE=production nginx:alpine`. Inspect it with `docker inspect site` and find `SITE_MODE=production` in the `Env` section and `9090` in the port mappings. Read its startup logs with `docker logs site`. Then stop and remove it with `docker stop site && docker rm site`.
+> **Note — Prerequisites:** What you need to know before reading this chapter
+>
+> - **Container lifecycle (Chapter 2):** `docker ps`, `docker logs`, `docker inspect` — you'll use these to verify configuration worked
+> - **IP addresses and ports — what they are:** the difference between `localhost` (127.0.0.1) and `0.0.0.0`, what a port number means, what "binding" to a port means — covered in Linux Fundamentals chapter 5
+> - **Environment variables:** what they are and how applications use them to change their behaviour
+> - **Basic networking:** what it means for a service to be "reachable" vs "only accessible from this machine"
+
+---
+
+## Your Teammate Can't Reach Your Container. Why?
+
+You've been running a web service locally all morning. It works fine in your browser. You tell your teammate to hit `http://YOUR_IP:9090` so they can review the UI before you push it.
+
+They try. It times out. You check your container:
+
+```bash
+docker ps
+```
+
+The container is running. `docker logs` shows the service started normally. But your teammate still can't reach it.
+
+**This is the most common port mapping problem in Docker.** It has nothing to do with firewalls. The fix is one word in your `docker run` command. This chapter explains exactly what's happening and how to diagnose it.
+
+A second scenario: same image deployed to staging and production behaves completely differently — the staging database gets wiped, the production one doesn't. Same image. Different behaviour. That's the second thing this chapter covers: environment variables as the correct mechanism for per-environment configuration.
+
+---
+
+## Environment Variables: Same Image, Different Behaviour
+
+The 12-factor app methodology (the pattern most containerized apps follow) says: **store configuration in the environment, not in the image.** The image is fixed; the environment is what you control at runtime.
+
+The same nginx image can act as a simple web server or a rate-limited API proxy. The same application image can point to a dev database or a prod database. The difference is the environment variables you inject when you `docker run`.
+
+### Passing a single variable
+
+```bash
+docker run --rm -e DATABASE_URL=postgres://dev-db:5432/myapp alpine printenv DATABASE_URL
+```
+
+`-e KEY=VALUE` sets one variable. The application reads it at startup — it never looks at what the value was on your laptop; it only reads what you passed in.
+
+### Passing multiple variables
+
+```bash
+docker run --rm \
+  -e DATABASE_URL=postgres://dev-db:5432/myapp \
+  -e LOG_LEVEL=debug \
+  -e FEATURE_DARK_MODE=false \
+  alpine sh -c 'printenv DATABASE_URL && printenv LOG_LEVEL'
+```
+
+Each `-e` sets one variable. You can have as many as you need.
+
+### Loading variables from a file
+
+In practice you don't want to type all your variables on the command line — especially not in shell history where they might be logged. Use a file:
+
+```bash
+# .env file
+DATABASE_URL=postgres://dev-db:5432/myapp
+LOG_LEVEL=debug
+FEATURE_DARK_MODE=false
+```
+
+```bash
+docker run --rm --env-file .env alpine printenv LOG_LEVEL
+```
+
+> **Warning:** Never commit `.env` files to git. They contain credentials. Add `.env` to your `.gitignore`. Use a `.env.sample` with placeholder values to show teammates what variables are needed without exposing real values.
+
+### Verifying what got injected
+
+To confirm the variables made it in:
+
+```bash
+docker run -d --name api-test -e LOG_LEVEL=debug alpine sleep 300
+docker inspect api-test --format '{{json .Config.Env}}'
+docker rm -f api-test
+```
+
+You'll see the injected variables in the output alongside any defaults baked into the image itself.
+
+---
+
+## Port Mapping: How Containers Reach the Outside World
+
+A container runs inside its own **network namespace** — a completely isolated network stack with its own IP address (something like `172.17.0.3`). By default, nothing from outside can reach it. Not your browser, not your teammate's machine, not another container unless they're on the same Docker network.
+
+To make a port reachable, you **publish** it when you run the container:
+
+```bash
+docker run -d --name web -p 9090:80 nginx:alpine
+```
+
+`-p HOST_PORT:CONTAINER_PORT` tells Docker to forward traffic arriving on the host's port `9090` to port `80` inside the container. This works through `iptables` DNAT rules Docker creates on the host automatically.
+
+### Confirming the mapping
+
+```bash
+# Shows each published port
+docker port web
+
+# Shows the same info in the PORTS column
+docker ps
+```
+
+### The 127.0.0.1 vs 0.0.0.0 problem
+
+This is what was happening to your teammate. By default, Docker binds published ports to `0.0.0.0` — all network interfaces — which means the port is reachable from your LAN, not just from localhost. But some setups (older Docker versions, custom configurations, Docker Desktop on certain OS versions) may bind to `127.0.0.1` (loopback only).
+
+When a port is bound to `127.0.0.1`, only processes on *that same machine* can reach it. Your teammate is on a different machine — the request never arrives.
+
+You can control this explicitly:
+
+```bash
+# Bind to all interfaces — reachable from anywhere (default behaviour)
+docker run -d --name web -p 0.0.0.0:9090:80 nginx:alpine
+
+# Bind to loopback only — only reachable from this machine
+docker run -d --name web-local -p 127.0.0.1:9090:80 nginx:alpine
+```
+
+`docker port web` shows you which address it bound to. If it shows `127.0.0.1:9090`, that's why remote access fails.
+
+### EXPOSE vs -p: a common confusion
+
+Dockerfiles often contain an `EXPOSE 80` line. Many people assume this publishes the port. **It does not.** `EXPOSE` is documentation — it tells humans (and tooling) what port the container listens on internally. It does nothing to networking unless you also use `-p` when you `docker run`.
+
+```bash
+# This does NOT make port 80 reachable from outside the container
+docker run -d nginx:alpine
+
+# This DOES make it reachable on host port 9090
+docker run -d -p 9090:80 nginx:alpine
+```
+
+### Publishing all exposed ports automatically
+
+```bash
+# Docker picks random host ports for each EXPOSE'd port
+docker run -d -P nginx:alpine
+docker port <container>
+```
+
+Useful for testing, but in production you want predictable port numbers — use explicit `-p HOST:CONTAINER`.
+
+---
+
+## Overriding the Command
+
+The command after the image name replaces whatever default command is baked into the image:
+
+```bash
+# Instead of starting nginx, just print the version and exit
+docker run --rm nginx:alpine nginx -v
+
+# Instead of the default alpine shell, run a specific script
+docker run --rm alpine sh -c 'echo "Custom startup!"'
+```
+
+You can read back what command a container is configured to run:
+
+```bash
+docker run -d --name cmd-demo alpine sleep 300
+docker inspect cmd-demo --format '{{.Config.Cmd}}'
+docker rm -f cmd-demo
+```
+
+---
+
+## When Configuration Goes Wrong
+
+A container that fails to start usually has one of these causes:
+
+| Symptom | Likely cause | Diagnosis |
+|:--------|:-------------|:----------|
+| Container exits immediately | Missing required env var, bad command | `docker logs <name>` |
+| Port not reachable from other machine | Bound to 127.0.0.1 | `docker port <name>` |
+| Port not reachable at all | `-p` flag missing | `docker ps` — check PORTS column |
+| Port conflicts | Host port already in use | Error message at `docker run` time |
+| Wrong behaviour vs last time | Env var pointing to wrong DB/service | `docker inspect <name> --format '{{json .Config.Env}}'` |
+
+---
+
+## Lab: Diagnose a Misconfigured Port Mapping
+
+> **Lab:** Someone started a web service and it's unreachable. Find the exact misconfiguration.
+>
+> You're taking over for a teammate. They ran a container and told you it's serving on port 8080, but when you try to curl it from outside, nothing comes back. They're gone. You have to figure it out.
+>
+> **Setup — your teammate ran this:**
+>
+> ```bash
+> docker run -d --name teammate-web -p 127.0.0.1:8080:80 nginx:alpine
+> ```
+>
+> **Your tasks:**
+>
+> **Task 1:** Check that the container is actually running.
+>
+> ```bash
+> docker ps
+> ```
+>
+> It's running. Good. So why can't you reach it from another machine?
+>
+> **Task 2:** Check what address the port is actually bound to.
+>
+> ```bash
+> docker port teammate-web
+> ```
+>
+> You should see `80/tcp -> 127.0.0.1:8080`. That's the problem: it's bound to loopback only. You can reach it from *this* machine, but not from anywhere else.
+>
+> Verify that it's accessible from localhost:
+>
+> ```bash
+> curl http://127.0.0.1:8080
+> ```
+>
+> You get the nginx welcome page — so the service itself is fine, just unreachable from outside.
+>
+> **Task 3:** Fix it. Stop and remove the broken container, then re-run it correctly — bound to `0.0.0.0` so it's reachable from any interface.
+>
+> ```bash
+> docker rm -f teammate-web
+> docker run -d --name teammate-web -p 0.0.0.0:8080:80 nginx:alpine
+> ```
+>
+> **Task 4:** Verify the fix.
+>
+> ```bash
+> docker port teammate-web
+> # Should now show: 80/tcp -> 0.0.0.0:8080
+> curl http://localhost:8080
+> ```
+>
+> **Bonus task:** Your teammate also forgot to pass the `SITE_ENV` variable the nginx config expects. Add `-e SITE_ENV=dev` to the run command and verify it shows up in `docker inspect teammate-web --format '{{json .Config.Env}}'`.
+>
+> **Cleanup:**
+>
+> ```bash
+> docker rm -f teammate-web
+> ```
+
+---
+
+## Connecting to docker-compose, Kubernetes, and Production
+
+Everything you've done here with flags on `docker run` has a direct equivalent in every other tool you'll use:
+
+**docker-compose.yml:**
+```yaml
+services:
+  api:
+    image: myapp:latest
+    ports:
+      - "0.0.0.0:8080:80"   # same as -p 0.0.0.0:8080:80
+    environment:
+      DATABASE_URL: postgres://db:5432/prod
+      LOG_LEVEL: info
+    env_file:
+      - .env.prod             # same as --env-file
+```
+
+**Kubernetes (Deployment + Service):**
+- `env:` in a container spec = the `-e` flags
+- `envFrom: configMapRef:` = the `--env-file` flag
+- A `Service` object handles port publishing — `ClusterIP`, `NodePort`, `LoadBalancer` are all variations of the `-p` concept, just at cluster scale
+
+**CI/CD integration:**
+- In GitHub Actions, secrets are passed as env vars to `docker run` steps — same mechanism, just the values come from GitHub's secret store instead of your `.env` file
+- The separation between "image" and "config" is what makes the same container image promotable from dev → staging → prod without rebuilding — only the env vars change
+
+**Team workflow:**
+- `.env.sample` in your repo shows teammates what variables are needed
+- Your CI pipeline has its own set of env vars (staging credentials) that it injects at test time
+- Production has a different set (prod credentials) managed by whatever secrets system your team uses (AWS Secrets Manager, HashiCorp Vault, GitHub Secrets)
+
+---
 
 ## Key Takeaways
 
-- Pass configuration at runtime with `-e KEY=VALUE`, without rebuilding the image
-- The command after the image name overrides the image's default command
-- `-p HOST:CONTAINER` publishes a container port to the host
-- `docker port <name>` lists a container's port mappings
-- If a container fails to start, its logs explain why
+- `-e KEY=VALUE` injects config at runtime; `--env-file .env` loads a whole file — same image, different behaviour per environment
+- `-p HOST_PORT:CONTAINER_PORT` forwards traffic through iptables DNAT; without it, the container's port is unreachable from outside
+- `0.0.0.0` = all interfaces (reachable from LAN); `127.0.0.1` = loopback only (this machine only)
+- `docker port <name>` tells you exactly what address a port is bound to — check this first when access fails
+- `EXPOSE` in a Dockerfile is documentation, not port publishing — `-p` is required to actually publish
+- Use `docker inspect <name> --format '{{json .Config.Env}}'` to verify what variables were actually injected

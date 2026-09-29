@@ -1,0 +1,203 @@
+id: lab-4
+title: "Fixing Mistakes: Navigate the Undo Decision Tree"
+difficulty: intermediate
+estimated_time: 20
+xp: 70
+tags:
+  - git
+  - history
+  - fundamentals
+environment: git-fundamentals
+summary: >
+  A series of mistakes has been made in a repo — wrong file staged, bad commit
+  message, a secret accidentally committed. Work through each situation using
+  the right undo tool for each level.
+
+objectives:
+  - Discard working directory changes with git restore
+  - Unstage a file without losing changes using git restore --staged
+  - Amend a commit message before pushing
+  - Safely revert a pushed commit using git revert
+
+setup:
+  - command: >
+      mkdir -p /home/student/project && cd /home/student/project &&
+      git init &&
+      git config user.email "student@lab.local" &&
+      git config user.name "Student" &&
+      echo "DB_URL=postgres://prod-server/mydb" > config.py &&
+      echo "def connect(): pass" >> config.py &&
+      git add config.py &&
+      git commit -m "Add database config" &&
+      echo "API_KEY=sk-real-secret-1234" >> config.py &&
+      git add config.py &&
+      git commit -m "stuff" &&
+      echo "def handle_request(req): return process(req)" > handler.py &&
+      echo "debug output line" > debug.txt
+
+completion:
+  required_tasks: all
+
+tasks:
+  - id: unstage-wrong-file
+    summary: Remove debug.txt from staging without losing the file
+    prompt: >-
+      You ran git add . by mistake and now both handler.py and debug.txt are
+      staged. debug.txt should never be committed — it is throwaway output from
+      a local test run.
+
+      Unstage debug.txt without discarding it. The file should still exist in
+      your working directory, but it should not be in the staging area.
+
+      Work inside /home/student/project.
+    type: terminal_action
+    hints:
+      - "Run git status first to confirm both files are staged"
+      - "git restore --staged debug.txt moves the file back to the working directory without deleting it"
+    solution:
+      command: "cd /home/student/project && git add . && git restore --staged debug.txt"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/project')
+
+        status = subprocess.run(['git', 'status'], capture_output=True, text=True).stdout
+
+        # handler.py should be staged
+        if 'handler.py' not in status:
+            print('RESULT_FAIL: handler.py should be staged')
+            sys.exit(1)
+
+        # debug.txt should NOT be staged (should be untracked or modified not staged)
+        # check the staged diff
+        staged = subprocess.run(['git', 'diff', '--staged', '--name-only'], capture_output=True, text=True).stdout
+        if 'debug.txt' in staged:
+            print('RESULT_FAIL: debug.txt is still staged - use git restore --staged debug.txt')
+            sys.exit(1)
+
+        # debug.txt should still exist on disk
+        if not os.path.exists('debug.txt'):
+            print('RESULT_FAIL: debug.txt was deleted - it should still exist in working directory')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Use git restore --staged debug.txt to unstage it without deleting it.
+      handler.py should remain staged. debug.txt should still exist in your
+      working directory.
+
+  - id: amend-bad-message
+    summary: Fix the vague commit message on the most recent commit
+    prompt: >-
+      Look at git log --oneline. The second commit has the message "stuff" —
+      a completely useless commit message that tells reviewers nothing about
+      what changed.
+
+      Amend that commit to give it a proper message. The commit added an API key
+      to config.py. A good message describes what changed and why.
+
+      Note: in a real scenario you would never commit an API key — you would
+      remove it first. For this lab, just fix the message.
+    type: terminal_action
+    hints:
+      - "git commit --amend -m 'new message here' rewrites the most recent commit message"
+      - "Amend is safe here because this commit has not been pushed to a shared branch"
+      - "After amending, git log --oneline should show your new message"
+    solution:
+      command: "cd /home/student/project && git commit --amend -m 'Add API key configuration to config.py'"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/project')
+
+        log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True).stdout
+
+        # The word 'stuff' should not appear in recent commits
+        if 'stuff' in log:
+            print('RESULT_FAIL: commit message still says stuff - amend it')
+            sys.exit(1)
+
+        # Should still have 2 commits
+        lines = [l.strip() for l in log.strip().splitlines() if l.strip()]
+        if len(lines) < 2:
+            print('RESULT_FAIL: expected at least 2 commits in log')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run git commit --amend -m 'your message here' to rewrite the most recent
+      commit message. The word 'stuff' should no longer appear in git log.
+
+  - id: revert-secret-commit
+    summary: Safely undo the commit that added an API key
+    prompt: >-
+      The most recent commit added an API key to config.py. Assume this commit
+      has already been pushed to a shared branch. You cannot amend it — that
+      would rewrite shared history and break your teammates' repos.
+
+      Use git revert to create a new commit that undoes the API key addition.
+      This leaves history intact and creates a clear audit trail showing the
+      change was intentionally reversed.
+
+      After reverting, config.py should no longer contain the API_KEY line.
+    type: terminal_action
+    hints:
+      - "Run git log --oneline to get the SHA of the commit you want to undo"
+      - "git revert <sha> creates a new inverse commit — it does not delete the original"
+      - "If git opens an editor for the commit message, save and exit (Ctrl+X in nano, :wq in vim)"
+      - "You can also use git revert HEAD to revert the most recent commit"
+    solution:
+      command: "cd /home/student/project && git revert HEAD --no-edit"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/project')
+
+        # config.py should not contain API_KEY
+        content = open('config.py').read()
+        if 'API_KEY' in content:
+            print('RESULT_FAIL: API_KEY still present in config.py - did you revert?')
+            sys.exit(1)
+
+        # There should be a revert commit in the log
+        log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True).stdout
+        if 'revert' not in log.lower():
+            print('RESULT_FAIL: no revert commit found in git log')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run git revert HEAD --no-edit to undo the most recent commit. After
+      reverting, config.py should not contain API_KEY and git log should
+      show a new revert commit.
+
+  - id: which-tool-when
+    summary: Choose the right undo command for the situation
+    prompt: >-
+      A teammate just pushed a commit to the shared main branch that broke the
+      CI pipeline. They cannot amend it because other engineers have already
+      pulled it. What is the correct command to undo the change safely?
+    type: multiple_choice
+    options:
+      - "git revert <commit-sha>"
+      - "git reset --hard <previous-sha>"
+      - "git commit --amend"
+      - "git restore <file>"
+    validation:
+      expected_answer: "git revert <commit-sha>"
+    hints:
+      - "Amend rewrites history — unsafe once others have pulled"
+      - "reset --hard on a shared branch would require a force push, which breaks teammates"
+      - "revert creates a new commit that undoes the change — history stays intact"

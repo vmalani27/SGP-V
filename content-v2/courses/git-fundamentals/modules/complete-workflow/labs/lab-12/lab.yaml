@@ -1,4 +1,4 @@
-id: lab-10
+id: lab-12
 title: A Complete Git Workflow
 difficulty: advanced
 estimated_time: 25
@@ -6,7 +6,7 @@ xp: 90
 tags:
   - git
   - workflow
-environment: linux-basic
+environment: git-fundamentals
 
 objectives:
   - Follow a daily branch-based workflow

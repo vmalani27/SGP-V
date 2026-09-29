@@ -1,0 +1,193 @@
+id: lab-4
+title: "Building Clean Commits with git add -p"
+difficulty: beginner
+estimated_time: 20
+xp: 70
+tags:
+  - git
+  - staging
+  - fundamentals
+environment: git-fundamentals
+summary: >
+  Practice splitting a file that has two unrelated changes into two separate
+  atomic commits using interactive staging.
+
+objectives:
+  - Use git add -p to stage individual hunks within a file
+  - Verify staged content with git diff --staged before committing
+  - Produce two separate commits from changes in a single file
+
+setup:
+  - command: >
+      mkdir -p /home/student/project && cd /home/student/project &&
+      git init &&
+      git config user.email "student@lab.local" &&
+      git config user.name "Student" &&
+      printf 'def authenticate(user, password):\n    if password == "":\n        return False\n    return check_db(user, password)\n\ndef get_user_profile(user_id):\n    result = db.query(user_id)\n    return result\n' > auth.py &&
+      git add auth.py &&
+      git commit -m "Initial auth module" &&
+      printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n\ndef get_user_profile(uid):\n    result = db.query(uid)\n    return result\n' > auth.py
+
+completion:
+  required_tasks: all
+
+tasks:
+  - id: inspect-changes
+    summary: Read what changed in auth.py before staging anything
+    prompt: >-
+      auth.py has two unrelated changes:
+      1. The password check was fixed (password == "" → not password)
+      2. A parameter was renamed (user_id → uid)
+
+      Before staging anything, read the full diff to confirm you understand
+      what each change does.
+
+      Run git diff auth.py inside /home/student/project.
+    type: terminal_action
+    hints:
+      - "Run git diff auth.py to see the line-level changes"
+      - "Lines starting with - were removed, lines starting with + were added"
+    solution:
+      command: "cd /home/student/project && git diff auth.py"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/project')
+        result = subprocess.run(['git', 'diff', 'auth.py'], capture_output=True, text=True)
+        if 'not password' in result.stdout or 'password ==' in result.stdout:
+            print('RESULT_OK')
+        else:
+            print('RESULT_FAIL: run git diff auth.py inside /home/student/project')
+            sys.exit(1)
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Run git diff auth.py inside /home/student/project. You should see two
+      separate changes in the output.
+
+  - id: stage-first-hunk
+    summary: Stage only the password fix using git add -p
+    prompt: >-
+      Use git add -p auth.py to stage only the password check fix
+      (the change from password == "" to not password).
+
+      Skip the parameter rename hunk — answer n when git asks about it.
+
+      After staging, run git diff --staged to confirm only the password fix
+      is staged.
+    type: terminal_action
+    hints:
+      - "Run git add -p auth.py and answer y to the password fix hunk"
+      - "Answer n to the parameter rename hunk"
+      - "If the hunks are combined, answer s to split them first"
+      - "After staging, git diff --staged should show only the password change"
+    solution:
+      command: "cd /home/student/project && git add -p auth.py"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/project')
+
+        staged = subprocess.run(['git', 'diff', '--staged', 'auth.py'], capture_output=True, text=True).stdout
+
+        # The password fix should be staged
+        if 'not password' not in staged and 'password ==' not in staged:
+            print('RESULT_FAIL: password fix not found in staged changes')
+            sys.exit(1)
+
+        # The rename should NOT be staged
+        if 'uid' in staged and 'user_id' in staged:
+            print('RESULT_FAIL: parameter rename should not be staged yet')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Use git add -p auth.py to stage only the password fix hunk. Answer y
+      to that hunk and n to the parameter rename. Then check git diff --staged
+      to confirm only the password change is staged.
+
+  - id: commit-first-hunk
+    summary: Commit the staged password fix
+    prompt: >-
+      Commit the staged change with a message that describes exactly what
+      the fix does. The message should make sense to someone reading the
+      git log without looking at the diff.
+    type: terminal_action
+    hints:
+      - "git commit -m 'your message here'"
+      - "A good message: Fix password check to reject None and empty string"
+    solution:
+      command: "cd /home/student/project && git commit -m 'Fix password check to reject None and empty string'"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/project')
+
+        log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True).stdout
+        # Should have 2 commits now
+        lines = [l for l in log.strip().splitlines() if l.strip()]
+        if len(lines) < 2:
+            print('RESULT_FAIL: expected 2 commits after committing the first hunk')
+            sys.exit(1)
+
+        # The rename should still be unstaged
+        unstaged = subprocess.run(['git', 'diff', 'auth.py'], capture_output=True, text=True).stdout
+        if 'uid' not in unstaged:
+            print('RESULT_FAIL: parameter rename should still be unstaged')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Commit the staged hunk. After committing, git log --oneline should show
+      2 commits and git diff auth.py should still show the parameter rename
+      as unstaged.
+
+  - id: commit-second-hunk
+    summary: Stage and commit the parameter rename separately
+    prompt: >-
+      The parameter rename (user_id → uid) is still unstaged. Stage it and
+      commit it with its own message.
+
+      After this commit, git log --oneline should show 3 total commits.
+      git diff auth.py should produce no output — the working directory is clean.
+    type: terminal_action
+    hints:
+      - "git add auth.py then git commit — or use git add -p if you want to practice again"
+      - "After committing, git status should show nothing to commit"
+    solution:
+      command: "cd /home/student/project && git add auth.py && git commit -m 'Rename user_id to uid in get_user_profile'"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        os.chdir('/home/student/project')
+
+        log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True).stdout
+        lines = [l for l in log.strip().splitlines() if l.strip()]
+        if len(lines) < 3:
+            print('RESULT_FAIL: expected 3 commits total')
+            sys.exit(1)
+
+        diff = subprocess.run(['git', 'diff', 'auth.py'], capture_output=True, text=True).stdout
+        if diff.strip():
+            print('RESULT_FAIL: auth.py still has unstaged changes')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      Stage and commit the remaining change in auth.py. After committing,
+      git log --oneline should show 3 commits and git diff auth.py should
+      produce no output.

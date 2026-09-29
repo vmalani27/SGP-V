@@ -1,72 +1,54 @@
 id: lab-3
-title: Runtime Configuration & Port Publishing
+title: Runtime Configuration & Port Mapping
 difficulty: beginner
-environment: docker-basic
+environment: docker-fundamentals
 
 setup:
   - command: "usermod -aG docker student"
-  - command: "docker rm -f runtime-config ingress-proxy custom-worker 2>/dev/null || true"
+  - command: "docker rm -f broken-web fixed-web config-test 2>/dev/null || true"
+  - command: >-
+      docker run -d --name broken-web -p 127.0.0.1:9090:80 nginx:alpine
 
 objectives:
-  - Inject runtime environment variables into container processes
-  - Bind and publish container ports to host network interfaces
-  - Override default container command specifications at instantiation
-  - Understand Linux iptables and user-space proxy routing mechanics
+  - Diagnose a misconfigured port binding using docker port
+  - Fix a port binding so the service is reachable from outside the host
+  - Inject environment variables at runtime with -e and --env-file
+  - Verify injected variables with docker inspect
 
 tasks:
-  - id: configure-environment-variables
-    summary: Launch a container with specified runtime environment variables.
+  - id: diagnose-port-binding
+    summary: Find out why broken-web is unreachable from outside the host.
     prompt: >-
-      Launch a container named `runtime-config` using `alpine:latest` that executes and exits.
-      The container must be configured with two environment variables:
-      - `APP_ENV=production`
-      - `SERVICE_PORT=8080`
-      Configure the container to print the value of `APP_ENV` to stdout upon launch.
-    type: terminal_action
+      A container named `broken-web` is already running. Your teammate says they can't
+      reach it from their machine at port 9090, but it works fine from localhost.
+
+      Run the command that shows exactly which address the port is bound to.
+      What is the problem?
+    type: multiple_choice
+    options:
+      - "The port is bound to 127.0.0.1 (loopback only) — traffic from other machines never reaches the container."
+      - "The container is not running — docker ps shows nothing."
+      - "Port 9090 is blocked by the container's internal firewall rules."
+      - "nginx:alpine does not expose port 80 by default."
     validation:
-      command: |-
-        python3 -c "
-        import subprocess, json, sys
-
-        r = subprocess.run(['docker', 'inspect', 'runtime-config'], capture_output=True)
-        if r.returncode != 0:
-            print('Container not found.')
-            sys.exit(0)
-
-        data = json.loads(r.stdout.decode('utf-8'))[0]
-        env = data['Config']['Env']
-
-        has_env = 'APP_ENV=production' in env and 'SERVICE_PORT=8080' in env
-        if not has_env:
-            print('Missing required environment variables.')
-            sys.exit(0)
-
-        logs = subprocess.run(['docker', 'logs', 'runtime-config'], capture_output=True)
-        if b'production' not in logs.stdout:
-            print('Did not print APP_ENV value.')
-            sys.exit(0)
-
-        print('ENV_CONFIG_OK')
-        "
-      match_type: exact
-      expected_output: ENV_CONFIG_OK
+      expected_answer: "The port is bound to 127.0.0.1 (loopback only) — traffic from other machines never reaches the container."
     error_message: >-
-      The container 'runtime-config' does not have the specified environment variables or did not print APP_ENV.
+      Run 'docker port broken-web'. You will see 80/tcp -> 127.0.0.1:9090. That loopback binding is why remote access fails.
 
-  - id: publish-ingress-ports
-    summary: Deploy a web server container with host port binding.
+  - id: fix-port-binding
+    summary: Re-deploy the container with a correct port binding.
     prompt: >-
-      Deploy a detached web service named `ingress-proxy` using `nginx:alpine`.
-      Publish host port `8080` to container port `80`. The container must remain actively running.
+      Remove `broken-web` and re-run it as `fixed-web` with the port bound to `0.0.0.0:9090`
+      so it is reachable from any interface.
     type: terminal_action
     validation:
       command: |-
         python3 -c "
         import subprocess, json, sys
 
-        r = subprocess.run(['docker', 'inspect', 'ingress-proxy'], capture_output=True)
+        r = subprocess.run(['docker', 'inspect', 'fixed-web'], capture_output=True)
         if r.returncode != 0:
-            print('Container not found.')
+            print('Container fixed-web not found.')
             sys.exit(0)
 
         data = json.loads(r.stdout.decode('utf-8'))[0]
@@ -74,63 +56,76 @@ tasks:
             print('Container not running.')
             sys.exit(0)
 
-        ports = data['NetworkSettings']['Ports'].get('80/tcp')
-        if not ports or not any(p.get('HostPort') == '8080' for p in ports):
-            print('Port 8080 not mapped to 80.')
+        ports = data['NetworkSettings']['Ports'].get('80/tcp', [])
+        ok = any(p.get('HostIp') in ('0.0.0.0', '') and p.get('HostPort') == '9090' for p in ports)
+        if not ok:
+            print('Port 9090 not bound to 0.0.0.0.')
             sys.exit(0)
 
-        print('PORT_BINDING_OK')
+        print('PORT_FIXED')
         "
       match_type: exact
-      expected_output: PORT_BINDING_OK
+      expected_output: PORT_FIXED
     error_message: >-
-      The container 'ingress-proxy' is not running with host port 8080 mapped to container port 80.
+      fixed-web is not running with port 9090 bound to 0.0.0.0. Use: docker run -d --name fixed-web -p 0.0.0.0:9090:80 nginx:alpine
 
-  - id: override-startup-command
-    summary: Override default image execution command at runtime.
+  - id: inject-env-vars
+    summary: Launch a container with runtime environment variables and verify them.
     prompt: >-
-      Deploy a container named `custom-worker` using `alpine:latest` that overrides the default
-      image command to output `SYSTEM_INITIALIZED` to stdout and terminates cleanly.
+      Run a container named `config-test` from `alpine:latest` that:
+      - Sets `APP_ENV=staging`
+      - Sets `LOG_LEVEL=debug`
+      - Prints the value of `APP_ENV` to stdout and exits
+
+      Then verify both variables are present using `docker inspect`.
     type: terminal_action
     validation:
       command: |-
         python3 -c "
         import subprocess, json, sys
 
-        r = subprocess.run(['docker', 'inspect', 'custom-worker'], capture_output=True)
+        r = subprocess.run(['docker', 'inspect', 'config-test'], capture_output=True)
         if r.returncode != 0:
-            print('Container not found.')
+            print('Container config-test not found.')
             sys.exit(0)
 
         data = json.loads(r.stdout.decode('utf-8'))[0]
-        if data['State']['Status'] != 'exited':
-            print('Container not exited.')
+        env = data['Config']['Env']
+
+        if 'APP_ENV=staging' not in env:
+            print('APP_ENV=staging not found in container env.')
+            sys.exit(0)
+        if 'LOG_LEVEL=debug' not in env:
+            print('LOG_LEVEL=debug not found in container env.')
             sys.exit(0)
 
-        logs = subprocess.run(['docker', 'logs', 'custom-worker'], capture_output=True)
-        if b'SYSTEM_INITIALIZED' not in logs.stdout:
-            print('Incorrect output.')
+        logs = subprocess.run(['docker', 'logs', 'config-test'], capture_output=True)
+        if b'staging' not in logs.stdout:
+            print('Container did not print APP_ENV value.')
             sys.exit(0)
 
-        print('CMD_OVERRIDE_OK')
+        print('ENV_OK')
         "
       match_type: exact
-      expected_output: CMD_OVERRIDE_OK
+      expected_output: ENV_OK
     error_message: >-
-      The container 'custom-worker' was not found, did not exit cleanly, or did not output 'SYSTEM_INITIALIZED'.
+      config-test is missing APP_ENV=staging, LOG_LEVEL=debug, or did not print 'staging' to stdout.
 
-  - id: evaluate-port-mapping-mechanics
-    summary: Evaluate the host networking mechanics behind port publishing.
+  - id: expose-vs-publish
+    summary: Understand the difference between EXPOSE and -p.
     prompt: >-
-      When you publish a port using `-p 8080:80`, what does the Docker daemon configure on the Linux host
-      to direct external traffic into the container's private network namespace?
+      A colleague added `EXPOSE 8080` to their Dockerfile and says their container's
+      port is now published. Is that correct?
     type: multiple_choice
     options:
-      - "Docker configures host iptables/nftables NAT rules and runs a `docker-proxy` process listening on host port 8080 to route packets into the container namespace."
-      - "Docker edits the host's `/etc/hosts` file to remap localhost:8080 to the container's virtual IP."
-      - "Docker creates a systemd socket activation unit that wraps the container standard input."
-      - "Docker alters the host physical network adapter firmware to inject raw Ethernet frames into the bridge."
+      - "No — EXPOSE is documentation only. The -p flag at docker run time is what actually publishes the port to the host."
+      - "Yes — EXPOSE automatically publishes the port to the host network."
+      - "Yes — EXPOSE publishes the port but only to other containers on the same network."
+      - "No — you must use PUBLISH instead of EXPOSE in the Dockerfile."
     validation:
-      expected_answer: "Docker configures host iptables/nftables NAT rules and runs a `docker-proxy` process listening on host port 8080 to route packets into the container namespace."
+      expected_answer: "No — EXPOSE is documentation only. The -p flag at docker run time is what actually publishes the port to the host."
     error_message: >-
-      The selected answer does not correctly describe Docker's host port forwarding architecture.
+      EXPOSE is documentation. Without -p at docker run time, the port is not reachable from outside the container.
+
+completion:
+  required_tasks: all

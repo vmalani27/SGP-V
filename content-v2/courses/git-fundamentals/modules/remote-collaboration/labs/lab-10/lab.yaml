@@ -1,0 +1,177 @@
+id: lab-10
+title: Stashing Work in Progress
+difficulty: intermediate
+estimated_time: 15
+xp: 65
+tags:
+  - git
+  - stash
+environment: git-fundamentals
+
+setup:
+  - command: >-
+      mkdir -p /home/student/workspace/live-project &&
+      cd /home/student/workspace/live-project &&
+      git init &&
+      git config user.name "Student" &&
+      git config user.email "student@labops.local" &&
+      echo "# Live Project" > README.md &&
+      mkdir -p src &&
+      echo "def process_payment(): pass" > src/payments.py &&
+      echo "def handle_login(): pass" > src/auth.py &&
+      git add . &&
+      git commit -m "Initial project structure" &&
+      git switch -c feature/user-dashboard &&
+      echo "def render_dashboard(): pass  # work in progress" >> src/auth.py &&
+      echo "dashboard_config = {'theme': 'dark'}" > src/dashboard.py &&
+      chown -R student:student /home/student/workspace/live-project
+
+objectives:
+  - Save uncommitted work with git stash
+  - Switch branches cleanly without losing in-progress changes
+  - Make a commit on a different branch while stashed
+  - Restore stashed changes with git stash pop
+
+tasks:
+  - id: confirm-dirty-state
+    summary: Verify you have uncommitted changes before stashing.
+    prompt: >-
+      You are already on `feature/user-dashboard` with two modified/new files.
+      Run `git status` in `~/workspace/live-project` to confirm the working directory
+      is not clean, then stash your changes.
+
+      After stashing, `git status` should show a clean working directory.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+
+        cwd = os.path.expanduser('~/workspace/live-project')
+
+        # Must be on feature branch
+        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
+        if branch.stdout.decode().strip() != 'feature/user-dashboard':
+            print('Not on feature/user-dashboard.')
+            sys.exit(0)
+
+        # Working directory must be clean now (stashed)
+        status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, cwd=cwd)
+        if status.stdout.strip():
+            print('Working directory not clean. Run: git stash')
+            sys.exit(0)
+
+        # Stash list must have at least one entry
+        stash = subprocess.run(['git', 'stash', 'list'], capture_output=True, cwd=cwd)
+        if not stash.stdout.strip():
+            print('No stash found. Run: git stash')
+            sys.exit(0)
+
+        print('STASHED_OK')
+        "
+      match_type: exact
+      expected_output: STASHED_OK
+    error_message: >-
+      Either the working directory still has changes, or git stash list is empty. Run: git stash
+
+  - id: hotfix-on-main
+    summary: Switch to main and commit a hotfix while your feature is stashed.
+    prompt: >-
+      Your manager just messaged: there is a bug in `src/payments.py` on main.
+
+      Switch to `main`, add the line `# BUG FIX: added null check` to `src/payments.py`,
+      and commit it with the message `Fix null pointer in payment processor`.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+
+        cwd = os.path.expanduser('~/workspace/live-project')
+
+        # Must be on main
+        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
+        if branch.stdout.decode().strip() != 'main':
+            print('Not on main branch.')
+            sys.exit(0)
+
+        # Hotfix commit must exist on main
+        log = subprocess.run(['git', 'log', '--oneline', 'main'], capture_output=True, cwd=cwd)
+        lines = log.stdout.decode().strip().splitlines()
+        has_fix = any('fix' in l.lower() or 'payment' in l.lower() or 'null' in l.lower() for l in lines)
+        if not has_fix:
+            print('No hotfix commit found on main.')
+            sys.exit(0)
+
+        # payments.py must have been modified
+        show = subprocess.run(['git', 'show', 'HEAD:src/payments.py'], capture_output=True, cwd=cwd)
+        if b'null' not in show.stdout.lower() and b'fix' not in show.stdout.lower() and b'bug' not in show.stdout.lower():
+            print('payments.py on HEAD does not contain the fix.')
+            sys.exit(0)
+
+        print('HOTFIX_OK')
+        "
+      match_type: exact
+      expected_output: HOTFIX_OK
+    error_message: >-
+      Either not on main, no hotfix commit found, or payments.py was not updated. Switch to main, edit payments.py, and commit.
+
+  - id: restore-stash
+    summary: Return to your feature branch and pop the stash.
+    prompt: >-
+      The hotfix is done. Switch back to `feature/user-dashboard` and run `git stash pop`
+      to restore your in-progress work.
+
+      Verify: `src/dashboard.py` is back, `git stash list` is empty, and you are on `feature/user-dashboard`.
+    type: terminal_action
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+
+        cwd = os.path.expanduser('~/workspace/live-project')
+
+        # Must be back on feature branch
+        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
+        if branch.stdout.decode().strip() != 'feature/user-dashboard':
+            print('Not on feature/user-dashboard.')
+            sys.exit(0)
+
+        # dashboard.py must be restored (in working tree or staged)
+        check = subprocess.run(['test', '-f', f'{cwd}/src/dashboard.py'], capture_output=True)
+        import os
+        if not os.path.exists(os.path.join(cwd, 'src', 'dashboard.py')):
+            print('src/dashboard.py not found — stash pop may not have worked.')
+            sys.exit(0)
+
+        # Stash should be empty
+        stash = subprocess.run(['git', 'stash', 'list'], capture_output=True, cwd=cwd)
+        if stash.stdout.strip():
+            print('Stash still has entries. Run: git stash pop')
+            sys.exit(0)
+
+        print('RESTORE_OK')
+        "
+      match_type: exact
+      expected_output: RESTORE_OK
+    error_message: >-
+      Either not back on feature/user-dashboard, src/dashboard.py is missing, or git stash list still shows entries.
+
+  - id: stash-vs-commit
+    summary: Know when to stash vs when to commit to a WIP branch.
+    prompt: >-
+      You have been working on a feature for 3 days. You need to pause it for a week
+      while you handle other work. Should you stash it or commit it to a WIP branch?
+    type: multiple_choice
+    options:
+      - "Commit it to a WIP branch — stashes are local, unnamed, and easy to forget. A branch with a commit is recoverable and visible in git log."
+      - "Stash it — that is what the stash is designed for regardless of duration."
+      - "Neither — discard the changes and restart when you return."
+      - "Commit it directly to main with a WIP message so it is not lost."
+    validation:
+      expected_answer: "Commit it to a WIP branch — stashes are local, unnamed, and easy to forget. A branch with a commit is recoverable and visible in git log."
+    error_message: >-
+      Stash is for short pauses (minutes to hours). For anything longer, commit to a WIP branch — it is visible in git log and survives forgetting.
+
+completion:
+  required_tasks: all

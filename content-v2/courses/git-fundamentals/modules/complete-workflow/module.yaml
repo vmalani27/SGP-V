@@ -4,6 +4,6 @@ description: Bring it all together with a complete Git workflow.
 order: 4
 items:
   - type: chapter
-    id: chapter-10
+    id: chapter-12
   - type: lab
-    id: lab-10
+    id: lab-12
