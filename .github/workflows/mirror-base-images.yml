@@ -49,6 +49,9 @@ jobs:
           - { source: "node:20-alpine",      tag: "node-20-alpine"       }
           - { source: "golang:1.23-alpine",  tag: "golang-1.23-alpine"   }
           - { source: "alpine:3.20",         tag: "alpine-3.20"          }
+          - { source: "gitea/gitea:latest",  tag: "gitea-latest"         }
+          - { source: "nginx:alpine",        tag: "nginx-alpine"         }
+          - { source: "redis:alpine",        tag: "redis-alpine"         }
 
     steps:
       - name: Configure AWS credentials

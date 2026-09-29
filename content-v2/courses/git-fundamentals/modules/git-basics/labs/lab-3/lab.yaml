@@ -10,24 +10,28 @@ tags:
 environment: git-fundamentals
 summary: >
   You have just fixed three unrelated things in one sitting. Stage them
-  as separate, atomic commits so reviewers can follow what changed and why.
+  as separate, atomic commits, discard debug noise, and push clean history
+  to the remote server.
 
 objectives:
   - Stage individual files to create atomic commits
   - Use git status and git diff to understand the working tree state
   - Discard unwanted working tree changes with git restore
+  - Push clean commits to the remote tracking branch
 
 setup:
   - command: >
       mkdir -p /home/student/webapp && cd /home/student/webapp &&
-      git init &&
-      git config user.email "student@lab.local" &&
+      git init -b main &&
+      git config user.email "student@labops.local" &&
       git config user.name "Student" &&
       printf 'def authenticate(user, password):\n    if password == "":\n        return False\n    return check_db(user, password)\n' > auth.py &&
       printf 'body { font-family: sans-serif; }\n.button { background: red; color: white; }\n' > styles.css &&
       printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("Request received: %s", req)\n    return handle(req)\n' > api.py &&
       git add auth.py styles.css api.py &&
       git commit -m "Initial application files" &&
+      git remote add origin http://git-server:3000/student/webapp.git &&
+      git push -u origin main &&
       printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n' > auth.py &&
       printf 'body { font-family: sans-serif; }\n.button { background: #2563eb; color: white; }\n' > styles.css &&
       printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("DEBUG: raw request dump: %s", req)\n    logging.debug("DEBUG: entering process_request")\n    return handle(req)\n' > api.py
@@ -39,7 +43,7 @@ tasks:
   - id: survey-the-damage
     summary: Understand what is changed before touching anything
     prompt: >-
-      You sit down Monday morning and find three files modified but not committed:
+      You sit down Monday morning and find three files modified in `~/webapp`:
       auth.py, styles.css, and api.py. Before you stage anything, understand
       exactly what changed in each file.
 
@@ -192,8 +196,7 @@ tasks:
     summary: Confirm the commit history tells a clean story
     prompt: >-
       Run git log --oneline inside /home/student/webapp. You should see exactly
-      three commits, each describing one logical change. This is what a reviewer
-      sees when they open your pull request.
+      three commits, each describing one logical change.
 
       Which command shows ONLY the files changed in the most recent commit,
       without showing the full line-level diff?
@@ -208,3 +211,51 @@ tasks:
     hints:
       - "You want the commit metadata and file list — not the line-level diff"
       - "git show --stat is also useful but shows the diff summary too"
+
+  - id: publish-atomic-commits
+    summary: Push your clean atomic commits to the remote repository
+    prompt: >-
+      Your working tree in `/home/student/webapp` is now clean, and your local
+      `main` branch has two clean atomic commits ahead of `origin/main`.
+
+      Push your commits to the remote server by running `git push`.
+    type: terminal_action
+    hints:
+      - "Run git push inside /home/student/webapp"
+      - "Because main already tracks origin/main, git push is all you need"
+    solution:
+      command: "cd /home/student/webapp && git push"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        cwd = '/home/student/webapp'
+
+        # Check clean tree
+        status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, cwd=cwd).stdout
+        if status.strip():
+            print('RESULT_FAIL: Working tree has uncommitted modifications.')
+            sys.exit(0)
+
+        # Check local HEAD equals remote main
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=cwd).stdout.strip()
+        remote_head = subprocess.run(['git', 'ls-remote', 'origin', 'refs/heads/main'], capture_output=True, text=True, cwd=cwd).stdout.split()
+        remote_sha = remote_head[0] if remote_head else ''
+
+        if not head or remote_sha != head:
+            print('RESULT_FAIL: Remote main does not match local HEAD. Run git push.')
+            sys.exit(0)
+
+        # Check commit count
+        log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True, cwd=cwd).stdout.strip().splitlines()
+        if len(log) < 3:
+            print('RESULT_FAIL: Expected 3 commits in history.')
+            sys.exit(0)
+
+        print('PUSH_OK')
+        "
+      match_type: exact
+      expected_output: PUSH_OK
+    error_message: >-
+      Run `git push` inside `/home/student/webapp`. Ensure all previous tasks
+      were completed so that local HEAD matches `origin/main` on the server.

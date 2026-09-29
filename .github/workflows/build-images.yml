@@ -271,6 +271,17 @@ jobs:
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}"
           docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}"
 
+      # 5. Git Fundamentals Course Image: labops-labs:git-fundamentals
+      - name: Build & Push Lab Image (lab-git-fundamentals)
+        run: |
+          docker build \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:git-fundamentals-${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:git-fundamentals-${{ steps.tags.outputs.sha }}" \
+            -f ./orchestrator/lab-images/Dockerfile.git-fundamentals ./orchestrator/lab-images
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:git-fundamentals-${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:git-fundamentals-${{ steps.tags.outputs.sha }}"
+
   # ── AUDIT & NOTIFY ──────────────────────────────────────────────
   audit-and-notify:
     name: Audit Images (Trivy, DynamoDB & Security Tab)
@@ -304,7 +315,7 @@ jobs:
           [ "${{ needs.changes.outputs.orchestrator }}" == "true" ] && [ "${{ needs.build-orchestrator.result }}" == "success" ] && IMAGES+=("vmalani27/labops-orchestrator:${SHA}")
           [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ] && IMAGES+=("vmalani27/labops-frontend:${SHA}")
           [ "${{ needs.changes.outputs.content_sync }}" == "true" ] && [ "${{ needs.build-content-sync.result }}" == "success" ] && IMAGES+=("vmalani27/labops-content-sync:${SHA}")
-          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("vmalani27/labops-base:${SHA}" "vmalani27/labops-labs:docker-${SHA}" "vmalani27/labops-labs:docker-fundamentals-${SHA}" "vmalani27/labops-labs:docker-build-${SHA}")
+          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("vmalani27/labops-base:${SHA}" "vmalani27/labops-labs:docker-${SHA}" "vmalani27/labops-labs:docker-fundamentals-${SHA}" "vmalani27/labops-labs:docker-build-${SHA}" "vmalani27/labops-labs:git-fundamentals-${SHA}")
 
           echo "==> Built images to audit: ${IMAGES[@]}"
 

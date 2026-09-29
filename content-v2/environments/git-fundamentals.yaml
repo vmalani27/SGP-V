@@ -1,0 +1,2 @@
+base_image: "labops-git-fundamentals:latest"
+pre_pull: []

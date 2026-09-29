@@ -4,7 +4,13 @@ import time
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
 
-from app.config import CONTAINER_RUNTIME_MODE, DOCKER_HOST, LAB_PREFIX
+from app.config import (
+    CONTAINER_RUNTIME_MODE,
+    DOCKER_HOST,
+    ECR_PUBLIC_REGISTRY,
+    IMAGE_TAG,
+    LAB_PREFIX,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,36 +20,36 @@ IMAGE_ALIASES = {
     "sgp-lab-docker:latest": "labops-docker:latest",
     "sgp-lab-docker-fundamentals:latest": "labops-docker-fundamentals:latest",
     "sgp-lab-docker-build:latest": "labops-docker-build:latest",
+    "sgp-lab-git-fundamentals:latest": "labops-git-fundamentals:latest",
     "sgp-lab-ubuntu": "labops-ubuntu:latest",
     "sgp-lab-docker": "labops-docker:latest",
     "sgp-lab-docker-fundamentals": "labops-docker-fundamentals:latest",
     "sgp-lab-docker-build": "labops-docker-build:latest",
+    "sgp-lab-git-fundamentals": "labops-git-fundamentals:latest",
     "docker-build": "labops-docker-build:latest",
     "docker": "labops-docker:latest",
     "ubuntu": "labops-ubuntu:latest",
     "linux-basic": "labops-ubuntu:latest",
     "docker-basic": "labops-docker:latest",
     "docker-fundamentals": "labops-docker-fundamentals:latest",
+    "git": "labops-git-fundamentals:latest",
+    "git-basic": "labops-git-fundamentals:latest",
+    "git-fundamentals": "labops-git-fundamentals:latest",
+    "labops-git-fundamentals": "labops-git-fundamentals:latest",
 }
 
-import os
 
-ECR_REGISTRY = os.getenv("ECR_REGISTRY", "public.ecr.aws/i9t1l0m7/vmalani27")
-
-REMOTE_IMAGE_MAP = {
-    "labops-ubuntu:latest": f"{ECR_REGISTRY}/labops-base:dev",
-    "labops-docker:latest": f"{ECR_REGISTRY}/labops-labs:docker-dev",
-    "labops-docker-fundamentals:latest": f"{ECR_REGISTRY}/labops-labs:docker-fundamentals-dev",
-    "labops-docker-build:latest": f"{ECR_REGISTRY}/labops-labs:docker-build-dev",
-    "sgp-lab-ubuntu:latest": f"{ECR_REGISTRY}/labops-base:dev",
-    "sgp-lab-docker:latest": f"{ECR_REGISTRY}/labops-labs:docker-dev",
-    "sgp-lab-docker-fundamentals:latest": f"{ECR_REGISTRY}/labops-labs:docker-fundamentals-dev",
-    "sgp-lab-docker-build:latest": f"{ECR_REGISTRY}/labops-labs:docker-build-dev",
-    "linux-basic": f"{ECR_REGISTRY}/labops-base:dev",
-    "docker-basic": f"{ECR_REGISTRY}/labops-labs:docker-dev",
-    "docker-fundamentals": f"{ECR_REGISTRY}/labops-labs:docker-fundamentals-dev",
-    "docker-build": f"{ECR_REGISTRY}/labops-labs:docker-build-dev",
-}
+def get_canonical_ecr_ref(normalized_image: str) -> str | None:
+    registry = ECR_PUBLIC_REGISTRY.rstrip("/")
+    tag = IMAGE_TAG
+    mapping = {
+        "labops-ubuntu:latest": f"{registry}/vmalani27/labops-base:{tag}",
+        "labops-docker:latest": f"{registry}/vmalani27/labops-labs:docker-{tag}",
+        "labops-docker-fundamentals:latest": f"{registry}/vmalani27/labops-labs:docker-fundamentals-{tag}",
+        "labops-docker-build:latest": f"{registry}/vmalani27/labops-labs:docker-build-{tag}",
+        "labops-git-fundamentals:latest": f"{registry}/vmalani27/labops-labs:git-fundamentals-{tag}",
+    }
+    return mapping.get(normalized_image)
 
 
 def get_runtime_options() -> dict:
@@ -123,28 +129,30 @@ class DockerService:
                 self.client.images.get(image)
                 target_image = image
             except ImageNotFound:
-                remote_image = REMOTE_IMAGE_MAP.get(normalized_image) or REMOTE_IMAGE_MAP.get(image)
-                if remote_image:
-                    logger.info(
-                        f"Image '{normalized_image}' not found locally on Docker host. "
-                        f"Attempting to pull '{remote_image}' from GHCR..."
-                    )
-                    try:
-                        pulled = self.client.images.pull(remote_image)
-                        pulled.tag(normalized_image)
-                        if image != normalized_image:
-                            pulled.tag(image)
-                        target_image = normalized_image
-                        logger.info(f"Successfully pulled '{remote_image}' and tagged as '{normalized_image}'")
-                    except Exception as pull_err:
-                        logger.error(f"Failed to auto-pull '{remote_image}': {pull_err}")
-                        raise RuntimeError(
-                            f"Image '{image}' not found on Docker host and failed to pull from {remote_image}: {pull_err}"
-                        )
-                else:
+                remote_ref = get_canonical_ecr_ref(normalized_image) or image
+                logger.info(
+                    f"Image '{normalized_image}' not present locally. Attempting on-demand pull from '{remote_ref}'..."
+                )
+                try:
+                    if ":" in remote_ref:
+                        repo, tag = remote_ref.rsplit(":", 1)
+                        pulled = self.client.images.pull(repo, tag=tag)
+                    else:
+                        pulled = self.client.images.pull(remote_ref)
+
+                    if normalized_image != remote_ref:
+                        if ":" in normalized_image:
+                            n_repo, n_tag = normalized_image.rsplit(":", 1)
+                            pulled.tag(n_repo, tag=n_tag)
+                        else:
+                            pulled.tag(normalized_image)
+                    target_image = normalized_image
+                    logger.info(f"Successfully pulled and tagged '{normalized_image}' from '{remote_ref}'")
+                except Exception as pull_err:
+                    logger.error(f"Failed to pull image '{remote_ref}': {pull_err}")
                     raise RuntimeError(
-                        f"Image '{image}' not found on the Docker host. "
-                        "Lab images must be pre-built or pulled before the orchestrator starts."
+                        f"Image '{image}' (resolved to '{normalized_image}') was not found on the local Docker host, "
+                        f"and on-demand pull from '{remote_ref}' failed: {pull_err}"
                     )
 
         runtime_opts = get_runtime_options()

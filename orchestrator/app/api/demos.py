@@ -133,7 +133,14 @@ def create_demo(req: CreateDemoRequest, docker_svc: DockerService = Depends(get_
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
-            docker_svc.wait_for_docker(name)
+            if req.pre_pull:
+                docker_svc.wait_for_docker(name)
+                docker_svc.pre_pull_images(name, req.pre_pull)
+            else:
+                code, _ = docker_svc.exec_command(name, ["which", "docker"], user="root")
+                if code == 0:
+                    docker_svc.wait_for_docker(name)
+
             # The demo terminal attaches as `student` (via sudo, which recomputes
             # supplementary groups), so grant the docker group like lab setup does —
             # otherwise `docker ...` fails with permission denied.
@@ -145,8 +152,6 @@ def create_demo(req: CreateDemoRequest, docker_svc: DockerService = Depends(get_
                 )
             except RuntimeError:
                 pass
-            if req.pre_pull:
-                docker_svc.pre_pull_images(name, req.pre_pull)
         except RuntimeError as e:
             # Failed demo setup: clean up the disposable container rather than
             # leaking it.

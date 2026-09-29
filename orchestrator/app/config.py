@@ -28,3 +28,6 @@ MAX_CONCURRENT_LABS = int(os.getenv("MAX_CONCURRENT_LABS", "1"))
 # - "standard" | "privileged" | "dev": Developer fallback using standard runc with privileged=True (for Docker Desktop on Windows/macOS)
 CONTAINER_RUNTIME_MODE = os.getenv("CONTAINER_RUNTIME_MODE", "sysbox").lower()
 
+ECR_PUBLIC_REGISTRY = os.getenv("ECR_PUBLIC_REGISTRY", "public.ecr.aws/i9t1l0m7")
+IMAGE_TAG = os.getenv("IMAGE_TAG", "dev")
+

@@ -7,6 +7,13 @@ image: labops-git-fundamentals:latest
 
 > **Before this chapter:** You should know the three Git areas — working directory, staging area, and repository — and be comfortable with `git add` and `git commit`.
 
+> **Hands-On Practice in the Terminal:**
+> Your terminal on the right comes with a pre-configured repository in `~/practice`, already initialized and connected to the remote `origin`. Enter it to follow along with the commands in this chapter:
+> ```bash
+> cd ~/practice
+> git status
+> ```
+
 ## The Problem With `git add .`
 
 It is a Friday afternoon. You fix a critical authentication bug in `auth.py`. While you are in there, you also notice the button color in `styles.css` is wrong and fix that too. Then you add some debug logging to `api.py` that you meant to remove.
@@ -22,7 +29,7 @@ Working Directory  →  Staging Area  →  Repository
   (all your edits)    (what you chose)  (what's saved)
 ```
 
-You stage `auth.py`:
+Inside `~/practice`, run `git status` to see the three modified files, then stage `auth.py`:
 ```bash
 git add auth.py
 git commit -m "Fix login redirect loop when session expires"
@@ -115,6 +122,18 @@ git restore --staged auth.py
 
 The change is still in the file — it just left the staging area.
 
+## Pushing Clean Commits to the Remote
+
+Once your working tree is clean and each change is recorded in its own commit, push the branch to your remote server:
+
+```bash
+git push
+```
+
+Because your local `main` branch tracks `origin/main` (configured with `git push -u origin main`), Git automatically uploads your new commits to the remote repository. 
+
+When your teammates or continuous integration (CI) pipelines inspect the branch, each commit appears as an independent, focused change rather than a single tangled diff.
+
 ## The Full Picture
 
 ```
@@ -124,6 +143,7 @@ git diff --staged       see what is staged for the next commit
 git add <file>          stage a specific file
 git restore <file>      discard working directory changes (permanent)
 git restore --staged    move a file back from staging to working directory
+git push                upload committed changes to the remote tracking branch
 ```
 
 ## Key Takeaways
@@ -133,3 +153,4 @@ git restore --staged    move a file back from staging to working directory
 - `git diff` shows unstaged changes; `git diff --staged` shows what is about to be committed
 - `git restore <file>` discards working directory changes permanently
 - `git restore --staged <file>` unstages without losing changes
+- `git push` uploads your atomic commits to the remote tracking branch

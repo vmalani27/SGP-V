@@ -1,8 +1,8 @@
 id: lab-2
-title: Initializing a Repository and Making Your First Commit
+title: Initializing a Repository and Publishing Your First Commits
 difficulty: beginner
-estimated_time: 15
-xp: 60
+estimated_time: 20
+xp: 70
 tags:
   - git
   - fundamentals
@@ -12,6 +12,7 @@ objectives:
   - Initialize a Git repository
   - Create files and commit them with clear messages
   - Use git restore to recover from an accidental change
+  - Connect the repository to a remote and push the main branch
 
 tasks:
   - id: init-repo
@@ -152,6 +153,82 @@ tasks:
       expected_output: RESTORE_OK
     error_message: >-
       README.md still shows as modified. Run: git restore README.md — then verify with git diff.
+
+  - id: publish-to-remote
+    summary: Connect the repository to LabOps Git and push main.
+    prompt: >-
+      Your local history is ready to share with the team. From
+      `~/workspace/my-project`, add `http://git-server:3000/student/my-project.git`
+      as the remote named `origin`, then push the local `main` branch with upstream
+      tracking enabled. Verify the remote and branch after pushing.
+    type: terminal_action
+    hints:
+      - "Add the remote with: git remote add origin http://git-server:3000/student/my-project.git"
+      - "Publish the branch with: git push -u origin main"
+      - "Use git remote -v and git ls-remote origin refs/heads/main to verify the result"
+    solution:
+      command: >-
+        cd ~/workspace/my-project &&
+        git remote add origin http://git-server:3000/student/my-project.git &&
+        git push -u origin main
+    validation:
+      command: |-
+        python3 -c "
+        import os
+        import subprocess
+        import sys
+
+        cwd = os.path.expanduser('~/workspace/my-project')
+        expected_url = 'http://git-server:3000/student/my-project.git'
+
+        remote = subprocess.run(
+            ['git', 'remote', 'get-url', 'origin'],
+            capture_output=True, text=True, cwd=cwd
+        )
+        if remote.returncode != 0 or remote.stdout.strip() != expected_url:
+            print('Remote origin is not configured with the LabOps project URL.')
+            sys.exit(0)
+
+        branch = subprocess.run(
+            ['git', 'branch', '--show-current'],
+            capture_output=True, text=True, cwd=cwd
+        )
+        if branch.stdout.strip() != 'main':
+            print('The repository is not on the main branch.')
+            sys.exit(0)
+
+        head = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True, text=True, cwd=cwd
+        )
+        remote_head = subprocess.run(
+            ['git', 'ls-remote', 'origin', 'refs/heads/main'],
+            capture_output=True, text=True, cwd=cwd
+        )
+        if head.returncode != 0 or remote_head.returncode != 0:
+            print('Could not read the local or remote main branch.')
+            sys.exit(0)
+
+        remote_sha = remote_head.stdout.split()[0] if remote_head.stdout.split() else ''
+        if remote_sha != head.stdout.strip():
+            print('The remote main branch does not match your local HEAD.')
+            sys.exit(0)
+
+        upstream = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+            capture_output=True, text=True, cwd=cwd
+        )
+        if upstream.returncode != 0 or upstream.stdout.strip() != 'origin/main':
+            print('main is not tracking origin/main. Push with: git push -u origin main')
+            sys.exit(0)
+
+        print('PUSHED_TO_REMOTE_OK')
+        "
+      match_type: exact
+      expected_output: PUSHED_TO_REMOTE_OK
+    error_message: >-
+      The repository was not pushed successfully. Check that origin points to
+      http://git-server:3000/student/my-project.git, then run git push -u origin main.
 
 completion:
   required_tasks: all

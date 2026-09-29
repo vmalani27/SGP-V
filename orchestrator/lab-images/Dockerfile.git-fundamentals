@@ -1,0 +1,124 @@
+# ──────────────────────────────────────────────────────────────
+# labops-git-fundamentals — Git Fundamentals course image
+# ──────────────────────────────────────────────────────────────
+# labops-ubuntu with git pre-configured for the student user:
+#   - global identity (name, email, default branch)
+#   - credential store pointed at the internal Gitea server
+#   - sensible editor and diff defaults
+#   - a practice repo pre-seeded at /home/student/practice
+#
+# Used by: git-fundamentals (all modules)
+#   git-basics, branching-history, remote-collaboration, complete-workflow
+#
+# Per-lab Gitea repo provisioning is handled by the orchestrator at
+# start_lab time — this image sets up the client side only.
+# The lab.yaml setup field handles per-lab scenario scaffolding
+# (e.g. pre-seeding commits for a merging lab).
+#
+# Build:
+#   docker build -t labops-git-fundamentals:latest -f Dockerfile.git-fundamentals .
+#
+# Inherits from labops-ubuntu which already provides:
+#   - git installed
+#   - student user (UID 1000) with passwordless sudo
+#   - credential helper pointed at git-server:3000 with student:password123
+# ──────────────────────────────────────────────────────────────
+
+ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/vmalani27/labops-base:ubuntu-22.04
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV container=docker
+
+# Install git and supporting tools not already in the base
+RUN apt-get update && apt-get install -y \
+    git \
+    git-extras \
+    curl \
+    wget \
+    vim \
+    nano \
+    less \
+    tmux \
+    sudo \
+    systemd \
+    systemd-sysv \
+    man-db \
+    locales \
+    && rm -rf /var/lib/apt/lists/* \
+    && locale-gen en_US.UTF-8
+
+# Enable systemd multi-user target
+RUN systemctl set-default multi-user.target
+
+# Create student user (UID 1000) with passwordless sudo
+RUN useradd -m -s /bin/bash -u 1000 student \
+    && echo "student:student" | chpasswd \
+    && usermod -aG sudo student \
+    && echo "student ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/student
+
+# ── Git global config for the student user ──────────────────────────────────
+# Baked in so students can commit immediately without a setup ceremony.
+# Name/email are intentionally generic — they match what the chapter
+# tells students to configure, so the lab validator can check it was set.
+# The student can override these with git config --global in any lab.
+RUN git config --system core.editor "nano" \
+    && git config --system init.defaultBranch main \
+    && git config --system color.ui auto \
+    && git config --system pull.rebase false \
+    && git config --system merge.conflictstyle diff3
+
+# Student-level config (stored in /home/student/.gitconfig)
+RUN mkdir -p /home/student && \
+    git config --file /home/student/.gitconfig user.name "Student" && \
+    git config --file /home/student/.gitconfig user.email "student@labops.local" && \
+    git config --file /home/student/.gitconfig init.defaultBranch main && \
+    git config --file /home/student/.gitconfig core.editor nano && \
+    git config --file /home/student/.gitconfig color.ui auto && \
+    git config --file /home/student/.gitconfig pull.rebase false && \
+    git config --file /home/student/.gitconfig merge.conflictstyle diff3 && \
+    chown student:student /home/student/.gitconfig
+
+# ── Gitea credential config ──────────────────────────────────────────────────
+# Points at the internal Docker network hostname (not localhost or the nginx
+# proxy path). Lab containers reach Gitea directly over the Docker bridge.
+# Token-based auth is injected at lab start time via GIT_TOKEN env var.
+# This pre-seeds the credential store so HTTP pushes work without prompting.
+RUN git config --system credential.helper store \
+    && echo "http://student:password123@git-server:3000" > /home/student/.git-credentials \
+    && chown student:student /home/student/.git-credentials \
+    && chmod 600 /home/student/.git-credentials \
+    && echo "http://student:password123@git-server:3000" > /root/.git-credentials \
+    && chmod 600 /root/.git-credentials
+
+# ── Practice repository ───────────────────────────────────────────────────────
+# Pre-seeded practice repository with remote origin configured so students
+# can immediately practice staging, status, diff, restore, and pushing.
+RUN mkdir -p /home/student/practice \
+    && cd /home/student/practice \
+    && git init -b main \
+    && git config user.name "Student" \
+    && git config user.email "student@labops.local" \
+    && git remote add origin http://git-server:3000/student/practice.git \
+    && echo "# Practice Repository" > README.md \
+    && printf 'def authenticate(user, password):\n    if password == "":\n        return False\n    return check_db(user, password)\n' > auth.py \
+    && printf 'body { font-family: sans-serif; }\n.button { background: red; color: white; }\n' > styles.css \
+    && printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("Request received: %s", req)\n    return handle(req)\n' > api.py \
+    && git add README.md auth.py styles.css api.py \
+    && git commit -m "Initial application release" \
+    && printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n' > auth.py \
+    && printf 'body { font-family: sans-serif; }\n.button { background: #2563eb; color: white; }\n' > styles.css \
+    && printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("DEBUG: raw request dump: %s", req)\n    logging.debug("DEBUG: entering process_request")\n    return handle(req)\n' > api.py \
+    && chown -R student:student /home/student/practice
+
+# ── Shell prompt: show current branch ────────────────────────────────────────
+# Adds a minimal PS1 that shows (branch-name) when inside a git repo.
+# Students immediately see context without needing to run git branch.
+RUN echo '' >> /home/student/.bashrc \
+    && echo '# Git branch in prompt' >> /home/student/.bashrc \
+    && echo 'parse_git_branch() { git branch 2>/dev/null | sed -n "s/^* //p"; }' >> /home/student/.bashrc \
+    && echo 'export PS1="\[\033[01;32m\]\u@labops\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\[\033[01;33m\]\$(b=\$(parse_git_branch); [ -n \"\$b\" ] && echo \" (\$b)\")\[\033[00m\]\$ "' >> /home/student/.bashrc
+
+WORKDIR /home/student
+
+ENTRYPOINT ["/sbin/init"]
