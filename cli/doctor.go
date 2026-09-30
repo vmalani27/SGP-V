@@ -404,10 +404,10 @@ func RunDoctor() bool {
 	}
 
 	if sysOk {
-		fmt.Printf("  ✔ %-23s %s\n", "System requirements", sysDetail)
+		fmt.Printf("  [OK]   %-21s %s\n", "System requirements", sysDetail)
 	} else {
 		allPassed = false
-		fmt.Printf("  ✖ %-23s %s\n", "System requirements", sysDetail)
+		fmt.Printf("  [FAIL] %-21s %s\n", "System requirements", sysDetail)
 	}
 
 	// 2. Subsystem / Environment
@@ -430,15 +430,15 @@ func RunDoctor() bool {
 			failureHints = append(failureHints, "Install WSL2 by opening PowerShell as Administrator and running: wsl --install -d Ubuntu-22.04")
 		}
 		if envOk {
-			fmt.Printf("  ✔ %-23s %s\n", "Windows Subsystem", envDetail)
+			fmt.Printf("  [OK]   %-21s %s\n", "Windows Subsystem", envDetail)
 		} else {
 			allPassed = false
-			fmt.Printf("  ✖ %-23s %s\n", "Windows Subsystem", envDetail)
+			fmt.Printf("  [FAIL] %-21s %s\n", "Windows Subsystem", envDetail)
 		}
 	case "linux":
-		fmt.Printf("  ✔ %-23s %s\n", "Linux Environment", "Native Linux Kernel")
+		fmt.Printf("  [OK]   %-21s %s\n", "Linux Environment", "Native Linux Kernel")
 	case "darwin":
-		fmt.Printf("  ✔ %-23s %s\n", "macOS Environment", "Darwin Kernel")
+		fmt.Printf("  [OK]   %-21s %s\n", "macOS Environment", "Darwin Kernel")
 	}
 
 	// 3. Lab Runtime Engine (Docker in WSL2 or Host Docker)
@@ -472,10 +472,10 @@ func RunDoctor() bool {
 	}
 
 	if engineOk {
-		fmt.Printf("  ✔ %-23s %s\n", "Lab Runtime Engine", engineDetail)
+		fmt.Printf("  [OK]   %-21s %s\n", "Lab Runtime Engine", engineDetail)
 	} else {
 		allPassed = false
-		fmt.Printf("  ✖ %-23s %s\n", "Lab Runtime Engine", engineDetail)
+		fmt.Printf("  [FAIL] %-21s %s\n", "Lab Runtime Engine", engineDetail)
 	}
 
 	// 4. Local Workspace Port
@@ -498,10 +498,10 @@ func RunDoctor() bool {
 	}
 
 	if portOk {
-		fmt.Printf("  ✔ %-23s %s\n", "Workspace Port", portDetail)
+		fmt.Printf("  [OK]   %-21s %s\n", "Workspace Port", portDetail)
 	} else {
 		allPassed = false
-		fmt.Printf("  ✖ %-23s %s\n", "Workspace Port", portDetail)
+		fmt.Printf("  [FAIL] %-21s %s\n", "Workspace Port", portDetail)
 	}
 
 	// Result Summary

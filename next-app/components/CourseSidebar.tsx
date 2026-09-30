@@ -11,7 +11,6 @@ import {
   getModuleChapterTree,
 } from '@/lib/content-utils';
 import { getCourseIcon } from '@/lib/course-icons';
-import { ChevronDown } from 'lucide-react';
 import { SidebarChapterItem } from '@/components/SidebarChapterItem';
 
 export default function CourseSidebar({ courseIdParam }: { courseIdParam: string }) {
@@ -26,7 +25,6 @@ export default function CourseSidebar({ courseIdParam }: { courseIdParam: string
   const [selectedCourseId, setSelectedCourseId] = useState<string>(courseIdParam);
   const [courseDetails, setCourseDetails] = useState<Record<string, ContentCourse>>({});
   const [loading, setLoading] = useState(true);
-  const [isTrackDropdownOpen, setIsTrackDropdownOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -71,11 +69,6 @@ export default function CourseSidebar({ courseIdParam }: { courseIdParam: string
     }
   }, [courseIdParam, courses]);
 
-  const handleSelectTrack = (targetCourseId: string) => {
-    setSelectedCourseId(targetCourseId);
-    router.push(`/courses/${targetCourseId}`);
-  };
-
   const selectedCourse = courses.find((c) => c.id === selectedCourseId) || courses[0];
   const selectedDetail = selectedCourseId ? courseDetails[selectedCourseId] : null;
   const selectedEnrollment = selectedCourseId ? getEnrollment(selectedCourseId) : undefined;
@@ -93,8 +86,9 @@ export default function CourseSidebar({ courseIdParam }: { courseIdParam: string
 
   if (loading || !selectedCourse) {
     return (
-      <aside className="w-64 shrink-0 flex flex-col h-full bg-[#09090b] border-r border-zinc-800/80">
-        <div className="h-12 px-3 flex items-center border-b border-zinc-800/80 bg-[#0c0d0e]">
+      <aside className="w-64 shrink-0 flex flex-col h-full bg-[#0e1117] border-r border-[#30363d]">
+        <div className="flex items-center space-x-2.5 px-4 py-3 border-b border-[#30363d] bg-[#0b0e13]">
+          <div className="w-7 h-7 rounded-md bg-zinc-800 animate-pulse shrink-0" />
           <div className="h-4 w-32 bg-zinc-800 animate-pulse rounded" />
         </div>
         <div className="p-3 space-y-3">
@@ -107,74 +101,15 @@ export default function CourseSidebar({ courseIdParam }: { courseIdParam: string
   }
 
   return (
-    <aside className="w-64 shrink-0 flex flex-col h-full bg-[#101114] border-r border-white/[0.06] select-none relative z-30">
-      {/* 1. Track Switcher Header */}
-      <div className="h-12 px-3 flex items-center border-b border-white/[0.06] bg-[#0e0f12] shrink-0 relative">
-        <button
-          onClick={() => setIsTrackDropdownOpen((prev) => !prev)}
-          className="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-zinc-800/50 transition-colors text-left cursor-pointer"
-        >
-          <div className="flex items-center truncate min-w-0 mr-2">
-            <span className="w-4 h-4 text-zinc-300 mr-2 shrink-0 flex items-center justify-center">
-              {getCourseIcon(selectedCourse.id)}
-            </span>
-            <span className="text-xs font-semibold text-zinc-200 truncate">
-              {selectedCourse.title}
-            </span>
-          </div>
-          <ChevronDown
-            className={`w-3.5 h-3.5 text-zinc-500 shrink-0 transition-transform duration-150 ${
-              isTrackDropdownOpen ? 'rotate-180' : ''
-            }`}
-          />
-        </button>
-
-        {/* Track Switcher Popover Menu */}
-        {isTrackDropdownOpen && (
-          <>
-            <div
-              className="fixed inset-0 z-40 bg-transparent"
-              onClick={() => setIsTrackDropdownOpen(false)}
-            />
-            <div className="absolute top-full left-2 right-2 mt-1 py-1 bg-[#121316] border border-zinc-800 rounded-lg shadow-2xl z-50 overflow-hidden font-sans space-y-0.5">
-              {courses.map((c) => {
-                const isSelected = c.id === selectedCourseId;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => {
-                      handleSelectTrack(c.id);
-                      setIsTrackDropdownOpen(false);
-                    }}
-                    className={`flex items-center justify-between w-full px-2.5 py-2 text-xs transition-colors cursor-pointer text-left ${
-                      isSelected
-                        ? 'bg-zinc-800/70 text-zinc-100 font-medium'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-                    }`}
-                  >
-                    <div className="flex items-center truncate min-w-0 mr-2">
-                      <span className="w-4 h-4 text-zinc-400 mr-2 shrink-0 flex items-center justify-center">
-                        {getCourseIcon(c.id)}
-                      </span>
-                      <span className="truncate">{c.title}</span>
-                    </div>
-                    {isSelected && (
-                      <svg
-                        className="w-3.5 h-3.5 text-emerald-400 shrink-0"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                      </svg>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
+    <aside className="w-64 shrink-0 flex flex-col h-full bg-[#0e1117] border-r border-white/[0.08] select-none relative z-30">
+      {/* 1. Static Course Header Block */}
+      <div className="flex items-center space-x-2.5 px-4 py-3 border-b border-[#30363d] bg-[#0b0e13] shrink-0">
+        <span className="p-1.5 rounded-md bg-[#21262d] text-[#58a6ff] flex items-center justify-center shrink-0">
+          {getCourseIcon(selectedCourse.id)}
+        </span>
+        <h2 className="text-sm font-semibold text-[#c9d1d9] truncate min-w-0 flex-1">
+          {selectedCourse.title}
+        </h2>
       </div>
 
       {/* 2. Curriculum Tree (Minimal Atomic Lesson Units) */}
@@ -190,7 +125,8 @@ export default function CourseSidebar({ courseIdParam }: { courseIdParam: string
               const isCompleted = Boolean(isChapterDone && areLabsDone);
 
               const chapterObj = mod.chapters.find((c) => c.id === node.chapter?.id);
-              const hasLab = node.labs.length > 0 || Boolean(chapterObj?.assessment);
+              const labId = node.labs[0]?.id;
+              const hasLab = Boolean(labId || chapterObj?.assessment);
 
               const primaryItem = node.chapter || node.labs[0];
               const unitId = node.chapter?.id || node.labs[0]?.id;
@@ -204,6 +140,7 @@ export default function CourseSidebar({ courseIdParam }: { courseIdParam: string
                 primaryItem,
                 title,
                 hasLab,
+                labId,
               };
             });
 
@@ -213,9 +150,9 @@ export default function CourseSidebar({ courseIdParam }: { courseIdParam: string
             return (
               <div key={mod.id} className="space-y-0.5">
                 {/* Module Header */}
-                <div className="mt-5 first:mt-1 mb-1.5 px-2.5 pb-1 border-b border-zinc-800/60 flex items-center justify-between text-[11px] font-mono font-semibold tracking-wider text-zinc-300 uppercase select-none">
+                <div className="mt-5 first:mt-1 mb-1.5 px-2.5 pb-1 border-b border-white/[0.06] flex items-center justify-between text-[11px] font-mono font-semibold tracking-wider text-slate-400 uppercase select-none">
                   <span className="truncate min-w-0 flex-1">{moduleTitle}</span>
-                  <span className="tabular-nums text-zinc-400 ml-1.5 shrink-0">
+                  <span className="tabular-nums text-[#64748b] ml-1.5 shrink-0">
                     {completedUnitsCount}/{units.length}
                   </span>
                 </div>
@@ -230,6 +167,7 @@ export default function CourseSidebar({ courseIdParam }: { courseIdParam: string
                         id: unit.primaryItem?.id || unit.id,
                         title: unit.title,
                         hasLab: unit.hasLab,
+                        labId: unit.labId,
                       }}
                       isActive={unit.isSelected}
                       isCompleted={unit.isCompleted}

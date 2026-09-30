@@ -8,7 +8,7 @@ $env:AWS_REGION="us-east-1"
 $env:AWS_DEFAULT_REGION="us-east-1"
 $env:AWS_ENDPOINT_URL="http://localhost:4566"
 
-Write-Host "✅ AWS CLI environment configured for Floci." -ForegroundColor Green
+Write-Host "[OK] AWS CLI environment configured for Floci." -ForegroundColor Green
 Write-Host "Endpoint: $env:AWS_ENDPOINT_URL" -ForegroundColor Cyan
 Write-Host "You can now run standard AWS commands without passing --endpoint-url."
 Write-Host "Example: aws s3 ls"

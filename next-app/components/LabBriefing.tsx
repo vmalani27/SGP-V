@@ -44,45 +44,45 @@ export default function LabBriefing({
       : ['Complete the lab tasks in the runner.'];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#090a0c]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#090a0f]">
       <div className="min-h-0 flex-1 overflow-y-auto px-10 py-10">
         <div className="mx-auto w-full max-w-3xl space-y-7">
           {/* Main Title & Compact Metadata Row */}
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-100">
+            <h1 className="text-3xl font-bold tracking-tight text-white">
               {meta.title}
             </h1>
 
-            <div className="mt-3 flex items-center gap-3 font-mono text-xs text-zinc-400">
+            <div className="mt-3 flex items-center gap-3 font-mono text-xs text-slate-400">
               <span className="flex items-center gap-1.5">
-                <span className="text-zinc-500">DIFFICULTY:</span>
+                <span className="text-[#64748b]">DIFFICULTY:</span>
                 <span className="font-medium text-emerald-400">
                   {meta.difficulty.toUpperCase()}
                 </span>
               </span>
-              <span className="text-zinc-700">•</span>
+              <span className="text-slate-700">•</span>
               <span className="flex items-center gap-1.5">
-                <span className="text-zinc-500">EST:</span>
-                <span className="text-zinc-200 font-medium">{meta.estimated_time} MIN</span>
+                <span className="text-[#64748b]">EST:</span>
+                <span className="text-slate-200 font-medium">{meta.estimated_time} MIN</span>
               </span>
             </div>
           </div>
 
           {/* Scannable High-Level Brief */}
-          <p className="text-base leading-relaxed text-zinc-300">{brief}</p>
+          <p className="text-base leading-relaxed text-[#cbd5e1]">{brief}</p>
 
           {/* Checkpoints Card */}
-          <div className="rounded-xl border border-white/[0.06] bg-[#121316] p-6">
-            <span className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="rounded-xl border border-white/[0.08] bg-[#111318] p-6">
+            <span className="font-mono text-xs font-semibold uppercase tracking-wider text-[#64748b]">
               Lab Checkpoints
             </span>
             <ul className="mt-4 space-y-3">
               {checkpoints.map((checkpoint) => (
                 <li key={checkpoint} className="flex items-start gap-3">
-                  <span className="mt-0.5 select-none font-mono text-xs font-bold text-zinc-400">
+                  <span className="mt-0.5 select-none font-mono text-xs font-bold text-slate-400">
                     &gt;
                   </span>
-                  <span className="text-sm font-medium leading-relaxed text-zinc-200">
+                  <span className="text-sm font-medium leading-relaxed text-slate-200">
                     {cleanText(checkpoint)}
                   </span>
                 </li>
@@ -94,13 +94,13 @@ export default function LabBriefing({
           <div className="flex items-center gap-4 pt-2">
             <button
               onClick={onStart}
-              className="flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 font-mono text-xs font-semibold text-zinc-950 shadow-sm transition-all hover:bg-zinc-200 active:scale-[0.98] cursor-pointer"
+              className="flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 font-mono text-xs font-semibold text-slate-900 shadow-sm transition-all hover:bg-slate-200 active:scale-[0.98] cursor-pointer"
             >
               <span>&gt;_</span>
               <span>Start Lab Environment</span>
             </button>
 
-            <span className="font-mono text-xs text-zinc-500">
+            <span className="font-mono text-xs text-[#64748b]">
               This will just take a jiffy
             </span>
           </div>

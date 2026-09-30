@@ -19,7 +19,7 @@ export default function TerminalActionTask({ task, status, onValidate, error, va
       <TaskPrompt task={task} />
 
       {/* 2. Terminal Guidance */}
-      <div className="p-3 rounded-lg bg-[#16171b]/60 border border-white/[0.05] text-zinc-400 text-xs">
+      <div className="p-3 rounded-lg bg-[#151922] border border-white/[0.08] text-[#cbd5e1] text-xs">
         <p>Use the terminal on the right to complete this task.</p>
       </div>
 
@@ -35,7 +35,7 @@ export default function TerminalActionTask({ task, status, onValidate, error, va
         <button
           onClick={() => onValidate(task.id)}
           disabled={validating}
-          className="w-full py-2.5 bg-white text-zinc-950 hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-500 rounded-lg text-sm font-medium shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed"
+          className="w-full py-2.5 bg-white text-slate-900 hover:bg-slate-200 disabled:bg-[#1e2433] disabled:text-slate-500 rounded-lg text-sm font-semibold shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed"
         >
           {validating ? 'Checking...' : 'Check Answer'}
         </button>

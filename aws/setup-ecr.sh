@@ -30,7 +30,7 @@ REPOS=(
 echo "==> 1. Creating Amazon ECR (Private) Repositories in $REGION..."
 for repo in "${REPOS[@]}"; do
   if aws ecr describe-repositories --repository-names "$repo" --region "$REGION" >/dev/null 2>&1; then
-    echo "  - [✔] Repository '$repo' already exists."
+    echo "  - [OK] Repository '$repo' already exists."
   else
     echo "  - [+] Creating repository '$repo'..."
     aws ecr create-repository \
@@ -50,7 +50,7 @@ if [ -f "$POLICY_FILE" ]; then
     --role-name "$ROLE_NAME" \
     --policy-name "$POLICY_NAME" \
     --policy-document "file://$POLICY_FILE"
-  echo "  - [✔] Successfully attached inline policy '$POLICY_NAME' to IAM role '$ROLE_NAME'."
+  echo "  - [OK] Successfully attached inline policy '$POLICY_NAME' to IAM role '$ROLE_NAME'."
 else
   echo "  - [!] Error: Policy file $POLICY_FILE not found."
   exit 1

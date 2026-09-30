@@ -30,9 +30,11 @@ pull_or_build "$REGISTRY/labops-lab-ubuntu:$TAG" "labops-ubuntu:latest" "Dockerf
 pull_or_build "$REGISTRY/labops-lab-docker:$TAG" "labops-docker:latest" "Dockerfile.docker"
 pull_or_build "$REGISTRY/labops-lab-docker-fundamentals:$TAG" "labops-docker-fundamentals:latest" "Dockerfile.docker-fundamentals"
 pull_or_build "$REGISTRY/labops-lab-docker-build:$TAG" "labops-docker-build:latest" "Dockerfile.docker-build"
+pull_or_build "$REGISTRY/labops-lab-git-fundamentals:$TAG" "labops-git-fundamentals:latest" "Dockerfile.git-fundamentals"
 
 echo "==> All lab images ready:"
 echo "    - labops-ubuntu:latest"
 echo "    - labops-docker:latest"
 echo "    - labops-docker-fundamentals:latest"
 echo "    - labops-docker-build:latest"
+echo "    - labops-git-fundamentals:latest"

@@ -6,6 +6,9 @@ image: labops-git-fundamentals:latest
 :::
 
 > **Before this chapter:** You should be comfortable in a terminal — `cd`, `mkdir`, creating files with a text editor.
+>
+> **Hands-On Practice in the Terminal:**
+> Your terminal on the right is ready. You will use it to create and initialize your first project directory from scratch, stage files, and push them to the local remote server.
 
 ## The Real Reason You Need This
 

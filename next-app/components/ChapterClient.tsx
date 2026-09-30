@@ -123,6 +123,7 @@ export default function ChapterClient({
     <SlideReader
       content={content}
       chapterId={chapterId}
+      courseId={courseId}
       chapterDescription={chapterDescription}
       assessment={assessment}
       prevItem={prevItem}

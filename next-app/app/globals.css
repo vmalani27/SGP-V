@@ -64,8 +64,8 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font-ibm-plex-sans), 'IBM Plex Sans', sans-serif;
-  background: #0f1419;
-  color: #e2e8f0;
+  background: #090a0f;
+  color: #cbd5e1;
   font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -78,11 +78,11 @@ h3,
 h4,
 .hero-font {
   font-family: var(--font-space-grotesk), 'Space Grotesk', sans-serif;
-  color: #e2e8f0;
+  color: #ffffff;
 }
 
 ::selection {
-  background: rgba(96, 165, 250, 0.3);
+  background: rgba(148, 163, 184, 0.3);
   color: #ffffff;
 }
 
@@ -93,19 +93,19 @@ h4,
   letter-spacing: -0.02em;
   margin-top: 0;
   margin-bottom: 1rem;
-  color: #e2e8f0;
+  color: #ffffff;
   line-height: 1.3;
 }
 
 .prose-custom h2 {
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.01em;
   margin-top: 2.5rem;
   margin-bottom: 0.75rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-  color: #e2e8f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ffffff;
   line-height: 1.4;
 }
 
@@ -114,14 +114,14 @@ h4,
   font-weight: 600;
   margin-top: 1.5rem;
   margin-bottom: 0.5rem;
-  color: #e2e8f0;
+  color: #ffffff;
   line-height: 1.4;
 }
 
 .prose-custom p {
   font-size: 1rem;
   line-height: 1.75;
-  color: #c8d1dc;
+  color: #cbd5e1;
   margin-bottom: 1rem;
 }
 
@@ -129,7 +129,7 @@ h4,
 .prose-custom ol {
   font-size: 1rem;
   line-height: 1.75;
-  color: #c8d1dc;
+  color: #cbd5e1;
   padding-left: 1.25rem;
   margin-bottom: 1rem;
 }
@@ -139,11 +139,12 @@ h4,
 }
 
 .prose-custom code:not(pre code) {
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   padding: 0.15rem 0.45rem;
   border-radius: 5px;
-  background: rgba(96, 165, 250, 0.12);
-  color: #7dd3fc;
+  background: #1e2530;
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   font-weight: 500;
 }
 
@@ -151,44 +152,48 @@ h4,
   font-size: 0.875rem;
   line-height: 1.7;
   border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 1.125rem 1.25rem;
   overflow-x: auto;
-  background: #141c28;
+  background: #151922;
 }
 
 .prose-custom pre code {
   font-size: 0.875rem;
   line-height: 1.7;
+  color: #e2e8f0;
 }
 
 .prose-custom strong {
-  color: #e2e8f0;
+  color: #ffffff;
   font-weight: 600;
 }
 
 .prose-custom em {
-  color: #a8b5c4;
+  color: #94a3b8;
 }
 
 .prose-custom a {
-  color: #60a5fa;
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition: border-color 0.15s ease;
+  color: #94a3b8;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s ease;
 }
 
 .prose-custom a:hover {
-  border-bottom-color: #60a5fa;
+  color: #ffffff;
 }
 
 .prose-custom blockquote {
-  border-left: 3px solid #60a5fa;
+  border-left: 4px solid #64748b;
   padding: 0.875rem 1.125rem;
   margin: 1.5rem 0;
   border-radius: 0 10px 10px 0;
-  background: rgba(96, 165, 250, 0.07);
-  color: #c8d1dc;
+  background: #151922;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left-width: 4px;
+  border-left-color: #64748b;
+  color: #cbd5e1;
   font-style: normal;
 }
 
@@ -202,7 +207,7 @@ h4,
 }
 
 .prose-custom blockquote strong {
-  color: #93c5fd;
+  color: #ffffff;
 }
 
 .prose-custom table {
@@ -210,28 +215,33 @@ h4,
   width: 100%;
   border-collapse: collapse;
   margin: 1.5rem 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #151922;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .prose-custom th,
 .prose-custom td {
   padding: 0.625rem 0.875rem;
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   text-align: left;
 }
 
 .prose-custom th {
-  background: rgba(96, 165, 250, 0.06);
+  background: #1c2230;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #ffffff;
 }
 
 .prose-custom td {
-  color: #c8d1dc;
+  color: #cbd5e1;
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 .prose-custom hr {
   border: none;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin: 2rem 0;
 }
 

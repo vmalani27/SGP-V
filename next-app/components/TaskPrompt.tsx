@@ -55,18 +55,18 @@ export default function TaskPrompt({ task, className = '' }: TaskPromptProps) {
     <div className={`space-y-2.5 ${className}`}>
       {/* Task Summary / Title (clean, no jargon badges) */}
       {task.summary && (
-        <h3 className="text-base font-medium text-zinc-100 tracking-tight leading-snug">
+        <h3 className="text-base font-bold text-white tracking-tight leading-snug">
           {task.summary}
         </h3>
       )}
 
       {/* Clean Structured Task Content */}
-      <div className="text-zinc-400 font-sans text-sm leading-relaxed">
+      <div className="text-[#cbd5e1] font-sans text-sm leading-relaxed">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
             p: ({ children }) => (
-              <p className="mb-2 text-sm text-zinc-400 font-sans leading-relaxed last:mb-0">
+              <p className="mb-2 text-sm text-[#cbd5e1] font-sans leading-relaxed last:mb-0">
                 {children}
               </p>
             ),
@@ -82,8 +82,8 @@ export default function TaskPrompt({ task, className = '' }: TaskPromptProps) {
             ),
             li: ({ children }) => {
               return (
-                <li className="flex items-start gap-2 text-sm leading-relaxed text-zinc-400">
-                  <span className="text-zinc-600 select-none">•</span>
+                <li className="flex items-start gap-2 text-sm leading-relaxed text-[#cbd5e1]">
+                  <span className="text-[#64748b] select-none">•</span>
                   <div className="flex-1 min-w-0 font-sans">
                     {children}
                   </div>
@@ -94,7 +94,7 @@ export default function TaskPrompt({ task, className = '' }: TaskPromptProps) {
               const hasLanguage = codeClassName?.includes('language-');
               if (inline || !hasLanguage) {
                 return (
-                  <code className="bg-zinc-800/90 text-zinc-200 border border-white/[0.08] font-mono text-xs px-1.5 py-0.5 rounded">
+                  <code className="bg-[#1e2530] text-[#e2e8f0] border border-white/[0.08] font-mono text-xs px-1.5 py-0.5 rounded font-medium shadow-xs">
                     {children}
                   </code>
                 );
@@ -107,32 +107,32 @@ export default function TaskPrompt({ task, className = '' }: TaskPromptProps) {
             },
             pre: CodeBlock,
             strong: ({ children }) => (
-              <strong className="font-semibold text-zinc-100 tracking-tight">
+              <strong className="font-semibold text-white tracking-tight">
                 {children}
               </strong>
             ),
             blockquote: ({ children }) => (
-              <blockquote className="my-2 border-l-2 border-zinc-600 bg-zinc-800/40 px-3 py-1.5 rounded-r text-sm text-zinc-300 italic">
+              <blockquote className="my-2 border-l-4 border-[#64748b] bg-[#151922] border border-white/[0.08] border-l-[#64748b] px-3 py-1.5 rounded-r text-sm text-[#cbd5e1] italic">
                 {children}
               </blockquote>
             ),
             table: ({ children }) => (
-              <div className="my-2.5 overflow-x-auto rounded-lg border border-white/[0.08]">
+              <div className="my-2.5 overflow-x-auto rounded-lg border border-white/[0.08] bg-[#151922]">
                 <table className="w-full text-left text-xs border-collapse">
                   {children}
                 </table>
               </div>
             ),
             thead: ({ children }) => (
-              <thead className="bg-zinc-900/80 border-b border-white/[0.08] text-zinc-200 font-semibold font-mono text-xs">
+              <thead className="bg-[#1c2230] border-b border-white/[0.08] text-white font-semibold font-mono text-xs">
                 {children}
               </thead>
             ),
             th: ({ children }) => (
-              <th className="px-3 py-1.5 text-zinc-200 font-semibold">{children}</th>
+              <th className="px-3 py-1.5 text-white font-semibold">{children}</th>
             ),
             td: ({ children }) => (
-              <td className="px-3 py-1.5 border-t border-white/[0.06] text-zinc-400 font-mono text-xs">
+              <td className="px-3 py-1.5 border-t border-white/[0.05] text-[#cbd5e1] font-mono text-xs">
                 {children}
               </td>
             ),

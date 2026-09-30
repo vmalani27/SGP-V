@@ -4,17 +4,16 @@
 # ──────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REGION="${AWS_REGION:-ap-south-1}"
-ACCOUNT_ID="586177432842"
-ECR_REGISTRY="${ECR_REGISTRY:-${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com}"
-IMAGE_NAME="vmalani/labops-images"
+REGION="us-east-1"
+ECR_REGISTRY="public.ecr.aws/i9t1l0m7"
+IMAGE_NAME="vmalani27/labops-base"
 IMAGE_TAG="runner-2.337.0"
 FULL_IMAGE="${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "==> 1. Authenticating with Amazon ECR (${REGION})..."
-aws ecr get-login-password --region "${REGION}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+aws ecr-public get-login-password --region "${REGION}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
 echo "==> 2. Building GitHub Actions Runner Image (${FULL_IMAGE})..."
 docker build -t "${FULL_IMAGE}" "${SCRIPT_DIR}"

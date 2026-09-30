@@ -43,8 +43,8 @@ export default function MultipleChoiceTask({ task, status, onValidate, error }: 
               className={`w-full text-left px-3.5 py-2.5 rounded-lg border text-xs transition-colors
                 ${isCorrect ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
                   : isWrong ? 'border-red-500/40 bg-red-500/10 text-red-300'
-                  : isSelected ? 'border-zinc-400 bg-zinc-800/80 text-zinc-100'
-                  : 'border-white/[0.06] bg-zinc-900/30 text-zinc-300 hover:border-white/[0.12] hover:text-zinc-100'
+                  : isSelected ? 'border-white/40 bg-[#1e2530] text-white font-medium'
+                  : 'border-white/[0.08] bg-[#151922] text-[#cbd5e1] hover:border-white/[0.16] hover:text-white'
                 }
                 ${status === 'correct' ? 'cursor-default' : 'cursor-pointer'}
               `}
@@ -53,8 +53,8 @@ export default function MultipleChoiceTask({ task, status, onValidate, error }: 
                 <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5
                   ${isCorrect ? 'border-emerald-500 bg-emerald-500'
                     : isWrong ? 'border-red-500 bg-red-500'
-                    : isSelected ? 'border-zinc-300 bg-zinc-800'
-                    : 'border-zinc-700 bg-transparent'
+                    : isSelected ? 'border-white bg-[#1e2530]'
+                    : 'border-slate-700 bg-transparent'
                   }`}
                 >
                   {isSelected && !isCorrect && !isWrong && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
@@ -85,7 +85,7 @@ export default function MultipleChoiceTask({ task, status, onValidate, error }: 
         <button
           onClick={handleSubmit}
           disabled={!selected}
-          className="w-full py-2.5 bg-white text-zinc-950 hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-500 rounded-lg text-sm font-medium shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed"
+          className="w-full py-2.5 bg-white text-slate-900 hover:bg-slate-200 disabled:bg-[#1e2433] disabled:text-slate-500 rounded-lg text-sm font-semibold shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed"
         >
           Check Answer
         </button>

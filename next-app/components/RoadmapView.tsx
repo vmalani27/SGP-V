@@ -41,14 +41,14 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
   }, [nodes]);
 
   return (
-    <div className="min-h-screen bg-[#0c0d0e] bg-[radial-gradient(#1f242d_1px,transparent_1px)] [background-size:16px_16px] font-sans text-zinc-100 select-none">
+    <div className="min-h-screen bg-[#090a0f] font-sans text-slate-100 select-none">
       <Navbar />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         {/* Header Section */}
         <div className="mb-8 select-none">
-          <h1 className="text-xl font-semibold text-zinc-100 tracking-tight">Tracks</h1>
-          <p className="text-xs text-zinc-400 mt-1">Local containerized sandboxes and engineering workflows.</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Tracks</h1>
+          <p className="text-xs text-[#94a3b8] mt-1">Local containerized sandboxes and engineering workflows.</p>
         </div>
 
         {/* 3-Column Roadmap Pipeline Grid */}
@@ -56,10 +56,10 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
           {phaseColumns.map((col) => (
             <div
               key={col.id}
-              className="flex flex-col bg-[#161618]/60 border border-white/[0.05] rounded-2xl p-4 backdrop-blur-sm"
+              className="flex flex-col bg-[#111318] border border-white/[0.08] rounded-2xl p-4 shadow-sm"
             >
               {/* Clean Phase Header */}
-              <h3 className="text-xs font-semibold tracking-wider text-zinc-400 uppercase mb-3">
+              <h3 className="text-xs font-semibold tracking-wider text-slate-400 uppercase mb-3">
                 {col.title}
               </h3>
 
@@ -105,13 +105,13 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
                   let cardClass = '';
                   if (isUnreleased) {
                     cardClass =
-                      'border border-dashed border-zinc-800/80 bg-zinc-950/20 rounded-xl p-4 opacity-50 select-none cursor-default';
+                      'border border-dashed border-white/[0.08] bg-[#12151c]/40 rounded-xl p-4 opacity-50 select-none cursor-default';
                   } else if (isInProgress) {
                     cardClass =
-                      'bg-[#1c1c1e] border border-white/30 rounded-xl p-4 transition-all duration-150 shadow-sm hover:translate-y-[-1px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] cursor-pointer group';
+                      'bg-[#181d28] border border-white/20 rounded-xl p-4 transition-all duration-150 shadow-sm hover:translate-y-[-1px] cursor-pointer group';
                   } else {
                     cardClass =
-                      'bg-[#1c1c1e] border border-white/[0.08] hover:border-white/[0.18] rounded-xl p-4 transition-all duration-150 shadow-sm hover:translate-y-[-1px] cursor-pointer group';
+                      'bg-[#151922] border border-white/[0.08] hover:border-white/[0.18] rounded-xl p-4 transition-all duration-150 shadow-sm hover:translate-y-[-1px] cursor-pointer group';
                   }
 
                   const cardInner = (
@@ -121,7 +121,7 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
                         <div className={getCourseBadgeShell(node.id)}>
                           {getCourseIcon(node.id)}
                         </div>
-                        <h4 className="text-sm font-medium text-zinc-100 leading-snug flex-1">
+                        <h4 className="text-sm font-semibold text-white leading-snug flex-1">
                           {node.title}
                         </h4>
                       </div>
@@ -148,7 +148,7 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
                         </span>
 
                         {isCompleted && (
-                          <span className="text-emerald-400 font-sans text-xs">✓ Done</span>
+                          <span className="text-emerald-400 font-sans text-xs">Done</span>
                         )}
                         {isInProgress && (
                           <span className="text-zinc-200 group-hover:text-white font-sans text-xs font-medium flex items-center gap-1">

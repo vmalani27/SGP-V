@@ -30,7 +30,9 @@ export default function LabTaskRenderer({
       <div className="space-y-4">
         <div className="rounded-xl border border-white/[0.06] bg-[#16171b]/60 p-6 text-center">
           <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10 font-bold text-emerald-400">
-            ✓
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
           </div>
           <h3 className="mb-1 text-base font-semibold text-zinc-100">All Tasks Completed!</h3>
           <p className="text-xs text-zinc-400">You&apos;ve completed all tasks in this lab.</p>

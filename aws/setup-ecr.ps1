@@ -30,7 +30,7 @@ Write-Host "==> 1. Creating Amazon ECR Repositories in $Region..." -ForegroundCo
 foreach ($repo in $Repos) {
     $exists = aws ecr describe-repositories --repository-names $repo --region $Region 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "  - [✔] Repository '$repo' already exists." -ForegroundColor Green
+        Write-Host "  - [OK] Repository '$repo' already exists." -ForegroundColor Green
     } else {
         Write-Host "  - [+] Creating repository '$repo'..." -ForegroundColor Yellow
         aws ecr create-repository `
@@ -50,7 +50,7 @@ if (Test-Path $PolicyFile) {
         --role-name $RoleName `
         --policy-name $PolicyName `
         --policy-document "file://$PolicyFile"
-    Write-Host "  - [✔] Successfully attached inline policy '$PolicyName' to IAM role '$RoleName'." -ForegroundColor Green
+    Write-Host "  - [OK] Successfully attached inline policy '$PolicyName' to IAM role '$RoleName'." -ForegroundColor Green
 } else {
     Write-Host "  - [!] Error: Policy file $PolicyFile not found." -ForegroundColor Red
     exit 1

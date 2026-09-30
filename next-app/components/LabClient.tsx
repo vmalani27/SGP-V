@@ -78,6 +78,8 @@ const ENV_IMAGE_FALLBACKS: Record<string, string> = {
   'docker-basic': 'labops-docker:latest',
   'docker-fundamentals': 'labops-docker-fundamentals:latest',
   'docker-build': 'labops-docker-build:latest',
+  'git-fundamentals': 'labops-git-fundamentals:latest',
+  'git': 'labops-git-fundamentals:latest',
 };
 
 function envConfigFrom(labConfig: Record<string, unknown> | null): {
@@ -722,7 +724,7 @@ export default function LabClient({
 
   return (
     <>
-      <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#090a0c]">
+      <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#090a0f]">
         {/* Pre-flight Briefing */}
           {phase === 'intro' && (
             <LabBriefing
@@ -741,7 +743,7 @@ export default function LabClient({
             <>
               {/* Clean Workspace Toolbar */}
               {phase === 'running' && labState && (
-                <div className="flex h-11 shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#0e0f12] px-4 font-mono text-xs">
+                <div className="flex h-11 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#161a24] px-4 font-mono text-xs select-none">
                   {/* Left: Environment Status Indicator + Timer */}
                   <div className="flex items-center gap-3">
                     {remainingSec !== null && (
@@ -752,11 +754,11 @@ export default function LabClient({
                               ? 'text-rose-400 font-semibold'
                               : remainingSec <= 300
                               ? 'text-amber-400'
-                              : 'text-zinc-400'
+                              : 'text-slate-400'
                           }`}
                         >
-                          <span className="text-zinc-500">TIME:</span>
-                          <span className="font-semibold text-zinc-300">{formatRemaining(remainingSec)}</span>
+                          <span className="text-[#64748b]">TIME:</span>
+                          <span className="font-semibold text-slate-200">{formatRemaining(remainingSec)}</span>
                         </div>
                       </>
                     )}
@@ -796,7 +798,7 @@ export default function LabClient({
                       <button
                         onClick={handleStop}
                         disabled={stopping || restarting || destroying}
-                        className="rounded border border-white/[0.08] bg-zinc-900/80 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-50 cursor-pointer"
+                        className="rounded border border-white/[0.08] bg-[#1e2433] px-2.5 py-1 text-xs font-mono text-slate-300 hover:bg-[#262e40] hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
                       >
                         {stopping ? 'Pausing...' : 'Pause'}
                       </button>
@@ -805,7 +807,7 @@ export default function LabClient({
                       <button
                         onClick={handleResume}
                         disabled={resuming || restarting || destroying}
-                        className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50 cursor-pointer"
+                        className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-mono text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50 cursor-pointer"
                       >
                         {resuming ? 'Resuming...' : 'Resume'}
                       </button>
@@ -813,16 +815,16 @@ export default function LabClient({
                     <button
                       onClick={handleRestart}
                       disabled={restarting || stopping || resuming || destroying}
-                      className="rounded border border-white/[0.08] bg-zinc-900/80 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-50 cursor-pointer"
+                      className="rounded border border-white/[0.08] bg-[#1e2433] px-2.5 py-1 text-xs font-mono text-slate-300 hover:bg-[#262e40] hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
                     >
                       {restarting ? 'Restarting...' : '↻ Restart'}
                     </button>
                     <button
                       onClick={handleDestroy}
                       disabled={destroying || stopping || resuming || restarting}
-                      className="rounded border border-red-800/40 bg-red-950/30 px-2.5 py-1 text-xs font-medium text-red-400 hover:bg-red-900/40 transition-colors disabled:opacity-50 cursor-pointer"
+                      className="rounded border border-red-500/20 bg-red-950/30 px-2.5 py-1 text-xs font-mono text-red-400 hover:bg-red-900/40 transition-colors disabled:opacity-50 cursor-pointer"
                     >
-                      {destroying ? 'Ending...' : '✕ End Lab'}
+                      {destroying ? 'Ending...' : 'End Lab'}
                     </button>
                   </div>
                 </div>
@@ -833,7 +835,7 @@ export default function LabClient({
 
                 {/* Left Pane: Tasks */}
                 {(phase === 'provisioning' || phase === 'running') && (
-                  <div className="w-[420px] min-w-[340px] overflow-y-auto border-r border-white/[0.06] bg-[#121316]">
+                  <div className="w-[420px] min-w-[340px] overflow-y-auto border-r border-white/[0.08] bg-[#111318]">
                     <div className="p-6">
                       {phase === 'running' && taskProgress && taskProgress.tasks.length > 0 ? (
                         <LabTaskRenderer
@@ -849,8 +851,8 @@ export default function LabClient({
                           {tasksError}
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2 font-mono text-xs text-zinc-400">
-                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
+                        <div className="flex items-center gap-2 font-mono text-xs text-slate-400">
+                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
                           {phase === 'provisioning' ? 'Setting up task harness...' : 'Loading lab tasks...'}
                         </div>
                       )}
@@ -859,7 +861,7 @@ export default function LabClient({
                 )}
 
                 {/* Right Pane: Terminal / Boot States */}
-                <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#090a0c]">
+                <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#090a0f]">
                   {phase === 'provisioning' && (
                     <ProvisioningBoot image={env.image} label={meta.environment} />
                   )}
@@ -892,7 +894,9 @@ export default function LabClient({
                     <div className="flex flex-1 items-center justify-center">
                       <div className="max-w-md space-y-4 text-center font-mono">
                         <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
-                          ⏱
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
                         </div>
                         <div>
                           <h2 className="text-base font-semibold text-zinc-100">Lab Session Expired</h2>

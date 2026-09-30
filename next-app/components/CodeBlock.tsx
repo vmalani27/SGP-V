@@ -109,7 +109,7 @@ export default function CodeBlock({
 
   return (
     <div
-      className={`group relative my-3 rounded-lg bg-[#141416] border border-white/[0.06] p-3 transition-colors hover:border-white/[0.12] ${className}`}
+      className={`group relative my-3.5 rounded-lg bg-[#151922] border border-white/[0.08] p-3.5 transition-all hover:border-white/[0.14] shadow-sm ${className}`}
     >
       {/* Action Triggers (Floating, no dedicated header row) */}
       <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity select-none z-10">
@@ -117,7 +117,7 @@ export default function CodeBlock({
           <button
             onClick={handleRun}
             type="button"
-            className="flex items-center gap-1 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-mono text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2 py-1 rounded bg-[#202736] border border-white/[0.1] hover:bg-[#283245] text-[11px] font-mono text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
           >
             <Play className="w-3 h-3 fill-current" /> Run
           </button>
@@ -125,7 +125,7 @@ export default function CodeBlock({
         <button
           onClick={handleCopy}
           type="button"
-          className="flex items-center gap-1 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-mono text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+          className="flex items-center gap-1 px-2 py-1 rounded bg-[#202736] border border-white/[0.1] text-[11px] font-mono text-slate-300 hover:text-white hover:bg-[#283245] transition-colors cursor-pointer"
         >
           {copied ? (
             <>
@@ -140,8 +140,8 @@ export default function CodeBlock({
       </div>
 
       {/* Command Text (Zero inner borders, wrapping enabled) */}
-      <pre className="font-mono text-[13px] leading-6 text-zinc-200 whitespace-pre-wrap break-words pr-20 select-text">
-        <code className="font-mono text-[13px] leading-6 text-zinc-200">{code}</code>
+      <pre className="font-mono text-[13px] leading-6 text-[#e2e8f0] whitespace-pre-wrap break-words pr-20 select-text">
+        <code className="font-mono text-[13px] leading-6 text-[#e2e8f0]">{code}</code>
       </pre>
     </div>
   );

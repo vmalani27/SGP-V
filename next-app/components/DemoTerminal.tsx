@@ -7,13 +7,31 @@ import LabTerminal, { type LabTerminalHandle } from '@/components/LabTerminal';
 
 type Phase = 'idle' | 'starting' | 'ready' | 'error';
 
-export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
+export interface DemoTerminalProps {
+  spec: TerminalDemoSpec;
+  onClose?: () => void;
+}
+
+export default function DemoTerminal({ spec, onClose }: DemoTerminalProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<{ wsUrl: string; wsToken: string; name: string } | null>(null);
   const [resetKey, setResetKey] = useState(0);
+  const [isMaximized, setIsMaximized] = useState(false);
   const terminalRef = useRef<LabTerminalHandle>(null);
   const mounted = useRef(true);
+
+  // Restore on Escape when maximized
+  useEffect(() => {
+    if (!isMaximized) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMaximized(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMaximized]);
 
   useEffect(() => {
     mounted.current = true;
@@ -105,22 +123,87 @@ export default function DemoTerminal({ spec }: { spec: TerminalDemoSpec }) {
     </div>
   );
 
+  const handleClear = () => {
+    if (terminalRef.current) {
+      terminalRef.current.insert('clear\r');
+      terminalRef.current.focus();
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full bg-[#0c0d0e] rounded-xl border border-white/[0.08] overflow-hidden shadow-2xl">
-      {/* SIMPLIFIED TERMINAL HEADER */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] bg-[#121316] px-4 py-2.5 shrink-0 select-none">
-        <span className="text-xs font-mono font-medium text-zinc-400">Terminal</span>
-        <button
-          onClick={handleReset}
-          disabled={phase === 'starting'}
-          className="text-xs font-mono text-zinc-400 hover:text-zinc-200 px-2 py-0.5 rounded border border-white/[0.08] hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-50"
-        >
-          Reset
-        </button>
+    <div
+      className={
+        isMaximized
+          ? 'fixed inset-0 z-50 flex flex-col bg-[#0d1117]'
+          : 'flex flex-col h-full bg-[#0d1117] border-l border-[#30363d]'
+      }
+    >
+      {/* Clean, Non-Slop Toolbar */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#30363d] select-none shrink-0">
+        {/* Left: Title & Status */}
+        <div className="text-xs font-mono text-[#8b949e] flex items-center space-x-2">
+          <span>Terminal Shell</span>
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              phase === 'ready'
+                ? 'bg-emerald-500 animate-pulse'
+                : phase === 'starting'
+                ? 'bg-amber-400 animate-pulse'
+                : phase === 'error'
+                ? 'bg-rose-500'
+                : 'bg-slate-500'
+            }`}
+            title={phase === 'ready' ? 'Connected' : phase === 'starting' ? 'Connecting...' : phase === 'error' ? 'Disconnected' : 'Idle'}
+          />
+        </div>
+
+        {/* Right: Functional Controls */}
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={handleClear}
+            disabled={phase !== 'ready'}
+            type="button"
+            className="text-xs text-[#8b949e] hover:text-[#c9d1d9] transition-colors px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d] font-mono cursor-pointer disabled:opacity-40"
+          >
+            clear
+          </button>
+
+          {/* Maximize / Restore Toggle */}
+          <button
+            onClick={() => setIsMaximized((prev) => !prev)}
+            type="button"
+            className="p-1.5 text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d] rounded transition-colors cursor-pointer"
+            title={isMaximized ? 'Restore' : 'Maximize'}
+          >
+            {isMaximized ? (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 9V4.5M9 9H4.5M9 9l-6-6M15 15v4.5M15 15h4.5M15 15l6 6" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+              </svg>
+            )}
+          </button>
+
+          {/* Close / Hide Toggle */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              type="button"
+              className="p-1.5 text-[#8b949e] hover:text-[#f85149] hover:bg-[#21262d] rounded transition-colors cursor-pointer"
+              title="Close Terminal"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Terminal Container */}
-      <div className="flex-1 min-h-0 p-3 bg-black/90">
+      {/* Terminal PTY Viewport */}
+      <div className="flex-1 min-h-0 overflow-hidden bg-black p-3">
         {terminalBox}
       </div>
     </div>

@@ -16,18 +16,17 @@ aws ssm put-parameter \
   --region "ap-south-1" \
   --overwrite
 ```
-
 > **Note:** Make sure your PAT has the `repo` scope to request runner registration tokens.
 
 ---
 
 ## 2. Build & Push Runner Container Image to Amazon ECR
 
-Run the automated script to build and push the runner container image:
+Run one of the automated scripts to build and push the runner container image:
 
-**In PowerShell:**
-```powershell
-.\aws\runner\build-and-push.ps1
+**In Command Prompt:**
+```bat
+aws\runner\build-and-push.bat
 ```
 
 **In Bash:**
@@ -35,7 +34,9 @@ Run the automated script to build and push the runner container image:
 ./aws/runner/build-and-push.sh
 ```
 
-This tags and pushes the image as `586177432842.dkr.ecr.ap-south-1.amazonaws.com/vmalani/labops-images:runner-2.337.0`.
+Both scripts authenticate with Amazon ECR Public in `us-east-1` and push:
+
+`public.ecr.aws/i9t1l0m7/vmalani27/labops-base:runner-2.337.0`.
 
 ---
 
@@ -48,7 +49,7 @@ In your ECS Task Definition, inject the SSM Parameter as an environment variable
   "containerDefinitions": [
     {
       "name": "github-actions-runner",
-      "image": "586177432842.dkr.ecr.ap-south-1.amazonaws.com/vmalani/labops-images:runner-2.337.0",
+      "image": "public.ecr.aws/i9t1l0m7/vmalani27/labops-base:runner-2.337.0",
       "essential": true,
       "environment": [
         { "name": "GITHUB_REPOSITORY", "value": "vmalani27/SGP-V" },

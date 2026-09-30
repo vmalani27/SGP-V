@@ -13,3 +13,5 @@ echo "Building docker fundamentals..."
 docker build -t labops-docker-fundamentals:latest -f Dockerfile.docker-fundamentals .
 echo "Building docker build..."
 docker build -t labops-docker-build:latest -f Dockerfile.docker-build .
+echo "Building git fundamentals..."
+docker build -t labops-git-fundamentals:latest -f Dockerfile.git-fundamentals .

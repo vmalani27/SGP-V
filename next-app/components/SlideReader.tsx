@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useEffect, useMemo, type ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import YAML from 'js-yaml';
-import { Zap } from 'lucide-react';
 import CodeBlock, { extractText } from '@/components/CodeBlock';
 import DemoTerminal from '@/components/DemoTerminal';
 import { api } from '@/lib/api';
@@ -35,7 +34,7 @@ const markdownComponents = {
     return (
       <h1
         id={slugify(text)}
-        className="text-2xl font-semibold text-zinc-100 tracking-tight pb-2 border-b border-white/[0.06] mb-6"
+        className="text-3xl font-extrabold text-white tracking-tight pb-3 border-b border-white/[0.08] mb-6"
       >
         {children}
       </h1>
@@ -46,7 +45,7 @@ const markdownComponents = {
     return (
       <h2
         id={slugify(text)}
-        className="text-base font-medium text-zinc-100 tracking-tight mt-8 mb-3"
+        className="text-xl font-bold text-white tracking-tight mt-10 mb-3 pb-2 border-b border-white/[0.06]"
       >
         {children}
       </h2>
@@ -57,81 +56,85 @@ const markdownComponents = {
     return (
       <h3
         id={slugify(text)}
-        className="text-sm font-medium tracking-tight text-zinc-200 mt-6 mb-2"
+        className="text-base font-semibold tracking-tight text-white mt-7 mb-2.5"
       >
         {children}
       </h3>
     );
   },
   h4: ({ children }: { children?: ReactNode }) => (
-    <h4 className="text-xs font-semibold text-zinc-300 mt-4 mb-1.5">{children}</h4>
+    <h4 className="text-xs font-semibold uppercase tracking-wider text-[#64748b] mt-5 mb-2">{children}</h4>
   ),
   strong: ({ children }: { children?: ReactNode }) => (
-    <strong className="font-semibold text-zinc-100">{children}</strong>
+    <strong className="font-semibold text-white">{children}</strong>
   ),
   em: ({ children }: { children?: ReactNode }) => (
-    <em className="italic text-zinc-200">{children}</em>
+    <em className="italic text-slate-300">{children}</em>
   ),
   code: ({ children, className }: { children?: ReactNode; className?: string }) => {
     if (className) {
       return <code className={className}>{children}</code>;
     }
     return (
-      <code className="font-mono text-[12.5px] text-zinc-200 bg-zinc-800/70 border border-white/[0.06] px-1.5 py-0.5 rounded font-normal">
+      <code className="font-mono text-[12.5px] text-[#e2e8f0] bg-[#1e2530] border border-white/[0.08] px-1.5 py-0.5 rounded font-medium shadow-xs">
         {children}
       </code>
     );
   },
   ul: ({ children }: { children?: ReactNode }) => (
-    <ul className="space-y-2 text-zinc-300 list-disc list-inside marker:text-zinc-500 my-3">{children}</ul>
+    <ul className="space-y-2 text-[#cbd5e1] list-disc list-inside marker:text-[#64748b] my-3.5">{children}</ul>
   ),
   ol: ({ children }: { children?: ReactNode }) => (
-    <ol className="list-decimal list-inside space-y-2 my-3 text-[14px] text-zinc-300 leading-relaxed marker:text-zinc-500">
+    <ol className="list-decimal list-inside space-y-2 my-3.5 text-[14.5px] text-[#cbd5e1] leading-relaxed marker:text-[#64748b]">
       {children}
     </ol>
   ),
   li: ({ children }: { children?: ReactNode }) => (
-    <li className="text-[14px] leading-relaxed text-zinc-300 [&>p]:inline">
+    <li className="text-[14.5px] leading-relaxed text-[#cbd5e1] [&>p]:inline">
       {children}
     </li>
   ),
   p: ({ children }: { children?: ReactNode }) => (
-    <p className="text-[14px] text-zinc-300 leading-relaxed my-3">{children}</p>
+    <p className="text-[14.5px] text-[#cbd5e1] leading-relaxed my-3.5">{children}</p>
   ),
   blockquote: ({ children }: { children?: ReactNode }) => (
-    <blockquote className="border-l-2 border-zinc-700 bg-zinc-900/40 px-4 py-2.5 my-4 rounded-r text-xs text-zinc-400 leading-relaxed">
+    <blockquote className="my-5 p-4 rounded-lg bg-[#151922] border border-white/[0.08] border-l-4 border-l-slate-400 text-sm text-[#cbd5e1] leading-relaxed [&>p]:my-1">
       {children}
     </blockquote>
   ),
   table: ({ children }: { children?: ReactNode }) => (
-    <div className="my-4 overflow-x-auto">
+    <div className="my-5 overflow-x-auto rounded-lg border border-white/[0.08] bg-[#151922]">
       <table className="w-full text-left border-collapse">{children}</table>
     </div>
   ),
-  thead: ({ children }: { children?: ReactNode }) => <thead>{children}</thead>,
+  thead: ({ children }: { children?: ReactNode }) => <thead className="bg-[#1c2230] border-b border-white/[0.08]">{children}</thead>,
   tbody: ({ children }: { children?: ReactNode }) => <tbody>{children}</tbody>,
   th: ({ children }: { children?: ReactNode }) => (
-    <th className="border-b border-zinc-800 font-mono text-xs text-zinc-400 text-left py-2 px-3 font-semibold uppercase tracking-wider">
+    <th className="font-mono text-xs text-white text-left py-2.5 px-3.5 font-semibold uppercase tracking-wider">
       {children}
     </th>
   ),
   td: ({ children }: { children?: ReactNode }) => (
-    <td className="border-b border-[#202023] text-xs font-mono text-zinc-300 py-2.5 px-3">
+    <td className="border-b border-white/[0.05] text-xs font-mono text-[#cbd5e1] py-2.5 px-3.5">
       {children}
     </td>
   ),
   tr: ({ children }: { children?: ReactNode }) => (
-    <tr className="border-b border-[#202023] hover:bg-zinc-900/30 transition-colors">
+    <tr className="hover:bg-white/[0.02] transition-colors">
       {children}
     </tr>
   ),
 };
 
-export function extractChapterDemoSpec(markdown: string, fallbackId: string): TerminalDemoSpec {
+export function extractChapterDemoSpec(
+  markdown: string,
+  fallbackId: string,
+  defaultImage = 'labops-docker:latest'
+): TerminalDemoSpec {
   const regex = /:::\s*terminal-demo\s*\r?\n([\s\S]*?)\r?\n:::/g;
   let match: RegExpExecArray | null;
   let id = fallbackId;
-  let image = 'labops-docker:latest';
+  let image = defaultImage;
   const prePullSet = new Set<string>();
 
   while ((match = regex.exec(markdown)) !== null) {
@@ -168,6 +171,7 @@ export function extractChapterDemoSpec(markdown: string, fallbackId: string): Te
 export interface SlideReaderProps {
   content: string;
   chapterId?: string;
+  courseId?: string;
   chapterDescription?: string;
   assessment?: unknown;
   prevItem?: CourseItem | null;
@@ -182,6 +186,7 @@ export interface SlideReaderProps {
 export default function SlideReader({
   content,
   chapterId,
+  courseId,
   chapterDescription,
   assessment,
   prevItem,
@@ -191,13 +196,21 @@ export default function SlideReader({
   onComplete,
   completeLabel,
 }: SlideReaderProps) {
+  const defaultImage = useMemo(() => {
+    if (courseId && courseId.includes('git')) {
+      return 'labops-git-fundamentals:latest';
+    }
+    return 'labops-docker:latest';
+  }, [courseId]);
+
   // Extract persistent demo spec for the terminal shell
   const chapterDemoSpec: TerminalDemoSpec = useMemo(() => {
     return extractChapterDemoSpec(
       content,
-      chapterId ? `chapter-${slugify(chapterId)}` : 'chapter-scratchpad'
+      chapterId ? `chapter-${slugify(chapterId)}` : 'chapter-scratchpad',
+      defaultImage
     );
-  }, [content, chapterId]);
+  }, [content, chapterId, defaultImage]);
 
   // Clean up demo container on unmount
   useEffect(() => {
@@ -216,6 +229,31 @@ export default function SlideReader({
       .trim();
   }, [content]);
 
+  const [isTerminalOpen, setIsTerminalOpen] = useState(true);
+
+  // Broadcast terminal status to Navbar whenever it changes
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('chapter-terminal-status', { detail: { isOpen: isTerminalOpen } })
+    );
+  }, [isTerminalOpen]);
+
+  // Listen for toggle requests from Navbar
+  useEffect(() => {
+    const handleToggle = (e: Event) => {
+      const customEvent = e as CustomEvent<{ isOpen?: boolean }>;
+      if (typeof customEvent.detail?.isOpen === 'boolean') {
+        setIsTerminalOpen(customEvent.detail.isOpen);
+      } else {
+        setIsTerminalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('toggle-chapter-terminal', handleToggle);
+    return () => {
+      window.removeEventListener('toggle-chapter-terminal', handleToggle);
+    };
+  }, []);
+
   const nextButtonText = useMemo(() => {
     if (completeLabel) return completeLabel;
     if (nextItem && nextItem.type === 'lab') {
@@ -228,11 +266,21 @@ export default function SlideReader({
   }, [completeLabel, nextItem]);
 
   return (
-    <div className="w-full h-full overflow-hidden bg-[#0b0c0e]">
-      <div className="grid grid-cols-1 lg:grid-cols-2 h-full w-full overflow-hidden">
+    <div className="w-full h-full overflow-hidden bg-[#090a0f] relative">
+      <div
+        className={`h-full w-full overflow-hidden ${
+          isTerminalOpen ? 'grid grid-cols-1 lg:grid-cols-2' : 'flex'
+        }`}
+      >
         {/* Left Column: Continuous Scroll Document */}
-        <div className="h-full overflow-y-auto px-10 py-8 scrollbar-thin scrollbar-thumb-zinc-800 border-r border-white/[0.06] bg-[#0b0c0e]">
-          <div className="max-w-[700px] space-y-6">
+        <div
+          className={`h-full overflow-y-auto px-10 py-8 scrollbar-thin scrollbar-thumb-zinc-800 bg-[#111318] ${
+            isTerminalOpen
+              ? 'border-r border-white/[0.08]'
+              : 'flex-1 flex justify-center'
+          }`}
+        >
+          <div className={`${isTerminalOpen ? 'max-w-[700px]' : 'max-w-[760px] w-full'} space-y-6`}>
             <article className="w-full min-w-0 space-y-4">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {cleanedMarkdown}
@@ -241,50 +289,23 @@ export default function SlideReader({
 
             {/* Assessment Section (Mounts only if chapter manifest defines an assessment) */}
             {assessment != null && (
-              <div id={nextItem?.type === 'lab' ? undefined : 'lab'} className="mt-8 pt-6 border-t border-white/[0.08] space-y-3 scroll-mt-16">
-                <div className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-400">
+              <div className="mt-8 pt-6 border-t border-white/[0.08] space-y-3">
+                <div className="text-xs font-mono font-semibold uppercase tracking-wider text-[#64748b]">
                   Chapter Assessment
                 </div>
-                <div className="p-4 rounded-lg bg-[#141416] border border-white/[0.06] text-sm text-zinc-300 font-mono">
+                <div className="p-4 rounded-lg bg-[#151922] border border-white/[0.08] text-sm text-[#cbd5e1] font-mono">
                   {typeof assessment === 'string' ? assessment : JSON.stringify(assessment, null, 2)}
                 </div>
               </div>
             )}
 
-            {/* Hands-on Lab Challenge Card if next item is a lab */}
-            {nextItem && nextItem.type === 'lab' && (
-              <div id="lab" className="mt-8 pt-6 border-t border-white/[0.08] space-y-3 scroll-mt-16">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-mono font-semibold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5" /> Hands-On Lab Challenge
-                  </div>
-                  <span className="text-[11px] font-mono text-zinc-500">Evaluated Task</span>
-                </div>
-                <div className="p-4 rounded-lg bg-[#141416] border border-sky-900/30 text-sm text-zinc-300">
-                  <div className="font-medium text-zinc-100">{nextItem.title}</div>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    Ready to test your skills? Launch the interactive lab environment to begin the practical assessment.
-                  </p>
-                  <div className="mt-4 flex items-center">
-                    <button
-                      onClick={onComplete}
-                      type="button"
-                      className="bg-sky-500 hover:bg-sky-400 text-zinc-950 font-medium text-xs px-3.5 py-1.5 rounded-md transition-colors flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Zap className="w-3 h-3 fill-current" /> Start Lab Challenge
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Bottom Chapter Navigation */}
-            <div className="pt-6 mt-8 border-t border-white/[0.06] flex items-center justify-between select-none">
+            <div className="pt-6 mt-8 border-t border-white/[0.08] flex items-center justify-between select-none">
               {onPrev ? (
                 <button
                   onClick={onPrev}
                   type="button"
-                  className="text-xs text-zinc-400 hover:text-zinc-200 font-mono transition-colors cursor-pointer flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/[0.06] hover:bg-white/[0.04]"
+                  className="text-xs text-slate-300 hover:text-white font-mono transition-colors cursor-pointer flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/[0.08] bg-[#181d28] hover:bg-[#202736]"
                 >
                   ← Previous
                 </button>
@@ -295,7 +316,7 @@ export default function SlideReader({
               <button
                 onClick={onComplete}
                 type="button"
-                className="bg-white text-zinc-950 font-medium text-xs px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                className="bg-white hover:bg-slate-200 text-slate-900 font-semibold text-xs px-4 py-2 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
               >
                 {nextButtonText}
               </button>
@@ -304,9 +325,14 @@ export default function SlideReader({
         </div>
 
         {/* Right Column: Pinned Terminal Shell (fixed at 50% width on lg screens) */}
-        <div className="h-full bg-black/90 p-4 flex flex-col overflow-hidden">
-          <DemoTerminal spec={chapterDemoSpec} />
-        </div>
+        {isTerminalOpen && (
+          <div className="h-full overflow-hidden">
+            <DemoTerminal
+              spec={chapterDemoSpec}
+              onClose={() => setIsTerminalOpen(false)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
