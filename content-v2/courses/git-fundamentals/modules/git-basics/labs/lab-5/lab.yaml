@@ -17,16 +17,19 @@ objectives:
   - Create a .gitignore that prevents secrets and build artifacts from being staged
   - Understand the difference between untracked and ignored files
   - Use git rm --cached to stop tracking an already-committed file
+  - Commit .gitignore and push the clean repository to the remote server
 
 setup:
   - command: >
       mkdir -p /home/student/webapp && cd /home/student/webapp &&
-      git init &&
-      git config user.email "student@lab.local" &&
+      git init -b main &&
+      git config user.email "student@labops.local" &&
       git config user.name "Student" &&
       echo "def main(): pass" > app.py &&
       git add app.py &&
       git commit -m "Initial app" &&
+      git remote add origin http://git-server:3000/student/webapp-secrets.git &&
+      git push -u origin main &&
       echo "DB_PASSWORD=supersecret123" > .env &&
       echo "token=ghp_realtoken" > .env.local &&
       mkdir -p __pycache__ &&
@@ -200,3 +203,57 @@ tasks:
       Use git add --force .env to stage it despite .gitignore, commit it,
       then run git rm --cached .env and commit again. After both commits,
       .env should exist on disk but not be tracked by Git.
+
+  - id: publish-gitignore
+    summary: Commit .gitignore and push the clean repository to the remote server
+    prompt: >-
+      Now that your sensitive files and build artifacts are properly ignored
+      and untracked, record .gitignore into the repository history and synchronize
+      with the remote.
+
+      1. Stage and commit .gitignore:
+         `git add .gitignore`
+         `git commit -m "Add .gitignore for secrets and build artifacts"`
+      2. Push your commits to the remote:
+         `git push`
+    type: terminal_action
+    hints:
+      - "Run git add .gitignore followed by git commit -m 'Add .gitignore'"
+      - "Run git push to upload your commits to origin/main"
+    solution:
+      command: "cd /home/student/webapp && git add .gitignore && git commit -m 'Add .gitignore for secrets and build artifacts' && git push"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        cwd = '/home/student/webapp'
+
+        # .gitignore should be committed and tracked
+        ls = subprocess.run(['git', 'ls-files', '.gitignore'], capture_output=True, text=True, cwd=cwd).stdout
+        if not ls.strip():
+            print('RESULT_FAIL: .gitignore is not tracked. Run git add .gitignore and commit.')
+            sys.exit(0)
+
+        # Working tree status should show no untracked/modified tracked files
+        status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, cwd=cwd).stdout
+        if status.strip():
+            print('RESULT_FAIL: Working tree has uncommitted changes.')
+            sys.exit(0)
+
+        # Remote sync check
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=cwd).stdout.strip()
+        remote_head = subprocess.run(['git', 'ls-remote', 'origin', 'refs/heads/main'], capture_output=True, text=True, cwd=cwd).stdout.split()
+        remote_sha = remote_head[0] if remote_head else ''
+
+        if not head or remote_sha != head:
+            print('RESULT_FAIL: Remote main does not match local HEAD. Run git push.')
+            sys.exit(0)
+
+        print('PUSH_OK')
+        "
+      match_type: exact
+      expected_output: PUSH_OK
+    error_message: >-
+      Stage and commit .gitignore, then run `git push` inside `/home/student/webapp`.
+      Ensure local HEAD matches `origin/main`.
+

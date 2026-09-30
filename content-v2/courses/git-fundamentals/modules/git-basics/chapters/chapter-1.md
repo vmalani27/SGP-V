@@ -7,12 +7,18 @@ image: labops-git-fundamentals:latest
 
 > **No prior Git knowledge required.** 
 > You must be comfortable in a terminal — `ls`, `cd`, `mkdir`.
+>
+> **Hands-On Practice in the Terminal:**
+> Your terminal on the right comes with a pre-configured practice repository located in `~/practice`. Enter it to follow along with the commands in this chapter:
+> ```bash
+> cd ~/practice
+> ```
 
 ## The Situation
 
 It is your second week as a DevOps intern. You are asked to update a deployment script on the production CI server. You make the change, test it locally, and push it. An hour later, builds start failing. Someone else on the team had changed the same file yesterday. Your push overwrote theirs. Nobody knows what the file looked like before.
 
-Git is the system that prevents this — and recovers from it when it happens anyway. Lets understand how it works
+Git is the system that prevents this — and recovers from it when it happens anyway. Let's understand how it works.
 
 ## What Git Records
 
@@ -29,85 +35,91 @@ You can go back to any snapshot at any time. You can see exactly what changed be
 
 ## How Git Stores a Snapshot
 
-A commit is a pointer to a **tree object**, and that tree represents the exact state of every file at that point.
+Because we are working directly in a command-line environment without a graphical Git client (GUI), the terminal is our direct window into Git's internal object database.
+
+Your interactive terminal on the right is pre-loaded with a repository in `/home/student/practice`. Enter the folder and inspect its commit history:
 
 ```bash
+cd ~/practice
 git log --oneline
 ```
 
+You will see the initial commit record:
+
 ```
-a81f2c1 Add login
-b72e991 Add database config
-c31a442 Initial commit
+cdd96d4 Initial application release
 ```
 
-Inspect what the commit `a81f2c1` actually points to:
+A commit in Git is not an incremental diff of individual lines — it is a direct pointer to a **tree object**, representing the exact state of all project files at that point in time.
+
+Inspect what the commit actually points to using low-level Git plumbing tools:
 
 ```bash
-git ls-tree a81f2c1
+git cat-file -p HEAD
 ```
 
 ```
-100644 blob 8b137891...    README.md
-040000 tree 4a7d1ed2...    src
-100644 blob 91e8c3aa...    package.json
+tree 1107d109bb1dd1cbe33763e3f3ed57577d3d16df
+author Student <student@labops.local> 1790713119 +0000
+committer Student <student@labops.local> 1790713119 +0000
+
+Initial application release
 ```
 
-- `blob` — file contents
-- `tree` — directory
-- the SHA — the object's unique identity (its content hash)
-- `100644` — the file mode
-
-Go deeper into a subdirectory:
+Notice the `tree` hash. Let's inspect the files recorded inside that tree snapshot:
 
 ```bash
-git ls-tree a81f2c1 src
+git ls-tree HEAD
 ```
 
-Or read the actual file as it existed at that commit:
+```
+100644 blob b22fe41e...    README.md
+100644 blob 2aca867a...    api.py
+100644 blob 6213a005...    auth.py
+100644 blob c6fd1f09...    styles.css
+```
+
+Git categorizes its internal objects cleanly:
+- `blob` — file contents (your source code, configs, or documentation)
+- `tree` — a directory snapshot mapping filenames to blob SHAs
+- `commit` — a top-level record linking a tree snapshot to an author, timestamp, and log message
+- `100644` — standard POSIX file permissions (regular readable/writable file)
+
+You can read the exact file contents preserved in that snapshot directly from the Git object database:
 
 ```bash
-git show a81f2c1:src/main.py
+git show HEAD:auth.py
 ```
 
-The full structure:
+The underlying graph structure looks like this:
 
 ```
-COMMIT
+COMMIT  (cdd96d4: "Initial application release")
   │
   ▼
-TREE  ← snapshot of the repository root
+TREE    (1107d10: root directory snapshot)
   ├── blob → README.md contents
-  ├── tree → src/
-  │            ├── blob → main.py contents
-  │            └── blob → utils.py contents
-  └── blob → package.json contents
+  ├── blob → api.py contents
+  ├── blob → auth.py contents
+  └── blob → styles.css contents
 ```
 
-Inspect the raw commit object:
+Git stores all of these objects — commits, trees, and blobs — in `.git/objects/`, indexed by their SHA content hashes. If `README.md` remains unchanged across 20 consecutive commits, all 20 commits reference the exact same blob SHA. Git never duplicates unchanged files — it reuses the identical object in storage.
+
+Now run `git status` inside `~/practice`:
 
 ```bash
-git cat-file -p a81f2c1
+git status
 ```
 
 ```
-tree 7a3f...
-parent b72e...
-author Jane Smith <jane@example.com> 1700000000 +0000
-committer Jane Smith <jane@example.com> 1700000000 +0000
-
-Add login
+Changes not staged for commit:
+  modified:   api.py
+  modified:   auth.py
+  modified:   styles.css
 ```
 
-Then inspect the tree it points to:
-
-```bash
-git cat-file -p 7a3f...
-```
-
-Git stores all of these objects — commits, trees, blobs — in `.git/objects/`, addressed by their SHA. If `README.md` has not changed across 20 commits, all 20 commits point to the same blob. Git does not duplicate the file — it reuses the identical object.
-
-This is what "Git stores snapshots" actually means: each commit describes a complete filesystem state through its tree, while Git internally deduplicates anything that has not changed.
+Notice that Git tells you files have been modified in your working directory compared to the committed snapshot. These modifications represent work in progress — changes that exist on your disk but are not yet recorded in Git's snapshot history. You will learn how to turn these working changes into clean, atomic commits in Chapters 2 and 3.
 
 ## Distributed: Every Clone Has the Full History
 

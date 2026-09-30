@@ -16,16 +16,19 @@ objectives:
   - Use git add -p to stage individual hunks within a file
   - Verify staged content with git diff --staged before committing
   - Produce two separate commits from changes in a single file
+  - Push atomic commits to the remote tracking branch
 
 setup:
   - command: >
       mkdir -p /home/student/project && cd /home/student/project &&
-      git init &&
-      git config user.email "student@lab.local" &&
+      git init -b main &&
+      git config user.email "student@labops.local" &&
       git config user.name "Student" &&
       printf 'def authenticate(user, password):\n    if password == "":\n        return False\n    return check_db(user, password)\n\ndef get_user_profile(user_id):\n    result = db.query(user_id)\n    return result\n' > auth.py &&
       git add auth.py &&
       git commit -m "Initial auth module" &&
+      git remote add origin http://git-server:3000/student/project.git &&
+      git push -u origin main &&
       printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n\ndef get_user_profile(uid):\n    result = db.query(uid)\n    return result\n' > auth.py
 
 completion:
@@ -191,3 +194,49 @@ tasks:
       Stage and commit the remaining change in auth.py. After committing,
       git log --oneline should show 3 commits and git diff auth.py should
       produce no output.
+
+  - id: publish-hunk-commits
+    summary: Push your atomic commits to the remote tracking branch
+    prompt: >-
+      Your working tree in `/home/student/project` is clean, and your local
+      `main` branch has two clean atomic commits ahead of `origin/main`.
+
+      Push your commits to the remote server by running `git push`.
+    type: terminal_action
+    hints:
+      - "Run git push inside /home/student/project"
+      - "Because main already tracks origin/main, git push is all you need"
+    solution:
+      command: "cd /home/student/project && git push"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        cwd = '/home/student/project'
+
+        status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, cwd=cwd).stdout
+        if status.strip():
+            print('RESULT_FAIL: Working tree has uncommitted modifications.')
+            sys.exit(0)
+
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=cwd).stdout.strip()
+        remote_head = subprocess.run(['git', 'ls-remote', 'origin', 'refs/heads/main'], capture_output=True, text=True, cwd=cwd).stdout.split()
+        remote_sha = remote_head[0] if remote_head else ''
+
+        if not head or remote_sha != head:
+            print('RESULT_FAIL: Remote main does not match local HEAD. Run git push.')
+            sys.exit(0)
+
+        log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True, cwd=cwd).stdout.strip().splitlines()
+        if len(log) < 3:
+            print('RESULT_FAIL: Expected 3 commits in history.')
+            sys.exit(0)
+
+        print('PUSH_OK')
+        "
+      match_type: exact
+      expected_output: PUSH_OK
+    error_message: >-
+      Run `git push` inside `/home/student/project`. Ensure all previous tasks
+      were completed so that local HEAD matches `origin/main` on the server.
+

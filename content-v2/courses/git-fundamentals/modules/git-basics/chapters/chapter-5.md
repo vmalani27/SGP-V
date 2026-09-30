@@ -7,6 +7,13 @@ image: labops-git-fundamentals:latest
 
 > **Before this chapter:** You should be comfortable with `git add`, `git commit`, and `git status` from Chapter 3.
 
+> **Hands-On Practice in the Terminal:**
+> Your terminal on the right comes with a pre-configured repository in `~/practice`. Enter it to experiment with `.gitignore` patterns and inspect ignored files:
+> ```bash
+> cd ~/practice
+> git status
+> ```
+
 ## The Problem
 
 You initialize a repository. You create a `.env` file with your database password. You run `git add .` and commit. The password is now in your Git history — permanently. Deleting the file from the working directory does not remove it from history. Pushing to GitHub makes it publicly readable within seconds of the push.
@@ -99,6 +106,18 @@ Every project should ignore these from day one:
 
 **Local config:** `.idea/`, `.vscode/`, `.DS_Store`, `Thumbs.db` — editor and OS files that are meaningless to other developers.
 
+## Committing and Sharing `.gitignore`
+
+`.gitignore` is a normal project file. It must be tracked and pushed to the remote repository so that everyone cloning the repository automatically respects the same ignore rules:
+
+```bash
+git add .gitignore
+git commit -m "Add .gitignore for secrets and build artifacts"
+git push
+```
+
+Once pushed, your CI pipelines and team members will not accidentally commit generated files or local configurations.
+
 ## Starting Right
 
 GitHub maintains a repository of `.gitignore` templates for every major language and framework at [github.com/github/gitignore](https://github.com/github/gitignore). Copy the relevant template when you initialize the repository — before your first commit.
@@ -112,3 +131,4 @@ Add `.gitignore` when you `git init`. Not after you realize you committed someth
 - `git status --ignored` shows what is being silently ignored
 - `git rm --cached <file>` stops tracking an already-committed file without deleting it from disk
 - If a secret was committed and pushed, rotate the credential first — history cleanup comes second
+- Always commit and push `.gitignore` so your entire team shares the same rules

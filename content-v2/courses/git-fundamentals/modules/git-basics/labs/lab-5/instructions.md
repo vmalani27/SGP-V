@@ -12,6 +12,7 @@ In this lab, you will configure `.gitignore` to prevent these files from being t
 - Create `.gitignore` to ignore `.env`, `.env.*`, `*.pyc`, and `__pycache__/`
 - Verify that ignored files are filtered out from default status and visible via `git status --ignored`
 - Use `git rm --cached` to stop tracking a committed file without deleting it from disk
+- Commit `.gitignore` and push your clean repository to the remote server (`origin/main`)
 
 ## Operational Specifications
 
@@ -30,6 +31,10 @@ In this lab, you will configure `.gitignore` to prevent these files from being t
 - Run `git rm --cached .env` to stop tracking it while preserving the file on disk.
 - Commit the removal.
 
+### 5. Commit .gitignore and Push
+- Stage and commit `.gitignore`.
+- Run `git push` to synchronize your changes with the remote repository on `origin/main`.
+
 ## Acceptance Criteria Table
 
 | Requirement | Verification Check |
@@ -37,3 +42,4 @@ In this lab, you will configure `.gitignore` to prevent these files from being t
 | .gitignore created | `.gitignore` contains rules for secrets and bytecode |
 | Files ignored | `git status` excludes `.env` and `*.pyc` |
 | Cached file removed | `git ls-files .env` returns empty while file remains on disk |
+| .gitignore committed & pushed | `git ls-remote origin refs/heads/main` matches local `HEAD` |

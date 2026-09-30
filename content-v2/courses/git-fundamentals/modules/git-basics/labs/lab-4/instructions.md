@@ -13,6 +13,7 @@ Both edits are currently sitting in `auth.py` in your working directory. Rather 
 - Verify staged changes with `git diff --staged`
 - Commit the bug fix with an informative, focused message
 - Stage and commit the remaining parameter rename as a second atomic commit
+- Push your atomic commits to the remote tracking branch (`origin/main`)
 
 ## Operational Specifications
 
@@ -28,6 +29,9 @@ Both edits are currently sitting in `auth.py` in your working directory. Rather 
 - Commit the first change with a clear summary of the bug fix.
 - Stage the remaining change and commit it with a separate message explaining the parameter rename.
 
+### 4. Push to Remote
+- Run `git push` to upload both commits to `origin/main`.
+
 ## Acceptance Criteria Table
 
 | Requirement | Verification Check |
@@ -35,3 +39,4 @@ Both edits are currently sitting in `auth.py` in your working directory. Rather 
 | Bug fix committed first | `git log --oneline` shows commit for the password fix |
 | Parameter rename committed second | `git log --oneline` shows commit for the parameter rename |
 | Clean working directory | `git status` shows no unstaged or uncommitted changes |
+| Remote is synchronized | `git ls-remote origin refs/heads/main` matches local `HEAD` |
