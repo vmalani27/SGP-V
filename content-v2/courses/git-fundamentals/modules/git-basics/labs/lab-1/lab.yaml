@@ -7,6 +7,8 @@ tags:
   - git
   - fundamentals
 environment: git-fundamentals
+summary: >
+  Dive into how Git configurations are set and establish your developer identity across the system before making your first commit.
 
 objectives:
   - Set your global Git username

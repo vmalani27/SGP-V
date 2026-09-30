@@ -1,0 +1,712 @@
+# LabOps DevOps Learning Roadmap
+# ================================
+# This is the single source of truth for:
+#   - What courses exist and in what order
+#   - What each course assumes the learner already knows
+#   - The learning intents (the "why") for every module and chapter
+#
+# The generate_content.py script reads this file.
+# To add a new course: add an entry here, then run the generator.
+#
+# Learning intent format:
+#   intent: What the learner must be able to REASON about after reading (not just know)
+#   prereqs: Knowledge assumed — surfaces as callout boxes in chapters
+#   connects_to: What this leads to — surfaces as "This connects to" section
+#   locked_facts: Technical facts the LLM must include and cannot contradict
+#
+# Roadmap ordering:
+#   Each course has a `requires` list. The generator uses this to:
+#     1. Warn if a learner attempts a course without prereqs
+#     2. Build the roadmap visualization
+#     3. Inject prereq context into chapter generation prompts
+
+version: "1.0"
+
+# ─── ROADMAP PATHS ────────────────────────────────────────────────────────────
+# Three entry paths depending on the learner's background
+paths:
+  zero-to-devops:
+    label: "Zero to DevOps"
+    description: "Complete path for someone with no prior Linux or sysadmin experience"
+    sequence:
+      - linux-fundamentals
+      - git-fundamentals
+      - docker-mastery
+      - ci-cd-fundamentals
+      - kubernetes-basics
+
+  developer-to-devops:
+    label: "Developer to DevOps"
+    description: "For developers who know Git and some Linux but haven't done ops"
+    sequence:
+      - docker-mastery
+      - ci-cd-fundamentals
+      - kubernetes-basics
+      - observability-fundamentals
+
+  sysadmin-to-devops:
+    label: "Sysadmin to DevOps"
+    description: "For ops people who know Linux but are new to containers and IaC"
+    sequence:
+      - docker-mastery
+      - kubernetes-basics
+      - infrastructure-as-code
+      - ci-cd-fundamentals
+
+# ─── COURSES ──────────────────────────────────────────────────────────────────
+courses:
+
+  # ── LINUX FUNDAMENTALS ──────────────────────────────────────────────────────
+  linux-fundamentals:
+    title: "Linux Fundamentals"
+    description: "The filesystem, processes, permissions, and networking concepts every DevOps engineer uses daily"
+    level: beginner
+    requires: []  # entry point — no prereqs
+    status: planned  # planned | in-progress | published
+    modules:
+
+      filesystem-and-navigation:
+        title: "Filesystem & Navigation"
+        order: 1
+        chapters:
+          chapter-1:
+            title: "The Linux Filesystem"
+            intent: >
+              After this chapter the learner can navigate any Linux system confidently:
+              understands the FHS (why /etc, /var, /usr, /tmp exist and what lives there);
+              can explain absolute vs relative paths; understands that "everything is a file"
+              including devices and sockets. Real-world hook: you SSH into a new server
+              and need to find where an app is logging and where its config lives.
+            prereqs:
+              - "Basic computer literacy — what a file and folder are"
+            connects_to:
+              - "Container filesystems (Docker) — understanding overlay2 and mount namespaces"
+              - "Nginx/app config files in /etc"
+              - "Log files in /var/log"
+            locked_facts:
+              - "/etc = config files, /var = variable data (logs, databases), /tmp = temporary"
+              - "/usr/bin = user binaries, /usr/local/bin = manually installed binaries"
+              - "pwd, ls -la, cd, find, locate are the navigation primitives"
+              - "Hidden files start with . (dotfiles)"
+              - "~ is the current user's home directory"
+
+          chapter-2:
+            title: "Files, Permissions and Ownership"
+            intent: >
+              After this chapter the learner can read and set file permissions correctly,
+              understand why permission errors happen (and not just chmod 777 everything),
+              and explain the user/group/other model. Real-world hook: your deployed app
+              can't read its config file — here's the exact diagnosis sequence.
+            prereqs:
+              - "Chapter 1 — Linux filesystem navigation"
+            connects_to:
+              - "Docker container user (USER directive in Dockerfile)"
+              - "SSH key permissions (why id_rsa must be 600)"
+              - "Running services as non-root"
+            locked_facts:
+              - "rwx = read(4) write(2) execute(1); chmod 644 = owner rw, group r, other r"
+              - "chown user:group file changes ownership"
+              - "sudo runs as root; su switches user"
+              - "ls -la shows permissions, owner, group, size, modified time"
+              - "umask sets default permissions for new files"
+
+      processes-and-services:
+        title: "Processes & Services"
+        order: 2
+        chapters:
+          chapter-3:
+            title: "Processes, PIDs and Signals"
+            intent: >
+              After this chapter the learner understands: what a process is (a running program
+              with a PID, environment, open files, and a parent); the process tree (PID 1 = init);
+              how to find and kill processes; what SIGTERM vs SIGKILL mean and when each applies.
+              Real-world hook: a process is consuming 100% CPU — here's how you find it,
+              understand what it is, and stop it without rebooting the server.
+            prereqs:
+              - "Basic Linux navigation (Chapter 1)"
+            connects_to:
+              - "Docker container PID 1 — why your app must handle SIGTERM"
+              - "Kubernetes pod lifecycle and graceful shutdown"
+              - "systemd services"
+            locked_facts:
+              - "ps aux lists all processes; top/htop shows live resource usage"
+              - "kill PID sends SIGTERM (15); kill -9 PID sends SIGKILL — cannot be caught"
+              - "PID 1 is init/systemd on the host; PID 1 in a container is your app"
+              - "Zombie processes: exited but not reaped by parent"
+              - "& runs in background; fg brings back; Ctrl+C sends SIGINT"
+
+          chapter-4:
+            title: "systemd and Services"
+            intent: >
+              After this chapter the learner can start, stop, enable, and check the status
+              of systemd services; read journalctl logs; understand the difference between
+              a service being started vs enabled. Real-world hook: you deploy an app on a VM
+              and it disappears after a reboot — here's why and how to fix it.
+            prereqs:
+              - "Chapter 3 — processes and PIDs"
+            connects_to:
+              - "Docker restart policies (--restart unless-stopped is the container equivalent)"
+              - "Kubernetes Deployments (the k8s equivalent of systemd for containers)"
+            locked_facts:
+              - "systemctl start/stop/restart/status/enable/disable <service>"
+              - "enabled = starts on boot; started = running now (orthogonal)"
+              - "journalctl -u <service> -f follows logs; -n 50 shows last 50 lines"
+              - "systemctl daemon-reload after editing a unit file"
+              - "Unit files live in /etc/systemd/system/ (custom) or /lib/systemd/system/ (packages)"
+
+      networking-basics:
+        title: "Networking Basics"
+        order: 3
+        chapters:
+          chapter-5:
+            title: "IP, Ports and Sockets"
+            intent: >
+              After this chapter the learner can explain: what an IP address is and the
+              difference between 127.0.0.1, 0.0.0.0, and a real LAN IP; what a port is
+              and why apps bind to specific ports; what a socket is (IP + port).
+              Real-world hook: you start a web server and can't reach it from your browser —
+              here's the diagnosis tree (is it listening? on which IP? firewall blocking?).
+            prereqs:
+              - "Basic computer networking — what the internet is"
+            connects_to:
+              - "Docker port mapping (-p 8080:80)"
+              - "Kubernetes Services and NodePort/ClusterIP"
+              - "Nginx reverse proxy configuration"
+            locked_facts:
+              - "127.0.0.1 = loopback (only this machine); 0.0.0.0 = all interfaces"
+              - "ss -tlnp or netstat -tlnp shows listening sockets with PIDs"
+              - "Ports < 1024 require root; ports >= 1024 are user-space"
+              - "curl and wget test HTTP connectivity; nc tests raw TCP"
+              - "DNS resolves names to IPs; /etc/hosts overrides DNS locally"
+
+  # ── GIT FUNDAMENTALS ────────────────────────────────────────────────────────
+  git-fundamentals:
+    title: "Git Fundamentals"
+    description: "Version control from first commit to team branching workflows and CI triggers"
+    level: beginner
+    requires: []
+    status: published
+    # AUDIT FINDINGS (2026-09-26):
+    # - All chapters score 0/6 passing. Universal failures: beyond_commands (all 1),
+    #   prereq_honesty (all 1). Chapters teach Git in isolation — no CI connection,
+    #   no PR workflow connection, no "why your team cares about this" framing.
+    # - ch-2 is the weakest: opens like a man page, lab is pure recall.
+    # - ch-8 (stashing) has a great scenario in prose but the lab doesn't match it.
+    # - Priority rewrites: ch-2, ch-5, ch-8
+    modules:
+
+      git-basics:
+        title: "Git Basics"
+        order: 1
+        chapters:
+          chapter-1:
+            title: "Why Version Control Exists"
+            intent: >
+              After this chapter the learner understands: (1) the specific failure modes VCS
+              solves — overwritten files, "who changed this?", two people editing the same file;
+              (2) that Git is distributed — every clone has full history, you can commit offline;
+              (3) the commit snapshot model — Git stores complete snapshots, not diffs.
+              Real-world hook: you broke something and saved over the file — version control
+              is the insurance policy you wish you'd had. Connects explicitly to CI: every
+              CI pipeline is triggered by a git push — that's why teams use branches.
+            prereqs:
+              - "Basic command line navigation (cd, ls, mkdir)"
+            connects_to:
+              - "GitHub Pull Requests — the team workflow built on top of branches"
+              - "CI/CD — pipelines trigger on git push events"
+              - "Code review — git history is the paper trail"
+            locked_facts:
+              - "git is distributed — full history on every machine, works offline"
+              - "Git stores snapshots of files, not diffs between versions"
+              - "git config --global user.name and user.email identify your commits"
+              - "Every commit has a SHA hash — a unique fingerprint"
+              - "GitHub/GitLab are hosting services for Git repos, not Git itself"
+
+          chapter-2:
+            title: "Your First Repository"
+            intent: >
+              After this chapter the learner can create a repo, make commits, and read the
+              staging area model — not as abstract theory but as the answer to: "I made
+              changes, now what?" The staging area is the answer to "I want to commit
+              only SOME of my changes." Real-world hook: you just broke something —
+              here's how git diff and git log let you see exactly what changed and when,
+              so you can undo it. This is the recovery story, not the setup story.
+            prereqs:
+              - "Chapter 1 — what Git is and why it exists"
+            connects_to:
+              - "git restore for undoing mistakes (Chapter 4)"
+              - ".gitignore — what NOT to track (node_modules, .env files)"
+              - "git log as an audit trail on your team's repo"
+            locked_facts:
+              - "git init creates .git/ — deleting it loses all history"
+              - "Three areas: working directory → staging area (git add) → repository (git commit)"
+              - "git status shows what's changed and what's staged"
+              - "git diff shows unstaged changes; git diff --staged shows staged changes"
+              - "git log --oneline is the most useful log format for daily use"
+              - ".gitignore patterns: *.log ignores all logs, node_modules/ ignores the folder"
+
+          chapter-3:
+            title: "Reading History"
+            intent: >
+              After this chapter the learner can navigate a project's history like a detective —
+              find when a bug was introduced, see who changed a line, compare two versions.
+              Real-world hook: a regression appeared in the last release — here's the exact
+              workflow to find which commit introduced it.
+            prereqs:
+              - "Chapter 2 — commits and staging area"
+            connects_to:
+              - "git bisect for finding regressions (advanced)"
+              - "GitHub blame view — same data in the UI"
+              - "Code review — reviewers read git log and git diff"
+            locked_facts:
+              - "git log --oneline --graph --all shows branch topology"
+              - "git show <sha> shows a single commit's full diff"
+              - "git diff main..feature compares two branches"
+              - "git blame <file> shows who last changed each line"
+
+      branching-history:
+        title: "Branching & History"
+        order: 2
+        chapters:
+          chapter-4:
+            title: "Fixing Mistakes Without Panic"
+            intent: >
+              After this chapter the learner has a mental decision tree for undoing mistakes:
+              unstaged changes → git restore; staged → git restore --staged; last commit not
+              pushed → git commit --amend; older commit → git revert (safe) or git reset (risky).
+              Real-world hook: you committed a password to git — here's what to do right now
+              (and why git reset alone isn't enough once it's pushed).
+            prereqs:
+              - "Chapter 2 — staging area and commits"
+            connects_to:
+              - "git reflog as the ultimate safety net"
+              - "Force push risks on shared branches"
+              - "GitHub secret scanning — why committed secrets are a real incident"
+            locked_facts:
+              - "git restore <file> discards unstaged changes — irreversible"
+              - "git restore --staged <file> unstages without losing changes"
+              - "git commit --amend rewrites the last commit — only safe before push"
+              - "git revert creates a new commit that undoes — safe on shared branches"
+              - "git reset --hard moves HEAD and discards commits — destructive"
+              - "git reflog keeps a 90-day log of every HEAD position — the safety net"
+
+          chapter-5:
+            title: "Working in Parallel — Branches"
+            intent: >
+              After this chapter the learner understands branches as the team's coordination
+              mechanism, not just a Git concept. They can explain: why main/master is
+              protected; what a feature branch workflow looks like in practice (branch →
+              commit → PR → review → merge → delete); why short-lived branches reduce merge
+              conflicts. Real-world hook: you and a teammate are both fixing different bugs —
+              branches are how you don't step on each other, and PRs are how changes get
+              reviewed before they reach production.
+            prereqs:
+              - "Chapter 2 — commits"
+              - "Chapter 3 — reading history"
+            connects_to:
+              - "GitHub Pull Requests — the next step after pushing a branch"
+              - "CI pipelines — most teams run CI on every branch push"
+              - "Branch protection rules — why you can't push directly to main at most companies"
+            locked_facts:
+              - "A branch is a movable pointer to a commit — not a copy of the project"
+              - "git checkout -b feature/name creates and switches in one step"
+              - "git branch -d name deletes a merged branch; -D force-deletes"
+              - "HEAD points to the current branch's latest commit"
+              - "Merge vs rebase: merge preserves history, rebase rewrites it — teams pick one"
+              - "main/master is typically protected — direct push is blocked at most companies"
+
+          chapter-6:
+            title: "Merge Conflicts"
+            intent: >
+              After this chapter the learner can resolve a merge conflict without panicking —
+              understands what conflict markers mean, how to choose which changes to keep,
+              and how to verify the resolution. Real-world hook: you're about to demo
+              a feature and git merge just printed CONFLICT — here's the exact steps.
+            prereqs:
+              - "Chapter 5 — branches"
+            connects_to:
+              - "Rebase conflicts — same resolution process"
+              - "PR merge conflicts on GitHub — resolved the same way locally"
+            locked_facts:
+              - "Conflict markers: <<<<<<< HEAD (your changes) / ======= / >>>>>>> branch"
+              - "git status shows which files are conflicted"
+              - "After resolving: git add <file> then git commit to complete the merge"
+              - "git merge --abort cancels the merge and restores pre-merge state"
+              - "VS Code and IntelliJ have visual conflict resolution built in"
+
+      remote-collaboration:
+        title: "Remote Collaboration"
+        order: 3
+        chapters:
+          chapter-7:
+            title: "Sharing Your Work — Push & Pull"
+            intent: >
+              After this chapter the learner understands the push/pull cycle as the team's
+              shared heartbeat — not just commands but the coordination protocol. They can
+              explain: what origin is; why push gets rejected and what to do; the difference
+              between fetch and pull. Real-world hook: your push was rejected because
+              your teammate pushed first — here's the exact sequence to resolve it without
+              losing either person's work.
+            prereqs:
+              - "Chapter 5 — branches"
+              - "Basic networking — what a URL is"
+            connects_to:
+              - "Pull Requests — pushing a branch is the first step"
+              - "CI/CD — push triggers the pipeline"
+              - "SSH keys for GitHub authentication"
+            locked_facts:
+              - "origin is the default name for the remote your repo was cloned from"
+              - "git fetch downloads without merging; git pull = fetch + merge"
+              - "push rejected = remote has commits you don't — fetch, merge/rebase, then push"
+              - "git push -u origin branch sets upstream tracking for future git push"
+              - "git remote -v shows configured remotes"
+              - "HTTPS vs SSH auth: SSH keys avoid password prompts"
+
+          chapter-8:
+            title: "Stashing — Pause Without Committing"
+            intent: >
+              After this chapter the learner can use stash correctly AND knows when NOT to use
+              it (stash is not a substitute for branches). The scenario is the entry point,
+              not an afterthought: you're mid-feature, get called to fix a prod bug, need
+              a clean working directory in 10 seconds. Real-world hook: hotfix interrupt —
+              live the scenario, don't just read about it. Connects explicitly to the
+              team workflow: stash → switch to main → create hotfix branch → fix → push →
+              PR → return to feature.
+            prereqs:
+              - "Chapter 5 — branches (stash is only useful if you know branches)"
+              - "Chapter 7 — push/pull (the hotfix scenario ends with a push)"
+            connects_to:
+              - "git worktree as an alternative to stashing for parallel work"
+              - "WIP commits — some teams prefer committing WIP over stashing"
+            locked_facts:
+              - "git stash saves staged + unstaged changes; git stash pop restores + removes"
+              - "git stash list shows all stashes; git stash apply stash@{N} applies specific one"
+              - "git stash push -m 'message' names a stash for later identification"
+              - "Stash is per-repo local only — does not push to remote"
+              - "git stash drop stash@{N} deletes a stash entry"
+              - "Untracked files not stashed by default — use git stash -u to include them"
+
+          chapter-9:
+            title: "Pull Requests & Code Review"
+            intent: >
+              After this chapter the learner understands PRs as the team's quality gate —
+              not just a GitHub feature but the mechanism that connects individual work to
+              the shared codebase. They can open a PR, understand what reviewers look for,
+              respond to review comments, and get a merge. Real-world hook: this is your
+              first week at a new job — here's the exact PR workflow most teams use.
+              Connects CI: most teams require green CI before a PR can merge.
+            prereqs:
+              - "Chapter 7 — push to remote"
+              - "Chapter 5 — branches"
+            connects_to:
+              - "Branch protection rules — required reviewers, required CI"
+              - "CI/CD — PR triggers the test pipeline"
+              - "Code review culture — what good feedback looks like"
+            locked_facts:
+              - "PR = a request to merge a branch into main — not a Git feature, a hosting feature"
+              - "Draft PR signals work-in-progress — reviewers know not to do a final review yet"
+              - "Requested changes blocks merge until resolved"
+              - "Squash merge, merge commit, rebase merge — teams pick one policy"
+              - "After merge: delete the feature branch, git pull main locally"
+
+      complete-workflow:
+        title: "Complete Workflow"
+        order: 4
+        chapters:
+          chapter-10:
+            title: "The Full Team Workflow"
+            intent: >
+              This is the capstone — the learner executes the complete cycle from scratch:
+              clone → branch → code → commit → push → PR → review → merge → pull.
+              Real-world hook: it's your first day, you've been assigned a ticket —
+              this is exactly what you do. Every step maps to a real team action.
+              This chapter also explicitly connects Git to CI: pushing triggers the
+              pipeline, green CI is required to merge, the deploy happens automatically
+              after merge to main.
+            prereqs:
+              - "All previous Git chapters"
+            connects_to:
+              - "CI/CD fundamentals course — what happens after git push"
+              - "GitHub Actions — the automation layer on top of this workflow"
+              - "Semantic versioning and release tagging"
+            locked_facts:
+              - "The canonical workflow: main is always deployable"
+              - "Feature branches are short-lived — days not weeks"
+              - "Commit messages matter: 'fix bug' is useless, 'fix null pointer in user auth when email is empty' is useful"
+              - "git tag v1.0.0 marks a release; git push --tags pushes tags to remote"
+
+  # ── DOCKER MASTERY ───────────────────────────────────────────────────────────
+  docker-mastery:
+    title: "Docker Mastery"
+    description: "Containers, images, networking, storage, Compose, and production patterns"
+    level: beginner
+    requires:
+      - course: linux-fundamentals
+        reason: "Docker uses Linux namespaces, cgroups, file permissions, and process signals — these are assumed knowledge"
+        minimum_modules:
+          - filesystem-and-navigation
+          - processes-and-services
+          - networking-basics
+      - course: git-fundamentals
+        reason: "CI/CD integration in later modules assumes Git workflow knowledge"
+        minimum_modules:
+          - git-basics
+    status: in-progress
+    # AUDIT FINDINGS (2026-09-26):
+    # - 0/8 chapters passing. Universal failure: prereq_honesty (all score 1).
+    # - Real-world hook fails on ch-2,3,4,6,14 — they open with definitions, not scenarios.
+    # - Beyond_commands fails on ch-2,3,5,6 — no CI/prod connections.
+    # - Labs score 2 on realism but none reach 3 — no "fix a broken state" labs.
+    # - Cross-course gap: CI is the #1 Docker use case but never connected in content.
+    # - Priority rewrites: ch-2 (lifecycle), ch-3 (configuring), ch-4 (signals)
+    modules:
+
+      docker-fundamentals:
+        title: "Docker Fundamentals"
+        order: 1
+        chapters:
+          chapter-1:
+            title: "Why Containers Exist"
+            intent: >
+              After this chapter the learner can explain: (1) the specific failure mode
+              containers solve — environment drift between dev/CI/prod;
+              (2) why VMs were too heavy for per-service isolation;
+              (3) Linux namespaces + cgroups — can name what PID/net/mnt/UTS/IPC/user isolates;
+              (4) Docker daemon/client/registry architecture.
+              Real-world hook: new team member can't reproduce a bug that only happens in CI —
+              this is the container origin story.
+            prereqs:
+              - "Linux processes and PIDs (linux-fundamentals: chapter-3)"
+              - "Linux file permissions (linux-fundamentals: chapter-2)"
+              - "IP addresses and ports (linux-fundamentals: chapter-5)"
+            connects_to:
+              - "Building images — Dockerfiles recreate your environment reproducibly"
+              - "CI/CD pipelines — every CI job runs inside a container"
+              - "Kubernetes — containers are the deployable unit"
+            locked_facts:
+              - "Namespaces: PID, net, mnt, UTS, IPC, user — each isolates a different view"
+              - "Cgroups limit CPU/memory per container — prevent one container starving others"
+              - "Docker daemon = server (dockerd), Docker CLI = client, Registry = image store"
+              - "overlay2 is the default storage driver on Linux"
+              - "docker run = create + start in one step"
+
+          chapter-2:
+            title: "Container Lifecycle"
+            intent: >
+              After this chapter the learner uses docker ps, docker inspect, docker logs as
+              DIAGNOSTIC tools — not commands to memorize. Framing: on-call scenario, service
+              is down, here is the exact sequence to understand what happened.
+              They can distinguish created/running/stopped/removed states; know that stopped
+              containers retain their writable layer (disk cost) until removed; read inspect
+              JSON to answer "what image, what env vars, what ports."
+              Real-world hook: 2am alert, container is in a restarting loop — open with the
+              diagnostic sequence and teach commands as tools within that story.
+            prereqs:
+              - "Chapter 1 — Docker architecture (daemon, images, containers)"
+            connects_to:
+              - "docker stats and docker top for live resource inspection"
+              - "Logging drivers — in production logs go to Datadog/CloudWatch, not docker logs"
+              - "Health checks — automated version of the manual inspect checks"
+            locked_facts:
+              - "docker ps shows RUNNING only; docker ps -a shows ALL states including exited"
+              - "Container states: created → running → paused/stopped → removed"
+              - "docker inspect returns full JSON — Config.Image, Config.Env, NetworkSettings.Ports"
+              - "docker logs tails stdout/stderr of PID 1; -f follows live; --tail 50 last 50 lines"
+              - "stopped container still occupies disk (writable layer) until docker rm"
+              - "docker rm $(docker ps -aq) removes all stopped containers at once"
+
+          chapter-3:
+            title: "Configuring Containers"
+            intent: >
+              After this chapter the learner understands: (1) env vars are the 12-factor app
+              config mechanism — same image, different behaviour per environment (dev/staging/prod);
+              (2) port mapping is NAT through a network namespace boundary — -p 8080:80 forwards
+              host port 8080 to container's internal port 80 via iptables DNAT;
+              (3) why 0.0.0.0 vs 127.0.0.1 binding matters.
+              Real-world hook: your container works locally but your teammate can't reach it —
+              this is the port binding diagnosis. Second scenario: staging behaves differently
+              from prod because DATABASE_URL points to different places.
+            prereqs:
+              - "What a port is and what localhost vs 0.0.0.0 means (linux-fundamentals: chapter-5)"
+              - "Environment variables — what they are and how shells use them"
+            connects_to:
+              - "docker-compose.yml ports: and env_file: sections — same concepts in YAML"
+              - "Kubernetes Services (ClusterIP/NodePort) — same port-mapping concept at scale"
+              - ".env files — never commit them; use --env-file in dev"
+            locked_facts:
+              - "-e KEY=VALUE sets one env var; --env-file .env loads a file"
+              - "-p HOST_PORT:CONTAINER_PORT — iptables DNAT + docker-proxy on host"
+              - "0.0.0.0 = listen on all interfaces (externally reachable); 127.0.0.1 = loopback only"
+              - "EXPOSE in Dockerfile is documentation only — does NOT publish ports"
+              - "docker run -P publishes all EXPOSEd ports to random host ports"
+              - "printenv inside the container confirms env vars were injected"
+
+          chapter-4:
+            title: "Storage, Signals and Cleanup"
+            intent: >
+              After this chapter the learner understands: (1) the writable layer is ephemeral —
+              data written inside a container disappears on docker rm; CI containers are always
+              fresh, databases need volumes; (2) SIGTERM vs SIGKILL — a database receiving
+              SIGKILL may corrupt data files; graceful shutdown matters;
+              (3) disk hygiene on CI runners — docker system prune is maintenance, not panic.
+              Real-world hook OPEN: CI runner disk filled at 3am and build pipeline died —
+              here's why (dangling images + stopped containers) and the fix. Second hook: you
+              ran docker rm on your postgres container and lost all your data — here's why.
+            prereqs:
+              - "Linux signals — SIGTERM vs SIGKILL (linux-fundamentals: chapter-3)"
+              - "What PID 1 is in a process tree (linux-fundamentals: chapter-3)"
+            connects_to:
+              - "Docker volumes — the solution to ephemeral storage (next module)"
+              - "Kubernetes terminationGracePeriodSeconds — same signal model at scale"
+              - "CI runner maintenance — docker system prune in a scheduled cron job"
+            locked_facts:
+              - "overlay2 CoW: file copied from read-only image layer to writable layer on first write"
+              - "docker diff shows A (added) / C (changed) / D (deleted) in writable layer"
+              - "docker stop sends SIGTERM to PID 1, waits 10s grace period, then SIGKILL"
+              - "docker kill sends SIGKILL immediately — exit code 137 (128 + 9)"
+              - "--restart unless-stopped persists across daemon restarts; --restart always too"
+              - "docker system prune -f: stopped containers + dangling images + unused networks"
+              - "docker system df shows disk usage breakdown by images/containers/volumes"
+
+      building-images:
+        title: "Building Custom Images"
+        order: 2
+        chapters:
+          chapter-5:
+            title: "Writing Your First Dockerfile"
+            intent: >
+              After this chapter the learner can write a Dockerfile for a real app and explain
+              the layer cache — specifically why dependency installation comes BEFORE copying
+              application code. Real-world hook: you've inherited a project with no Dockerfile
+              and need to containerize it so it runs identically on every developer's machine
+              and in CI. The goal is not "learn Dockerfile syntax" — it's "never have the
+              works-on-my-machine conversation again." Connects to CI explicitly: the whole
+              point is that docker build runs in GitHub Actions on every push.
+            prereqs:
+              - "Docker fundamentals module — images, containers, registries"
+              - "Basic Linux file operations"
+            connects_to:
+              - "Multi-stage builds — keeping production images small"
+              - "GitHub Actions — docker build and docker push in CI"
+              - ".dockerignore — same concept as .gitignore, keeps build context small"
+            locked_facts:
+              - "Each RUN/COPY/ADD instruction creates a new immutable layer"
+              - "Layer cache: if instruction N changes, all layers N+1 onward are invalidated"
+              - "RUN apt-get install before COPY . . preserves the dependency cache"
+              - "CMD = default command (overridable at runtime); ENTRYPOINT = the binary"
+              - "docker build -t name:tag . — the dot is the build context sent to daemon"
+              - "docker build --no-cache forces full rebuild ignoring cache"
+              - "PID 1 in a process tree"
+            connects_to:
+              - "Docker volumes (next module)"
+              - "Kubernetes terminationGracePeriodSeconds"
+              - "CI runner maintenance"
+            locked_facts:
+              - "overlay2 CoW: file from image layer copied to writable layer on first write"
+              - "docker diff shows A/C/D changes in writable layer"
+              - "docker stop sends SIGTERM, waits 10s, then SIGKILL"
+              - "docker kill sends SIGKILL immediately (exit 137)"
+              - "--restart unless-stopped survives daemon restart"
+              - "docker system prune -f removes stopped containers + dangling images"
+
+      building-images:
+        title: "Building Custom Images"
+        order: 2
+        chapters:
+          chapter-5:
+            title: "Writing Your First Dockerfile"
+            intent: >
+              After this chapter the learner can write a Dockerfile for a real app,
+              understands the layer cache (and why RUN apt-get install comes before COPY),
+              and can explain the difference between CMD and ENTRYPOINT.
+              Real-world hook: you've inherited a project with no Dockerfile and need to
+              containerize it for the team's CI pipeline.
+            prereqs:
+              - "Docker fundamentals module"
+              - "Basic Linux file operations"
+            connects_to:
+              - "Multi-stage builds for smaller images"
+              - "GitHub Actions — building images in CI"
+              - ".dockerignore"
+            locked_facts:
+              - "Each RUN/COPY/ADD instruction creates a new layer"
+              - "Layers are cached by instruction hash — changing line N invalidates N+1 onward"
+              - "COPY . . after RUN apt-get install preserves the cache for deps"
+              - "CMD = default command (overridable); ENTRYPOINT = the executable (not overridable without --entrypoint)"
+              - "docker build -t name:tag . — the dot is the build context"
+
+  # ── CI/CD FUNDAMENTALS ───────────────────────────────────────────────────────
+  ci-cd-fundamentals:
+    title: "CI/CD Fundamentals"
+    description: "GitHub Actions pipelines, automated testing, image builds, and deployment workflows"
+    level: intermediate
+    requires:
+      - course: docker-mastery
+        reason: "CI jobs run in containers; image builds are a core CI task"
+        minimum_modules:
+          - docker-fundamentals
+          - building-images
+      - course: git-fundamentals
+        reason: "CI triggers on git events (push, PR) — requires understanding branches and PRs"
+    status: planned
+    modules:
+      github-actions-basics:
+        title: "GitHub Actions Basics"
+        order: 1
+        chapters:
+          chapter-1:
+            title: "What CI/CD Actually Does"
+            intent: >
+              After this chapter the learner can explain: what CI/CD solves (human error in
+              manual deploys, finding bugs late, slow feedback loops); the difference between
+              CI (build+test on every push) and CD (automated deploy); why every professional
+              team uses it. Real-world hook: you push broken code on Friday at 5pm —
+              CI catches it before it reaches prod.
+            prereqs:
+              - "Git branches and pull requests"
+              - "Docker images and builds"
+            connects_to:
+              - "GitHub Actions YAML syntax"
+              - "Docker image registries (ECR, GHCR)"
+              - "Deployment strategies (blue-green, rolling)"
+            locked_facts:
+              - "CI = Continuous Integration: build + test on every commit"
+              - "CD = Continuous Delivery/Deployment: automated path to prod"
+              - "A workflow = a YAML file in .github/workflows/"
+              - "Triggers: on push, on pull_request, on schedule"
+              - "Jobs run in isolated VMs (GitHub-hosted) or containers"
+
+  # ── KUBERNETES BASICS ────────────────────────────────────────────────────────
+  kubernetes-basics:
+    title: "Kubernetes Basics"
+    description: "Pods, Deployments, Services, ConfigMaps — running containers at scale"
+    level: intermediate
+    requires:
+      - course: docker-mastery
+        reason: "Kubernetes runs containers — Docker concepts (images, env vars, ports, volumes) map directly"
+      - course: linux-fundamentals
+        reason: "kubectl commands, YAML, and debugging require Linux comfort"
+    status: planned
+    modules: {}
+
+  # ── OBSERVABILITY ────────────────────────────────────────────────────────────
+  observability-fundamentals:
+    title: "Observability Fundamentals"
+    description: "Logs, metrics, traces — understanding what your systems are doing in production"
+    level: intermediate
+    requires:
+      - course: docker-mastery
+      - course: ci-cd-fundamentals
+    status: planned
+    modules: {}
+
+  # ── INFRASTRUCTURE AS CODE ───────────────────────────────────────────────────
+  infrastructure-as-code:
+    title: "Infrastructure as Code"
+    description: "Terraform for provisioning cloud infrastructure, Ansible for configuration management"
+    level: intermediate
+    requires:
+      - course: linux-fundamentals
+      - course: docker-mastery
+    status: planned
+    modules: {}

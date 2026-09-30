@@ -564,10 +564,14 @@ export const api = {
         let dynamicError: string | undefined = undefined;
         if (!correct) {
           const trimmedOutput = outputStr.trim();
-          if (trimmedOutput && trimmedOutput !== String(validation.expected_output || '').trim()) {
-            dynamicError = trimmedOutput;
+          if (trimmedOutput.startsWith('RESULT_FAIL:')) {
+            dynamicError = trimmedOutput.replace(/^RESULT_FAIL:\s*/, '');
           } else if (task.error_message) {
             dynamicError = task.error_message;
+          } else if (trimmedOutput && validation.expected_output) {
+            dynamicError = `Expected "${validation.expected_output}", but received: "${trimmedOutput}".`;
+          } else if (trimmedOutput) {
+            dynamicError = `Received output: ${trimmedOutput}`;
           } else {
             dynamicError = 'Task verification failed. Check your configuration and try again.';
           }

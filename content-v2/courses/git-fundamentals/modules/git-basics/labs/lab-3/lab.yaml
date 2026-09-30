@@ -31,7 +31,7 @@ setup:
       git add auth.py styles.css api.py &&
       git commit -m "Initial application files" &&
       git remote add origin http://git-server:3000/student/webapp.git &&
-      git push -u origin main &&
+      git push -u --force origin main &&
       printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n' > auth.py &&
       printf 'body { font-family: sans-serif; }\n.button { background: #2563eb; color: white; }\n' > styles.css &&
       printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("DEBUG: raw request dump: %s", req)\n    logging.debug("DEBUG: entering process_request")\n    return handle(req)\n' > api.py

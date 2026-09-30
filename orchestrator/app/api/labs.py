@@ -165,6 +165,12 @@ def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_dock
                     raise RuntimeError(
                         f"Setup command failed (exit {exit_code}): {setup_cmd['command']}: {output}"
                     )
+            if req.setup:
+                docker_svc.exec_command(
+                    session.container_name,
+                    ["/bin/bash", "-c", "if [ -d /home/student ]; then chown -R student:student /home/student; fi"],
+                    user="root",
+                )
             docker_svc.activate_lab(session.container_name, lab_number)
         except RuntimeError as e:
             session.status = LabStatus.ERROR

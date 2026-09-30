@@ -22,6 +22,11 @@ const config = {
           850: '#1f2024',
         },
       },
+      fontFamily: {
+        heading: ['"Space Grotesk"', 'var(--font-space-grotesk)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['"IBM Plex Sans"', 'var(--font-ibm-plex-sans)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+      },
       boxShadow: {},
       backgroundImage: {},
     },

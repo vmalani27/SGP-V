@@ -7,12 +7,17 @@ tags:
   - git
   - fundamentals
 environment: git-fundamentals
-
+summary: >
+  Initialize a Git repo, make commits, test `git restore` command usage, and push to remote.
 objectives:
   - Initialize a Git repository
   - Create files and commit them with clear messages
   - Use git restore to recover from an accidental change
   - Connect the repository to a remote and push the main branch
+
+setup:
+  - command: >-
+      curl -s -X DELETE -u student:password123 http://git-server:3000/api/v1/repos/student/my-project || true
 
 tasks:
   - id: init-repo
@@ -77,7 +82,7 @@ tasks:
       Either README.md was not committed, or the commit message is too vague. Write a message that explains what the file is.
 
   - id: second-commit
-    summary: Make a second commit so your log has history to inspect.
+    summary: Create a second commit and inspect the log.
     prompt: >-
       Add a second file named `notes.md` to `~/workspace/my-project` with any content.
       Stage and commit it with a different, meaningful message.
@@ -111,7 +116,7 @@ tasks:
       match_type: exact
       expected_output: TWO_COMMITS_OK
     error_message: >-
-      notes.md was not committed, or there are fewer than 2 commits in the log.
+      notes.md was not committed.
 
   - id: restore-accidental-change
     summary: Break a file and recover it using git restore.

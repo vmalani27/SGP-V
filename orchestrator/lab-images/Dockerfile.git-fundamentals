@@ -68,7 +68,8 @@ RUN git config --system core.editor "nano" \
     && git config --system init.defaultBranch main \
     && git config --system color.ui auto \
     && git config --system pull.rebase false \
-    && git config --system merge.conflictstyle diff3
+    && git config --system merge.conflictstyle diff3 \
+    && git config --system --add safe.directory "*"
 
 # Student-level config (stored in /home/student/.gitconfig)
 RUN mkdir -p /home/student && \

@@ -23,12 +23,20 @@ export default function TerminalActionTask({ task, status, onValidate, error, va
         <p>Use the terminal on the right to complete this task.</p>
       </div>
 
-      {/* 3. Diagnostic Error Feedback */}
-      {error && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-          <RichText content={error} size="sm" className="prose-error" />
-        </div>
-      )}
+{/* 3. Diagnostic Error Feedback */}
+{error && (
+  <div className="rounded-lg border border-rose-500/20 bg-rose-500/[0.04] p-3 text-xs">
+    <div className="flex items-center gap-1.5 font-mono text-[11px] font-medium text-rose-400 mb-1">
+      <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500/10 text-[9px] text-rose-400">
+        ✕
+      </span>
+      <span>TASK ERROR!</span>
+    </div>
+    <div className="pl-5 text-zinc-300 leading-relaxed font-normal [&_code]:font-mono [&_code]:text-[11px] [&_code]:bg-zinc-800/80 [&_code]:text-zinc-200 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:border [&_code]:border-white/[0.06]">
+      <RichText content={error} size="sm" />
+    </div>
+  </div>
+)}
 
       {/* 4. Action Button */}
       {status !== 'correct' && (

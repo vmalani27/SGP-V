@@ -75,8 +75,11 @@ export default function MultipleChoiceTask({ task, status, onValidate, error }: 
 
       {/* 3. Diagnostic Error Feedback */}
       {error && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-          <RichText content={error} size="sm" className="prose-error" />
+        <div className="flex items-start gap-1.5 text-xs leading-relaxed px-1">
+          <span className="font-semibold text-rose-400 shrink-0">Incorrect:</span>
+          <span className="text-slate-300 [&_p]:inline [&_p]:m-0 [&_a]:no-underline [&_a]:text-slate-200">
+            <RichText content={error} size="sm" className="inline" />
+          </span>
         </div>
       )}
 

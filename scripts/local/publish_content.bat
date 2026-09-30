@@ -15,7 +15,7 @@ if exist "environments\local\.env.local" (
     echo [INFO] environments/local/.env.local not found; using the checked-in sample.
 )
 
-docker compose --env-file "%ENV_FILE%" -f docker-compose.local.yml --profile publish run --rm content-publish
+docker compose --env-file "%ENV_FILE%" -f docker-compose.local.yml run --rm content-publish python scripts/local/publisher.py --once
 set "EXIT_CODE=%errorlevel%"
 popd
 

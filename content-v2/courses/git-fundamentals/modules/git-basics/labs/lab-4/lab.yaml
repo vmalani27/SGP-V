@@ -28,7 +28,7 @@ setup:
       git add auth.py &&
       git commit -m "Initial auth module" &&
       git remote add origin http://git-server:3000/student/project.git &&
-      git push -u origin main &&
+      git push -u --force origin main &&
       printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n\ndef get_user_profile(uid):\n    result = db.query(uid)\n    return result\n' > auth.py
 
 completion:
