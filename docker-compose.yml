@@ -1,4 +1,4 @@
-x-frontend-target: ${FRONTEND_TARGET:-dev}
+x-frontend-target: ${FRONTEND_TARGET:-runtime}
 x-orchestrator-target: ${ORCHESTRATOR_TARGET:-dev}
 services:
   proxy:
@@ -20,17 +20,13 @@ services:
     pull_policy: missing
     build:
       context: ./next-app
-      target: ${FRONTEND_TARGET:-dev}
+      target: ${FRONTEND_TARGET:-runtime}
     container_name: labops-frontend
     expose:
     - "3000"
     volumes:
-    - ./next-app:/app
-    - ./out:/out:ro
     - ${LABOPS_USER_DATA_DIR:-~/.labops}:/app/.user_data
     - ${LABOPS_CONTENT_DIR:-~/.labops/content}:/app/.content:ro
-    - frontend_node_modules_v2:/app/node_modules
-    - frontend_next:/app/.next
     env_file:
     - ./environments/dev/frontend/.env.dev
     environment:
@@ -69,7 +65,6 @@ services:
       CONTAINER_RUNTIME_MODE: privileged
       WATCHFILES_FORCE_POLLING: 'true'
       ORCHESTRATOR_SECRET: ${ORCHESTRATOR_SECRET:-local-dev-super-secret}
-      JWT_SECRET: ${JWT_SECRET:-dev-only-change-in-production}
     restart: unless-stopped
 
   git-server:
@@ -117,6 +112,3 @@ services:
       - SYNC_ON_START=true
     volumes:
       - ${LABOPS_CONTENT_DIR:-~/.labops/content}:/content:rw
-volumes:
-  frontend_node_modules_v2: null
-  frontend_next: null
