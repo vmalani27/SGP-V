@@ -52,20 +52,14 @@ async function getDataDir(): Promise<string> {
   const candidates = [
     path.join(CONTENT_DIR, 'data'),
     CONTENT_DIR,
-    path.resolve(process.cwd(), '../out/published/171ae31d28516106'),
-    path.resolve(process.cwd(), 'out/published/171ae31d28516106'),
-    path.resolve(process.cwd(), '../out'),
-    path.resolve(process.cwd(), 'out'),
-    '/out',
   ];
 
   for (const candidate of candidates) {
     try {
       await fs.access(candidate);
-      // Check if candidate contains courses or catalog
+      // Course files are the readiness signal; catalog-only state is incomplete.
       const hasCourses = await fs.access(path.join(candidate, 'courses')).then(() => true).catch(() => false);
-      const hasCatalog = await fs.access(path.join(candidate, 'catalog.json')).then(() => true).catch(() => false);
-      if (hasCourses || hasCatalog) {
+      if (hasCourses) {
         resolvedDataDir = candidate;
         return candidate;
       }

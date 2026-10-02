@@ -1,16 +1,152 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import type { RoadmapNode } from '@/lib/roadmap';
+import type { CourseCatalogEntry } from '@/lib/content-types';
+import type { Enrollment } from '@/lib/api';
+import { api } from '@/lib/api';
 import { getCourseIcon, getCourseBadgeShell } from '@/lib/course-icons';
 import { useAuth } from '@/lib/auth-context';
 
-export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
-  const { getEnrollment } = useAuth();
+interface OngoingModuleInfo {
+  moduleId: string;
+  moduleTitle: string;
+  moduleOrder: number;
+  completedLabs: number;
+  totalLabs: number;
+  isCompleted: boolean;
+}
 
-  // Structure nodes into 3 phase columns cleanly without double slashes
+/**
+ * Determine which module the user is actively working on.
+ * Scans course modules in sequence and picks the first module with incomplete items.
+ */
+function getOngoingModuleInfo(
+  courseData: CourseCatalogEntry | undefined,
+  enrollment: Enrollment | undefined,
+): OngoingModuleInfo | null {
+  if (!courseData || !Array.isArray(courseData.modules) || courseData.modules.length === 0) {
+    return null;
+  }
+
+  const modules = [...courseData.modules].sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+  const courseProg = (enrollment?.progress as Record<string, Record<string, string>> | undefined) || {};
+  const labProg = (enrollment?.labsProgress as Record<string, Record<string, string>> | undefined) || {};
+
+  for (let i = 0; i < modules.length; i++) {
+    const mod = modules[i] as any;
+    const modId = mod.id;
+    const modChapters: any[] = mod.chapters || [];
+    const modLabs: any[] = mod.labs || [];
+
+    const completedLabCount = modLabs.filter((l: any) => {
+      return labProg[modId]?.[l.id] === 'completed';
+    }).length;
+
+    const completedChapterCount = modChapters.filter((c: any) => {
+      return courseProg[modId]?.[c.id] === 'completed';
+    }).length;
+
+    const totalLabCount = modLabs.length;
+    const totalChapterCount = modChapters.length;
+
+    const isModuleDone =
+      (totalLabCount === 0 || completedLabCount >= totalLabCount) &&
+      (totalChapterCount === 0 || completedChapterCount >= totalChapterCount);
+
+    if (!isModuleDone) {
+      return {
+        moduleId: modId,
+        moduleTitle: mod.title || modId,
+        moduleOrder: mod.order || i + 1,
+        completedLabs: completedLabCount,
+        totalLabs: totalLabCount,
+        isCompleted: false,
+      };
+    }
+  }
+
+  // If all modules are finished, return the final module as completed
+  const lastMod = modules[modules.length - 1] as any;
+  const modLabs: any[] = lastMod?.labs || [];
+  const completedLabCount = modLabs.filter((l: any) => {
+    return labProg[lastMod?.id]?.[l.id] === 'completed';
+  }).length;
+
+  return {
+    moduleId: lastMod?.id || '',
+    moduleTitle: lastMod?.title || '',
+    moduleOrder: lastMod?.order || modules.length,
+    completedLabs: completedLabCount,
+    totalLabs: modLabs.length,
+    isCompleted: true,
+  };
+}
+
+export default function RoadmapView({
+  nodes,
+  initialCatalog,
+}: {
+  nodes: RoadmapNode[];
+  initialCatalog?: CourseCatalogEntry[];
+}) {
+  const { getEnrollment } = useAuth();
+  const [catalog, setCatalog] = useState<CourseCatalogEntry[]>(initialCatalog || []);
+  const [isModuleView, setIsModuleView] = useState(false);
+
+  // Fetch catalog client-side if not initially available
+  useEffect(() => {
+    if (!initialCatalog || initialCatalog.length === 0) {
+      api.courses.list()
+        .then((data) => {
+          if (Array.isArray(data)) setCatalog(data as unknown as CourseCatalogEntry[]);
+        })
+        .catch(() => {});
+    }
+  }, [initialCatalog]);
+
+  // Infinite upward loop: 0 = Course, 1 = Module, 2 = Course (seamless reset snap)
+  const [tickerStep, setTickerStep] = useState(0);
+  const [animating, setAnimating] = useState(true);
+
+  useEffect(() => {
+    let t1: ReturnType<typeof setTimeout>;
+    let t2: ReturnType<typeof setTimeout>;
+    let t3: ReturnType<typeof setTimeout>;
+
+    const cycle = () => {
+      // Step 0 -> 1: Course to Module (swipe UP) after 2.5s
+      t1 = setTimeout(() => {
+        setAnimating(true);
+        setTickerStep(1);
+
+        // Step 1 -> 2: Module to Course (swipe UP) after 2.5s
+        t2 = setTimeout(() => {
+          setAnimating(true);
+          setTickerStep(2);
+
+          // Step 2 -> 0: Snap instantly back to 0 without animation after 700ms transition finishes
+          t3 = setTimeout(() => {
+            setAnimating(false);
+            setTickerStep(0);
+            cycle();
+          }, 700);
+        }, 2500);
+      }, 2500);
+    };
+
+    cycle();
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, []);
+
+  // Structure nodes into 3 phase columns
   const phaseColumns = useMemo(() => {
     return [
       {
@@ -66,8 +202,12 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
               {/* Node Cards */}
               <div className="flex flex-col gap-3">
                 {col.nodes.map((node) => {
-                  // Dynamic user store progress binding
-                  const enrollment = getEnrollment(node.id);
+                  const courseId = node.slug || node.id;
+                  const enrollment = getEnrollment(courseId) || getEnrollment(node.id);
+                  const courseData = catalog.find((c) => c.id === courseId || c.id === node.id);
+                  const ongoingModule = getOngoingModuleInfo(courseData, enrollment);
+
+                  // Calculate course-level completed labs
                   let completedCount = node.progress?.completed ?? 0;
                   if (enrollment?.labsProgress) {
                     const dynamicCount = Object.values(enrollment.labsProgress)
@@ -80,6 +220,17 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
 
                   const totalLabs = node.progress?.total ?? 0;
                   const isUnreleased = node.status === 'unreleased';
+
+                  // Dynamic state per module vs course
+                  const isModuleActive = Boolean(ongoingModule) && tickerStep === 1;
+
+                  const activeCompletedLabs = ongoingModule
+                    ? ongoingModule.completedLabs
+                    : completedCount;
+
+                  const activeTotalLabs = ongoingModule
+                    ? ongoingModule.totalLabs
+                    : totalLabs;
 
                   let computedStatus: string = node.status;
                   if (!isUnreleased && totalLabs > 0) {
@@ -99,6 +250,11 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
                   const progressPct =
                     totalLabs > 0 ? Math.min(100, Math.round((completedCount / totalLabs) * 100)) : 0;
 
+                  const moduleProgressPct =
+                    activeTotalLabs > 0 ? Math.min(100, Math.round((activeCompletedLabs / activeTotalLabs) * 100)) : 0;
+
+                  const activeProgressPct = isModuleActive ? moduleProgressPct : progressPct;
+
                   const href = node.slug ? `/courses/${node.slug}` : `/courses/${node.id}`;
 
                   // Container surface classes
@@ -116,14 +272,56 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
 
                   const cardInner = (
                     <div className="flex flex-col h-full justify-between">
-                      {/* Row 1: Icon & Full-Width Title */}
+                      {/* Row 1: Icon & Looping Title with Swipe-up Transition */}
                       <div className="flex items-center gap-3 w-full mb-3">
-                        <div className={getCourseBadgeShell(node.id)}>
+                        <div className={`shrink-0 ${getCourseBadgeShell(node.id)}`}>
                           {getCourseIcon(node.id)}
                         </div>
-                        <h4 className="text-sm font-semibold text-white leading-snug flex-1">
-                          {node.title}
-                        </h4>
+                        {ongoingModule ? (
+                          <div className="relative h-6 overflow-hidden flex-1">
+                            <div
+                              className={`flex flex-col ${
+                                animating ? 'transition-transform duration-700 ease-in-out' : 'transition-none'
+                              }`}
+                              style={{
+                                transform:
+                                  tickerStep === 0
+                                    ? 'translateY(0%)'
+                                    : tickerStep === 1
+                                    ? 'translateY(-33.333%)'
+                                    : 'translateY(-66.666%)',
+                              }}
+                            >
+                              {/* Row 0: Course Title (white) */}
+                              <div className="h-6 flex items-center shrink-0">
+                                <h4 className="text-sm font-semibold text-white leading-snug truncate">
+                                  {node.title}
+                                </h4>
+                              </div>
+
+                              {/* Row 1: Ongoing Module Title (emerald green) */}
+                              <div className="h-6 flex items-center shrink-0">
+                                <h4
+                                  className="text-sm font-medium text-emerald-400 leading-snug truncate"
+                                  title={ongoingModule.moduleTitle}
+                                >
+                                  {ongoingModule.moduleTitle}
+                                </h4>
+                              </div>
+
+                              {/* Row 2: Course Title Clone (white) */}
+                              <div className="h-6 flex items-center shrink-0">
+                                <h4 className="text-sm font-semibold text-white leading-snug truncate">
+                                  {node.title}
+                                </h4>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <h4 className="text-sm font-semibold text-white leading-snug flex-1 truncate">
+                            {node.title}
+                          </h4>
+                        )}
                       </div>
 
                       {/* Row 2: Progress Track (if active or completed) */}
@@ -133,19 +331,62 @@ export default function RoadmapView({ nodes }: { nodes: RoadmapNode[] }) {
                       {isInProgress && (
                         <div className="h-0.5 w-full bg-zinc-800 rounded-full mb-3 overflow-hidden shrink-0">
                           <div
-                            className="h-full bg-white rounded-full transition-all duration-300"
-                            style={{ width: `${progressPct}%` }}
+                            className="h-full bg-white rounded-full transition-all duration-700 ease-out"
+                            style={{ width: `${activeProgressPct}%` }}
                           />
                         </div>
                       )}
 
-                      {/* Row 3: Footer (Tally & Action Trigger) */}
+                      {/* Row 3: Footer (Tally with Looping Swipe-up Transition & Action Trigger) */}
                       <div className="flex items-center justify-between text-xs font-mono pt-1 mt-auto">
-                        <span className="text-zinc-500">
-                          {isUnreleased
-                            ? totalLabs > 0 ? `${totalLabs} Labs` : ''
-                            : `${completedCount} / ${totalLabs} Labs`}
-                        </span>
+                        {ongoingModule ? (
+                          <div className="relative h-4 overflow-hidden">
+                            <div
+                              className={`flex flex-col ${
+                                animating ? 'transition-transform duration-700 ease-in-out' : 'transition-none'
+                              }`}
+                              style={{
+                                transform:
+                                  tickerStep === 0
+                                    ? 'translateY(0%)'
+                                    : tickerStep === 1
+                                    ? 'translateY(-33.333%)'
+                                    : 'translateY(-66.666%)',
+                              }}
+                            >
+                              {/* Row 0: Course Labs Tally */}
+                              <div className="h-4 flex items-center shrink-0">
+                                <span className="text-zinc-500 font-mono text-xs">
+                                  {isUnreleased
+                                    ? totalLabs > 0 ? `${totalLabs} Labs` : ''
+                                    : `${completedCount} / ${totalLabs} Labs`}
+                                </span>
+                              </div>
+
+                              {/* Row 1: Ongoing Module Labs Tally (emerald green) */}
+                              <div className="h-4 flex items-center shrink-0">
+                                <span className="text-emerald-400/90 font-mono text-xs font-medium">
+                                  {`${activeCompletedLabs} / ${activeTotalLabs} Labs`}
+                                </span>
+                              </div>
+
+                              {/* Row 2: Course Labs Tally Clone */}
+                              <div className="h-4 flex items-center shrink-0">
+                                <span className="text-zinc-500 font-mono text-xs">
+                                  {isUnreleased
+                                    ? totalLabs > 0 ? `${totalLabs} Labs` : ''
+                                    : `${completedCount} / ${totalLabs} Labs`}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-500 font-mono text-xs">
+                            {isUnreleased
+                              ? totalLabs > 0 ? `${totalLabs} Labs` : ''
+                              : `${completedCount} / ${totalLabs} Labs`}
+                          </span>
+                        )}
 
                         {isCompleted && (
                           <span className="text-emerald-400 font-sans text-xs">Done</span>

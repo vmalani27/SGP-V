@@ -124,6 +124,7 @@ export default function ChapterClient({
       content={content}
       chapterId={chapterId}
       courseId={courseId}
+      moduleId={moduleId}
       chapterDescription={chapterDescription}
       assessment={assessment}
       prevItem={prevItem}

@@ -35,10 +35,10 @@ func labOpsImages(channel string) []managedImage {
 	return []managedImage{
 		{Name: "Frontend", Remote: base + "/labops-frontend:" + channel},
 		{Name: "Orchestrator", Remote: base + "/labops-orchestrator:" + channel},
-		{Name: "Ubuntu lab", Remote: base + "/labops-base:" + channel, Tags: []string{"labops-ubuntu:latest", "sgp-lab-ubuntu:latest"}},
-		{Name: "Docker lab", Remote: base + "/labops-labs:docker-" + channel, Tags: []string{"labops-docker:latest", "sgp-lab-docker:latest"}},
-		{Name: "Docker fundamentals lab", Remote: base + "/labops-labs:docker-fundamentals-" + channel, Tags: []string{"labops-docker-fundamentals:latest", "sgp-lab-docker-fundamentals:latest"}},
-		{Name: "Docker build lab", Remote: base + "/labops-labs:docker-build-" + channel, Tags: []string{"labops-docker-build:latest", "sgp-lab-docker-build:latest"}},
+		{Name: "Ubuntu lab", Remote: base + "/labops-base:" + channel, Tags: []string{"labops-ubuntu:latest"}},
+		{Name: "Docker lab", Remote: base + "/labops-labs:docker-" + channel, Tags: []string{"labops-docker:latest"}},
+		{Name: "Docker fundamentals lab", Remote: base + "/labops-labs:docker-fundamentals-" + channel, Tags: []string{"labops-docker-fundamentals:latest"}},
+		{Name: "Docker build lab", Remote: base + "/labops-labs:docker-build-" + channel, Tags: []string{"labops-docker-build:latest"}},
 	}
 }
 

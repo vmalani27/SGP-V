@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import YAML from 'js-yaml';
 import CodeBlock, { extractText } from '@/components/CodeBlock';
 import DemoTerminal from '@/components/DemoTerminal';
 import { api } from '@/lib/api';
@@ -126,44 +125,24 @@ const markdownComponents = {
   ),
 };
 
-export function extractChapterDemoSpec(
-  markdown: string,
-  fallbackId: string,
-  defaultImage = 'labops-docker:latest'
+export function getModuleDemoSpec(
+  moduleId: string | undefined,
+  courseId: string | undefined,
+  chapterId: string | undefined,
 ): TerminalDemoSpec {
-  const regex = /:::\s*terminal-demo\s*\r?\n([\s\S]*?)\r?\n:::/g;
-  let match: RegExpExecArray | null;
-  let id = fallbackId;
-  let image = defaultImage;
-  const prePullSet = new Set<string>();
-
-  while ((match = regex.exec(markdown)) !== null) {
-    try {
-      const parsed = YAML.load(match[1]) as Record<string, unknown>;
-      if (parsed && typeof parsed === 'object') {
-        if (typeof parsed.id === 'string' && parsed.id.trim()) {
-          id = parsed.id.trim();
-        }
-        if (typeof parsed.image === 'string' && parsed.image.trim()) {
-          image = parsed.image.trim();
-        }
-        if (Array.isArray(parsed.pre_pull)) {
-          for (const item of parsed.pre_pull) {
-            if (typeof item === 'string' && item.trim()) {
-              prePullSet.add(item.trim());
-            }
-          }
-        }
-      }
-    } catch {
-      // ignore parse errors
-    }
-  }
+  const moduleDefaults: Record<string, { image: string }> = {
+    'docker-fundamentals': { image: 'labops-docker:latest' },
+    'building-images': { image: 'labops-docker-build:latest' },
+    'container-networking': { image: 'labops-docker:latest' },
+  };
+  const fallback = courseId?.includes('git')
+    ? { image: 'labops-git-fundamentals:latest' }
+    : { image: 'labops-docker:latest' };
+  const resolved = moduleDefaults[moduleId ?? ''] ?? fallback;
 
   return {
-    id,
-    image,
-    pre_pull: prePullSet.size > 0 ? Array.from(prePullSet) : undefined,
+    id: chapterId ? `chapter-${slugify(chapterId)}` : 'chapter-scratchpad',
+    image: resolved.image,
     steps: [],
   };
 }
@@ -172,6 +151,7 @@ export interface SlideReaderProps {
   content: string;
   chapterId?: string;
   courseId?: string;
+  moduleId?: string;
   chapterDescription?: string;
   assessment?: unknown;
   prevItem?: CourseItem | null;
@@ -187,6 +167,7 @@ export default function SlideReader({
   content,
   chapterId,
   courseId,
+  moduleId,
   chapterDescription,
   assessment,
   prevItem,
@@ -196,21 +177,9 @@ export default function SlideReader({
   onComplete,
   completeLabel,
 }: SlideReaderProps) {
-  const defaultImage = useMemo(() => {
-    if (courseId && courseId.includes('git')) {
-      return 'labops-git-fundamentals:latest';
-    }
-    return 'labops-docker:latest';
-  }, [courseId]);
-
-  // Extract persistent demo spec for the terminal shell
   const chapterDemoSpec: TerminalDemoSpec = useMemo(() => {
-    return extractChapterDemoSpec(
-      content,
-      chapterId ? `chapter-${slugify(chapterId)}` : 'chapter-scratchpad',
-      defaultImage
-    );
-  }, [content, chapterId, defaultImage]);
+    return getModuleDemoSpec(moduleId, courseId, chapterId);
+  }, [moduleId, courseId, chapterId]);
 
   // Clean up demo container on unmount
   useEffect(() => {
@@ -221,7 +190,7 @@ export default function SlideReader({
     };
   }, [chapterDemoSpec.id]);
 
-  // Clean markdown: strip :::terminal-demo and :::evaluation directives to eliminate duplicate task cards
+  // Terminal blocks remain backward-compatible while module metadata owns demos.
   const cleanedMarkdown = useMemo(() => {
     return content
       .replace(/:::\s*terminal-demo\s*\r?\n[\s\S]*?\r?\n:::\s*/g, '')

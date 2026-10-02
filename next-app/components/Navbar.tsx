@@ -1,19 +1,42 @@
 'use client';
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Terminal as TerminalIcon } from 'lucide-react';
+import { Terminal as TerminalIcon, Bell, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useContentUpdate } from '@/lib/content-update-context';
 
 export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
+  const { hasUpdate, refresh } = useContentUpdate();
+  const isHomeScreen = pathname === '/' || pathname === '/dashboard';
   const [activeLab, setActiveLab] = useState<any>(null);
   const [isHoveringLab, setIsHoveringLab] = useState(false);
   const [isChapterTerminalOpen, setIsChapterTerminalOpen] = useState(true);
+  const [isUpdatePopoverOpen, setIsUpdatePopoverOpen] = useState(false);
+  const updatePopoverRef = useRef<HTMLDivElement>(null);
 
   const isChapterView = pathname?.includes('/chapters/') ?? false;
+
+  // Close update popover on route change
+  useEffect(() => {
+    setIsUpdatePopoverOpen(false);
+  }, [pathname]);
+
+  // Handle click outside update popover
+  useEffect(() => {
+    if (!isUpdatePopoverOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (updatePopoverRef.current && !updatePopoverRef.current.contains(e.target as Node)) {
+        setIsUpdatePopoverOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isUpdatePopoverOpen]);
 
   // Listen to terminal status updates from chapter reader
   useEffect(() => {
@@ -155,6 +178,65 @@ export default function Navbar() {
                 <button onClick={handleDiscard} className="w-full rounded bg-red-500/10 px-2.5 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20 border border-red-500/20 cursor-pointer">
                   Discard Session
                 </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Curriculum Update Notification Icon (Non-blocking during chapters / labs / etc.) */}
+        {hasUpdate && !isHomeScreen && (
+          <div className="relative" ref={updatePopoverRef}>
+            <button
+              type="button"
+              onClick={() => setIsUpdatePopoverOpen((prev) => !prev)}
+              className={`relative flex items-center justify-center h-7 w-7 rounded-md border transition-colors cursor-pointer ${
+                isUpdatePopoverOpen
+                  ? 'border-sky-500/50 bg-sky-500/20 text-sky-300'
+                  : 'border-white/[0.08] bg-[#161a24]/80 hover:bg-[#1f2533] text-slate-300 hover:text-white'
+              }`}
+              title="Curriculum update available"
+              aria-label="Curriculum update available"
+            >
+              <Bell className="h-3.5 w-3.5 text-sky-400" />
+              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500" />
+              </span>
+            </button>
+
+            {isUpdatePopoverOpen && (
+              <div className="absolute right-0 top-full mt-2 w-72 rounded-lg border border-white/[0.08] bg-[#12151c] shadow-2xl p-3.5 z-50 animate-in fade-in zoom-in-95">
+                <div className="flex items-start gap-2.5">
+                  <div className="h-7 w-7 rounded-md bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <RefreshCw className="h-3.5 w-3.5 text-sky-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-semibold text-white">Curriculum Update</h4>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/20">New</span>
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
+                      Curriculum updated. Refresh to load the latest version.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsUpdatePopoverOpen(false)}
+                    className="rounded px-2.5 py-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.05] transition-colors cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    onClick={refresh}
+                    className="flex items-center gap-1.5 rounded bg-sky-500 px-3 py-1 text-[11px] font-medium text-white hover:bg-sky-400 transition-colors shadow-sm cursor-pointer"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Refresh
+                  </button>
+                </div>
               </div>
             )}
           </div>

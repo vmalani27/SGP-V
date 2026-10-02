@@ -122,10 +122,112 @@ function labStateFrom(res: {
   };
 }
 
-function getLabProgressKey(courseId: string, labId: string, sessionId?: string): string {
-  return sessionId
-    ? `lab_task_progress_${courseId}_${labId}_${sessionId}`
-    : `lab_task_progress_${courseId}_${labId}`;
+interface SavedLabProgress {
+  sessionId?: string;
+  currentIndex: number;
+  taskStatuses: Record<string, TaskStatus>;
+  completed: boolean;
+  updatedAt?: number;
+}
+
+function getLabProgressKey(courseId: string, labId: string): string {
+  return `lab_task_progress_${courseId}_${labId}`;
+}
+
+function readSavedLabProgress(courseId: string, labId: string, sessionId?: string): SavedLabProgress | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    // 1. Primary: stable key per course and lab
+    const primaryKey = getLabProgressKey(courseId, labId);
+    const raw = localStorage.getItem(primaryKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed as SavedLabProgress;
+    }
+
+    // 2. Fallback: session-specific key if provided
+    if (sessionId) {
+      const sessionKey = `${primaryKey}_${sessionId}`;
+      const sessionRaw = localStorage.getItem(sessionKey);
+      if (sessionRaw) {
+        const parsed = JSON.parse(sessionRaw);
+        if (parsed && typeof parsed === 'object') return parsed as SavedLabProgress;
+      }
+    }
+
+    // 3. Fallback: scan any legacy session-specific keys for this course and lab
+    const prefix = `${primaryKey}_`;
+    let latest: SavedLabProgress | null = null;
+    let latestTime = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) {
+        try {
+          const item = JSON.parse(localStorage.getItem(k) || '');
+          if (item && typeof item === 'object') {
+            const t = typeof item.updatedAt === 'number' ? item.updatedAt : 0;
+            if (!latest || t >= latestTime) {
+              latest = item as SavedLabProgress;
+              latestTime = t;
+            }
+          }
+        } catch {}
+      }
+    }
+    return latest;
+  } catch (e) {
+    console.warn('[LabClient] Failed to read saved task progress:', e);
+    return null;
+  }
+}
+
+function saveSavedLabProgress(
+  courseId: string,
+  labId: string,
+  data: {
+    sessionId?: string;
+    currentIndex: number;
+    taskStatuses: Record<string, TaskStatus>;
+    completed: boolean;
+  }
+) {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload = JSON.stringify({
+      ...data,
+      updatedAt: Date.now(),
+    });
+    // Store in stable primary key
+    localStorage.setItem(getLabProgressKey(courseId, labId), payload);
+    // Also store in session key if available for legacy compatibility
+    if (data.sessionId) {
+      localStorage.setItem(`${getLabProgressKey(courseId, labId)}_${data.sessionId}`, payload);
+    }
+  } catch (e) {
+    console.warn('[LabClient] Failed to persist task progress:', e);
+  }
+}
+
+function clearSavedLabProgress(courseId: string, labId: string, sessionId?: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const primaryKey = getLabProgressKey(courseId, labId);
+    localStorage.removeItem(primaryKey);
+    if (sessionId) {
+      localStorage.removeItem(`${primaryKey}_${sessionId}`);
+    }
+    const prefix = `${primaryKey}_`;
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) {
+        toRemove.push(k);
+      }
+    }
+    for (const k of toRemove) {
+      localStorage.removeItem(k);
+    }
+  } catch {}
 }
 
 function resolveLabPreviewPath(labConfig: Record<string, unknown> | null, port: number): string {
@@ -225,6 +327,7 @@ export default function LabClient({
   const [restarting, setRestarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [terminalEpoch, setTerminalEpoch] = useState(0);
   const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
   const [taskStatuses, setTaskStatuses] = useState<Record<string, TaskStatus>>({});
   const [taskErrors, setTaskErrors] = useState<Record<string, string>>({});
@@ -356,11 +459,6 @@ export default function LabClient({
   const handleStartNew = useCallback(async () => {
     cancelCelebration();
     if (labState) {
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.removeItem(getLabProgressKey(courseId, labId, labState.sessionId));
-        } catch {}
-      }
       try {
         await api.labs.destroy(courseId, labId, labState.sessionId);
       } catch {
@@ -375,7 +473,7 @@ export default function LabClient({
       setError(msg);
       setPhase('error');
     }
-  }, [provisionLab, cancelCelebration, labState, courseId, labId]);
+  }, [provisionLab, cancelCelebration, labState]);
 
   const handleRestart = async () => {
     if (!labState) return;
@@ -388,6 +486,7 @@ export default function LabClient({
       }
       await api.labs.resume(courseId, labId, labState.sessionId);
       setLabState({ ...labState, status: 'running' });
+      setTerminalEpoch((prev) => prev + 1);
     } catch (e) {
       console.error('Stop/resume restart failed, recreating container:', e);
       try {
@@ -399,6 +498,7 @@ export default function LabClient({
       try {
         const result = await api.labs.start(courseId, labId, envConfigFrom(labConfig));
         setLabState(labStateFrom(result));
+        setTerminalEpoch((prev) => prev + 1);
       } catch (e3) {
         const msg = e3 instanceof Error ? e3.message : 'Failed to start lab';
         setError(msg);
@@ -443,11 +543,7 @@ export default function LabClient({
     setSubmitOpen(false);
     setDestroying(true);
     try {
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.removeItem(getLabProgressKey(courseId, labId, labState.sessionId));
-        } catch {}
-      }
+      clearSavedLabProgress(courseId, labId, labState.sessionId);
       await api.labs.destroy(courseId, labId, labState.sessionId);
       setLabState(null);
       setPhase('intro');
@@ -468,11 +564,7 @@ export default function LabClient({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.removeItem(getLabProgressKey(courseId, labId, labState.sessionId));
-        } catch {}
-      }
+      clearSavedLabProgress(courseId, labId, labState.sessionId);
       if (labInfo.moduleId) {
         await api.courses.updateLabProgress(courseId, labId, labInfo.moduleId);
       }
@@ -514,21 +606,21 @@ export default function LabClient({
           return;
         }
 
-        // Restore saved task progress for this active session if available
+        // Restore saved task progress for this lab
         let savedStatuses: Record<string, TaskStatus> = {};
+        let savedCurrentIndex: number | null = null;
+        let savedCompleted = false;
 
-        if (typeof window !== 'undefined' && labState?.sessionId) {
-          try {
-            const key = getLabProgressKey(courseId, labId, labState.sessionId);
-            const raw = localStorage.getItem(key);
-            if (raw) {
-              const saved = JSON.parse(raw);
-              if (saved && typeof saved === 'object' && saved.taskStatuses && typeof saved.taskStatuses === 'object') {
-                savedStatuses = saved.taskStatuses;
-              }
-            }
-          } catch (e) {
-            console.warn('[LabClient] Failed to read saved task progress:', e);
+        const saved = readSavedLabProgress(courseId, labId, labState?.sessionId);
+        if (saved) {
+          if (saved.taskStatuses && typeof saved.taskStatuses === 'object') {
+            savedStatuses = saved.taskStatuses;
+          }
+          if (typeof saved.currentIndex === 'number') {
+            savedCurrentIndex = saved.currentIndex;
+          }
+          if (typeof saved.completed === 'boolean') {
+            savedCompleted = saved.completed;
           }
         }
 
@@ -553,6 +645,13 @@ export default function LabClient({
           // All tasks are verified as completed
           initialIndex = data.tasks.length - 1;
           initialCompleted = true;
+        } else if (savedCompleted) {
+          initialCompleted = true;
+        }
+
+        // If saved indicated a higher valid index within bounds, ensure we open the active task
+        if (savedCurrentIndex !== null && savedCurrentIndex >= initialIndex && savedCurrentIndex < data.tasks.length) {
+          initialIndex = savedCurrentIndex;
         }
 
         setTaskStatuses(validStatuses);
@@ -681,20 +780,12 @@ export default function LabClient({
           setTaskProgress(next);
           if (completed) setSubmitOpen(true);
 
-          if (typeof window !== 'undefined' && labState?.sessionId) {
-            try {
-              const key = getLabProgressKey(courseId, labId, labState.sessionId);
-              localStorage.setItem(key, JSON.stringify({
-                sessionId: labState.sessionId,
-                currentIndex: completed ? prev.tasks.length - 1 : nextIndex,
-                taskStatuses: nextStatuses,
-                completed,
-                updatedAt: Date.now(),
-              }));
-            } catch (e) {
-              console.warn('[LabClient] Failed to persist task progress:', e);
-            }
-          }
+          saveSavedLabProgress(courseId, labId, {
+            sessionId: labState?.sessionId,
+            currentIndex: completed ? prev.tasks.length - 1 : nextIndex,
+            taskStatuses: nextStatuses,
+            completed,
+          });
         }, 1400);
       } else {
         setTaskStatuses((prev) => ({ ...prev, [taskId]: 'incorrect' }));
@@ -870,7 +961,7 @@ export default function LabClient({
                     <>
                       {labState.status === 'running' && labState.wsUrl && (
                         <LabTerminal
-                          key={labState.sessionId}
+                          key={`${labState.sessionId}-${terminalEpoch}`}
                           wsUrl={labState.wsUrl}
                           wsToken={labState.wsToken}
                           className="flex-1 p-2"

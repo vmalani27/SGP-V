@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { AuthProvider } from '@/lib/auth-context';
+import { ContentUpdateProvider } from '@/lib/content-update-context';
 import ContentUpdateNotifier from '@/components/ContentUpdateNotifier';
 import './globals.css';
 
@@ -22,8 +23,10 @@ export default function RootLayout({
       </head>
       <body className="bg-bg text-text antialiased">
         <AuthProvider>
-          {children}
-          <ContentUpdateNotifier />
+          <ContentUpdateProvider>
+            {children}
+            <ContentUpdateNotifier />
+          </ContentUpdateProvider>
         </AuthProvider>
       </body>
     </html>

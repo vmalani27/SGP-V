@@ -107,7 +107,7 @@ export default function LabTaskRenderer({
         )}
 
         {/* Hints / Assistance */}
-        <TaskHelp task={task} />
+        <TaskHelp key={task.id} task={task} />
       </div>
     </div>
   );
