@@ -559,6 +559,17 @@ export const api = {
 
         if (correct) {
           await recordAfterSuccess(execUser);
+          if (task.on_complete && Array.isArray(task.on_complete)) {
+            for (const hook of task.on_complete) {
+              if (hook && hook.command) {
+                try {
+                  await runCommand(hook.command, hook.user || execUser);
+                } catch (e) {
+                  console.warn('[Lab] Failed to run on_complete command:', e);
+                }
+              }
+            }
+          }
         }
 
         let dynamicError: string | undefined = undefined;

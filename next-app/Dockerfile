@@ -41,8 +41,8 @@ ENV NODE_ENV=production \
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Content directory must be writable by nextjs user for S3 tarball unpacking
-RUN mkdir -p /app/.content && chown -R nextjs:nodejs /app/.content && chmod -R 777 /app/.content
+# Content and user data directories must be writable by nextjs user
+RUN mkdir -p /app/.content /app/.user_data && chown -R nextjs:nodejs /app/.content /app/.user_data && chmod -R 777 /app/.content /app/.user_data
 
 COPY --from=build /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./

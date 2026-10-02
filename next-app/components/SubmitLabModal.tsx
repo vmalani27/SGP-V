@@ -35,7 +35,7 @@ export default function SubmitLabModal({
         </h2>
 
         <p className="mt-1.5 text-xs text-slate-400 font-sans leading-relaxed">
-          All tasks passed verification. Ready to record completion?
+          All tasks have been completed. Ready to submit?
         </p>
 
         {error && (

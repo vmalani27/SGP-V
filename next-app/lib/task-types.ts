@@ -28,6 +28,7 @@ export interface LabTask {
   hint?: string;
   hints?: string[];
   solution?: { command?: string };
+  on_complete?: { command: string; user?: string }[];
 }
 
 export interface LabMeta {

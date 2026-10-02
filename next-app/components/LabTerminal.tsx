@@ -409,8 +409,7 @@ const LabTerminal = forwardRef<LabTerminalHandle, LabTerminalProps>(function Lab
                   <>
                     <p className="text-red-400 text-sm">Lab environment shut down</p>
                     <p className="text-gray-500 text-xs">
-                      The session reached its time limit and the environment was
-                      stopped.
+                      The session reached its time limit. Please refresh the page to start a new lab.
                     </p>
                   </>
                 ) : termination?.code === 4001 ? (

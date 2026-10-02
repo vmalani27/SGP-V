@@ -80,7 +80,10 @@ export async function writeUserState(state: UserStateDocument): Promise<void> {
     try {
       await fs.mkdir(dir, { recursive: true });
       const data = JSON.stringify(state, null, 2);
-      await fs.writeFile(filePath, data, 'utf8');
+      await fs.writeFile(filePath, data, { encoding: 'utf8', mode: 0o666 });
+      try {
+        await fs.chmod(filePath, 0o666);
+      } catch {}
     } catch (err) {
       console.error(`[UserStore] Failed to write user state to ${filePath}:`, err);
     }
