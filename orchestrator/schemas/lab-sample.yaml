@@ -20,7 +20,6 @@ id: hello-world
 title: Hello World Container
 difficulty: beginner
 estimated_time: 10
-xp: 50
 tags:
   - docker
   - containers

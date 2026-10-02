@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.config import ORCHESTRATOR_SECRET
+from app.config import ALLOWED_SECRETS, ORCHESTRATOR_SECRET
 
 security = HTTPBearer(auto_error=False)
 
@@ -16,7 +16,7 @@ def verify_orchestrator_secret(
     elif "token" in request.query_params:
         token = request.query_params["token"]
 
-    if not token or token != ORCHESTRATOR_SECRET:
+    if not token or token not in ALLOWED_SECRETS:
         raise HTTPException(
             status_code=401,
             detail="Invalid ORCHESTRATOR_SECRET. Local-first orchestrator access requires the shared secret."

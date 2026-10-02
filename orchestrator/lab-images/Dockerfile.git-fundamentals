@@ -104,12 +104,12 @@ RUN mkdir -p /home/student/practice \
     && git config user.email "student@labops.local" \
     && git remote add origin http://git-server:3000/student/practice.git \
     && echo "# Practice Repository" > README.md \
-    && printf 'def authenticate(user, password):\n    if password == "":\n        return False\n    return check_db(user, password)\n' > auth.py \
+    && printf 'def authenticate(user, password):\n    if password == "":\n        return False\n    return check_db(user, password)\n\ndef record_login(user):\n    event = {"user": user, "action": "login"}\n    return event\n\ndef get_user_profile(user_id):\n    result = db.query(user_id)\n    return result\n' > auth.py \
     && printf 'body { font-family: sans-serif; }\n.button { background: red; color: white; }\n' > styles.css \
     && printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("Request received: %s", req)\n    return handle(req)\n' > api.py \
     && git add README.md auth.py styles.css api.py \
     && git commit -m "Initial application release" \
-    && printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n' > auth.py \
+    && printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n\ndef record_login(user):\n    event = {"user": user, "action": "login"}\n    return event\n\ndef get_user_profile(uid):\n    result = db.query(uid)\n    return result\n' > auth.py \
     && printf 'body { font-family: sans-serif; }\n.button { background: #2563eb; color: white; }\n' > styles.css \
     && printf 'import logging\nlogging.basicConfig(level=logging.DEBUG)\n\ndef process_request(req):\n    logging.debug("DEBUG: raw request dump: %s", req)\n    logging.debug("DEBUG: entering process_request")\n    return handle(req)\n' > api.py \
     && chown -R student:student /home/student/practice

@@ -206,7 +206,7 @@ Opens an interactive terminal session into the lab container.
 
 ```javascript
 const ws = new WebSocket("ws://localhost:8001/ws/terminal");
-ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token: jwt }));
+ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token: wsToken }));
 ws.onmessage = (event) => term.write(event.data);
 term.onData((data) => ws.send(data));
 ```
@@ -391,7 +391,7 @@ orchestrator/
 │   ├── models/
 │   │   └── session.py          # LabSession, LabStatus
 │   └── websocket/
-│       └── terminal.py         # WS /ws/terminal (JWT handshake)
+│       └── terminal.py         # WS /ws/terminal (shared-secret handshake)
 ├── schemas/
 │   ├── lab-schema.json         # JSON Schema for lab.yaml
 │   ├── lab-sample.yaml         # Working example

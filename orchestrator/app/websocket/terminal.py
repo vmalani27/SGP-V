@@ -1,8 +1,8 @@
 """
-WebSocket terminal — tmux-based with JWT authentication.
+WebSocket terminal — tmux-based with shared-secret authentication.
 
 The browser never talks to the orchestrator directly. The backend proxies the
-terminal WebSocket and sends the JWT as the FIRST message (a `{"type": "auth",
+terminal WebSocket and sends the shared-secret handshake as the FIRST message (a `{"type": "auth",
 "token": ...}` handshake) — never as a URL query parameter. The orchestrator
 validates it on connect, resolves the container, and attaches to a tmux
 session.
@@ -31,10 +31,8 @@ import logging
 import secrets
 
 import aiodocker
-import jwt
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.config import JWT_ALGORITHM, JWT_LEEWAY_SECONDS, JWT_SECRET
 from app.api.labs import sessions
 
 logger = logging.getLogger(__name__)
@@ -80,8 +78,8 @@ async def _receive_handshake(websocket: WebSocket) -> dict | None:
 
 
 def _verify_secret(data: dict) -> bool:
-    from app.config import ORCHESTRATOR_SECRET
-    return data.get("token") == ORCHESTRATOR_SECRET
+    from app.config import ALLOWED_SECRETS
+    return data.get("token") in ALLOWED_SECRETS
 
 
 async def _kill_attach_client(docker: aiodocker.Docker, container, pidfile: str) -> None:

@@ -23,10 +23,6 @@
       "type": "integer",
       "description": "Estimated completion time in minutes."
     },
-    "xp": {
-      "type": "integer",
-      "description": "Experience points awarded on completion."
-    },
     "tags": {
       "type": "array",
       "items": { "type": "string" },

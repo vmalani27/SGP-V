@@ -16,16 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 IMAGE_ALIASES = {
-    "sgp-lab-ubuntu:latest": "labops-ubuntu:latest",
-    "sgp-lab-docker:latest": "labops-docker:latest",
-    "sgp-lab-docker-fundamentals:latest": "labops-docker-fundamentals:latest",
-    "sgp-lab-docker-build:latest": "labops-docker-build:latest",
-    "sgp-lab-git-fundamentals:latest": "labops-git-fundamentals:latest",
-    "sgp-lab-ubuntu": "labops-ubuntu:latest",
-    "sgp-lab-docker": "labops-docker:latest",
-    "sgp-lab-docker-fundamentals": "labops-docker-fundamentals:latest",
-    "sgp-lab-docker-build": "labops-docker-build:latest",
-    "sgp-lab-git-fundamentals": "labops-git-fundamentals:latest",
     "docker-build": "labops-docker-build:latest",
     "docker": "labops-docker:latest",
     "ubuntu": "labops-ubuntu:latest",
