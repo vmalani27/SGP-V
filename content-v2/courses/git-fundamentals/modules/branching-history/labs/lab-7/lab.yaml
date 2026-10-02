@@ -1,179 +1,356 @@
-id: lab-7
-title: Branches
-difficulty: intermediate
-estimated_time: 15
-xp: 65
-tags:
-  - git
-  - branches
-environment: git-fundamentals
-
-setup:
-  - command: >-
-      mkdir -p /home/student/workspace/team-project &&
-      cd /home/student/workspace/team-project &&
-      git init &&
-      git config user.name "Student" &&
-      git config user.email "student@labops.local" &&
-      echo "# Team Project" > README.md &&
-      git add README.md &&
-      git commit -m "Initial commit" &&
-      chown -R student:student /home/student/workspace/team-project
-
-objectives:
-  - Create and switch between branches
-  - Make commits on a branch without affecting main
-  - Observe that main is untouched while a feature branch advances
-  - Delete a branch after merging
-
-tasks:
-  - id: create-feature-branch
-    summary: Create and switch to a feature branch.
-    prompt: >-
-      You are starting work on a new feature. In `~/workspace/team-project`,
-      create a branch called `feature/add-docs` and switch to it in one command.
-
-      Confirm you are on the new branch by running `git branch`.
-    type: terminal_action
-    validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys, os
-
-        result = subprocess.run(
-            ['git', 'branch', '--show-current'],
-            capture_output=True, cwd=os.path.expanduser('~/workspace/team-project')
-        )
-        current = result.stdout.decode().strip()
-        if current != 'feature/add-docs':
-            print(f'Expected feature/add-docs, currently on: {current}')
-            sys.exit(0)
-
-        print('BRANCH_CREATED')
-        "
-      match_type: exact
-      expected_output: BRANCH_CREATED
-    error_message: >-
-      Not on branch feature/add-docs. Run: git switch -c feature/add-docs
-
-  - id: commit-on-branch
-    summary: Make two commits on the feature branch.
-    prompt: >-
-      Still on `feature/add-docs`, create a file `docs/setup.md` with any content
-      and commit it. Then create `docs/usage.md` and commit that separately.
-
-      Two focused commits — one per file.
-    type: terminal_action
-    validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys, os
-
-        cwd = os.path.expanduser('~/workspace/team-project')
-
-        # Must still be on feature branch
-        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
-        if branch.stdout.decode().strip() != 'feature/add-docs':
-            print('Not on feature/add-docs.')
-            sys.exit(0)
-
-        # Count commits ahead of main
-        ahead = subprocess.run(
-            ['git', 'log', '--oneline', 'main..feature/add-docs'],
-            capture_output=True, cwd=cwd
-        )
-        commits = ahead.stdout.decode().strip().splitlines()
-        if len(commits) < 2:
-            print(f'Expected at least 2 commits ahead of main, found {len(commits)}.')
-            sys.exit(0)
-
-        # Both files must exist in HEAD
-        for f in ['docs/setup.md', 'docs/usage.md']:
-            check = subprocess.run(['git', 'show', f'HEAD:{f}'], capture_output=True, cwd=cwd)
-            if check.returncode != 0:
-                print(f'{f} not found in HEAD commit.')
-                sys.exit(0)
-
-        print('BRANCH_COMMITS_OK')
-        "
-      match_type: exact
-      expected_output: BRANCH_COMMITS_OK
-    error_message: >-
-      Need at least 2 commits on feature/add-docs, each containing docs/setup.md and docs/usage.md respectively.
-
-  - id: verify-main-untouched
-    summary: Switch back to main and verify your feature commits are not there.
-    prompt: >-
-      Switch back to `main`. Run `git log --oneline` and confirm that `docs/setup.md`
-      and `docs/usage.md` do NOT appear in main's history.
-
-      Then run `git log --oneline --all` to see both branches.
-    type: terminal_action
-    validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys, os
-
-        cwd = os.path.expanduser('~/workspace/team-project')
-
-        # Must be on main
-        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
-        if branch.stdout.decode().strip() != 'main':
-            print('Not on main branch.')
-            sys.exit(0)
-
-        # docs/setup.md must NOT exist in main
-        check = subprocess.run(['git', 'show', 'HEAD:docs/setup.md'], capture_output=True, cwd=cwd)
-        if check.returncode == 0:
-            print('docs/setup.md exists on main — branch was merged too early or committed to wrong branch.')
-            sys.exit(0)
-
-        print('MAIN_CLEAN')
-        "
-      match_type: exact
-      expected_output: MAIN_CLEAN
-    error_message: >-
-      Either you are not on main, or docs/setup.md exists on main. Switch to main with: git switch main
-
-  - id: merge-and-cleanup
-    summary: Merge the feature branch into main and delete it.
-    prompt: >-
-      Merge `feature/add-docs` into `main`, then delete the feature branch.
-
-      After merging, `git log --oneline` on main should show all 3 commits.
-      After deletion, `git branch` should only show `main`.
-    type: terminal_action
-    validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys, os
-
-        cwd = os.path.expanduser('~/workspace/team-project')
-
-        # Must be on main
-        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
-        if branch.stdout.decode().strip() != 'main':
-            print('Not on main.')
-            sys.exit(0)
-
-        # docs/setup.md must now exist on main
-        check = subprocess.run(['git', 'show', 'HEAD:docs/setup.md'], capture_output=True, cwd=cwd)
-        if check.returncode != 0:
-            print('Merge not complete — docs/setup.md not on main yet.')
-            sys.exit(0)
-
-        # feature branch must be gone
-        branches = subprocess.run(['git', 'branch'], capture_output=True, cwd=cwd)
-        if 'feature/add-docs' in branches.stdout.decode():
-            print('feature/add-docs still exists. Delete it with: git branch -d feature/add-docs')
-            sys.exit(0)
-
-        print('MERGE_CLEANUP_OK')
-        "
-      match_type: exact
-      expected_output: MERGE_CLEANUP_OK
-    error_message: >-
-      Either the merge is incomplete or feature/add-docs still exists. Merge with: git merge feature/add-docs, then: git branch -d feature/add-docs
-
-completion:
-  required_tasks: all
+id: lab-7
+
+title: Branches
+
+difficulty: intermediate
+
+estimated_time: 15
+
+tags:
+
+  - git
+
+  - branches
+
+environment: git-fundamentals
+
+
+
+setup:
+
+  - command: >-
+
+      mkdir -p /home/student/workspace/team-project &&
+
+      cd /home/student/workspace/team-project &&
+
+      git init &&
+
+      git config user.name "Student" &&
+
+      git config user.email "student@labops.local" &&
+
+      echo "# Team Project" > README.md &&
+
+      git add README.md &&
+
+      git commit -m "Initial commit" &&
+
+      chown -R student:student /home/student/workspace/team-project
+
+
+
+objectives:
+
+  - Create and switch between branches
+
+  - Make commits on a branch without affecting main
+
+  - Observe that main is untouched while a feature branch advances
+
+  - Delete a branch after merging
+
+
+
+tasks:
+
+  - id: create-feature-branch
+
+    summary: Create and switch to a feature branch.
+
+    prompt: >-
+
+      You are starting work on a new feature. In `~/workspace/team-project`,
+
+      create a branch called `feature/add-docs` and switch to it in one command.
+
+
+
+      Confirm you are on the new branch by running `git branch`.
+
+    type: terminal_action
+
+    validation:
+
+      command: |-
+
+        python3 -c "
+
+        import subprocess, sys, os
+
+
+
+        result = subprocess.run(
+
+            ['git', 'branch', '--show-current'],
+
+            capture_output=True, cwd=os.path.expanduser('~/workspace/team-project')
+
+        )
+
+        current = result.stdout.decode().strip()
+
+        if current != 'feature/add-docs':
+
+            print(f'Expected feature/add-docs, currently on: {current}')
+
+            sys.exit(0)
+
+
+
+        print('BRANCH_CREATED')
+
+        "
+
+      match_type: exact
+
+      expected_output: BRANCH_CREATED
+
+    error_message: >-
+
+      Not on branch feature/add-docs. Run: git switch -c feature/add-docs
+
+
+
+  - id: commit-on-branch
+
+    summary: Make two commits on the feature branch.
+
+    prompt: >-
+
+      Still on `feature/add-docs`, create a file `docs/setup.md` with any content
+
+      and commit it. Then create `docs/usage.md` and commit that separately.
+
+
+
+      Two focused commits — one per file.
+
+    type: terminal_action
+
+    validation:
+
+      command: |-
+
+        python3 -c "
+
+        import subprocess, sys, os
+
+
+
+        cwd = os.path.expanduser('~/workspace/team-project')
+
+
+
+        # Must still be on feature branch
+
+        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
+
+        if branch.stdout.decode().strip() != 'feature/add-docs':
+
+            print('Not on feature/add-docs.')
+
+            sys.exit(0)
+
+
+
+        # Count commits ahead of main
+
+        ahead = subprocess.run(
+
+            ['git', 'log', '--oneline', 'main..feature/add-docs'],
+
+            capture_output=True, cwd=cwd
+
+        )
+
+        commits = ahead.stdout.decode().strip().splitlines()
+
+        if len(commits) < 2:
+
+            print(f'Expected at least 2 commits ahead of main, found {len(commits)}.')
+
+            sys.exit(0)
+
+
+
+        # Both files must exist in HEAD
+
+        for f in ['docs/setup.md', 'docs/usage.md']:
+
+            check = subprocess.run(['git', 'show', f'HEAD:{f}'], capture_output=True, cwd=cwd)
+
+            if check.returncode != 0:
+
+                print(f'{f} not found in HEAD commit.')
+
+                sys.exit(0)
+
+
+
+        print('BRANCH_COMMITS_OK')
+
+        "
+
+      match_type: exact
+
+      expected_output: BRANCH_COMMITS_OK
+
+    error_message: >-
+
+      Need at least 2 commits on feature/add-docs, each containing docs/setup.md and docs/usage.md respectively.
+
+
+
+  - id: verify-main-untouched
+
+    summary: Switch back to main and verify your feature commits are not there.
+
+    prompt: >-
+
+      Switch back to `main`. Run `git log --oneline` and confirm that `docs/setup.md`
+
+      and `docs/usage.md` do NOT appear in main's history.
+
+
+
+      Then run `git log --oneline --all` to see both branches.
+
+    type: terminal_action
+
+    validation:
+
+      command: |-
+
+        python3 -c "
+
+        import subprocess, sys, os
+
+
+
+        cwd = os.path.expanduser('~/workspace/team-project')
+
+
+
+        # Must be on main
+
+        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
+
+        if branch.stdout.decode().strip() != 'main':
+
+            print('Not on main branch.')
+
+            sys.exit(0)
+
+
+
+        # docs/setup.md must NOT exist in main
+
+        check = subprocess.run(['git', 'show', 'HEAD:docs/setup.md'], capture_output=True, cwd=cwd)
+
+        if check.returncode == 0:
+
+            print('docs/setup.md exists on main — branch was merged too early or committed to wrong branch.')
+
+            sys.exit(0)
+
+
+
+        print('MAIN_CLEAN')
+
+        "
+
+      match_type: exact
+
+      expected_output: MAIN_CLEAN
+
+    error_message: >-
+
+      Either you are not on main, or docs/setup.md exists on main. Switch to main with: git switch main
+
+
+
+  - id: merge-and-cleanup
+
+    summary: Merge the feature branch into main and delete it.
+
+    prompt: >-
+
+      Merge `feature/add-docs` into `main`, then delete the feature branch.
+
+
+
+      After merging, `git log --oneline` on main should show all 3 commits.
+
+      After deletion, `git branch` should only show `main`.
+
+    type: terminal_action
+
+    validation:
+
+      command: |-
+
+        python3 -c "
+
+        import subprocess, sys, os
+
+
+
+        cwd = os.path.expanduser('~/workspace/team-project')
+
+
+
+        # Must be on main
+
+        branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
+
+        if branch.stdout.decode().strip() != 'main':
+
+            print('Not on main.')
+
+            sys.exit(0)
+
+
+
+        # docs/setup.md must now exist on main
+
+        check = subprocess.run(['git', 'show', 'HEAD:docs/setup.md'], capture_output=True, cwd=cwd)
+
+        if check.returncode != 0:
+
+            print('Merge not complete — docs/setup.md not on main yet.')
+
+            sys.exit(0)
+
+
+
+        # feature branch must be gone
+
+        branches = subprocess.run(['git', 'branch'], capture_output=True, cwd=cwd)
+
+        if 'feature/add-docs' in branches.stdout.decode():
+
+            print('feature/add-docs still exists. Delete it with: git branch -d feature/add-docs')
+
+            sys.exit(0)
+
+
+
+        print('MERGE_CLEANUP_OK')
+
+        "
+
+      match_type: exact
+
+      expected_output: MERGE_CLEANUP_OK
+
+    error_message: >-
+
+      Either the merge is incomplete or feature/add-docs still exists. Merge with: git merge feature/add-docs, then: git branch -d feature/add-docs
+
+
+
+completion:
+
+  required_tasks: all
+

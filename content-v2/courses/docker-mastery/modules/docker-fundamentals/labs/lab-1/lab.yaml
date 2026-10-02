@@ -55,13 +55,13 @@ tasks:
       The selected command does not display locally cached container images.
 
   - id: run-simple-container
-    summary: Execute an Alpine container that emits a verification greeting.
+    summary: Run an Alpine container that prints agreeting.
     prompt: >-
-      Deploy a container meeting these operational requirements:
+      Run a container meeting these operational requirements:
       - Name: `alpine-container`
       - Base Image: `alpine:latest`
       - Output: The container must output the exact string `GREETING_FROM_ALPINE` to stdout.
-      - Persistence: The container may terminate upon completing its command, but the container object must remain on the host for inspection.
+      - The container may terminate upon completing its command, but the container object must remain on the host for inspection.
     type: terminal_action
     validation:
       command: |-

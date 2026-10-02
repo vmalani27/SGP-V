@@ -1,10 +1,6 @@
 # Chapter 7: Working in Parallel
 
-:::terminal-demo
-id: git-branches
-image: labops-git-fundamentals:latest
 :::
-
 > **Prerequisites:** You should be comfortable with commits and `git log` from the previous chapters. You should understand that a commit is a saved snapshot. Branches build directly on that idea.
 
 ## The Situation This Solves

@@ -1,10 +1,6 @@
 # Chapter 10: Pausing Without Losing
 
-:::terminal-demo
-id: git-stashing
-image: labops-git-fundamentals:latest
 :::
-
 > **Prerequisites:** You should understand branches and commits. Stashing is specifically for the moment between two: when you are mid-work on one branch and something urgent forces you to switch.
 
 ## The Exact Scenario (This Will Happen to You)

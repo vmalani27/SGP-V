@@ -2,7 +2,6 @@ id: lab-2
 title: Initializing a Repository and Publishing Your First Commits
 difficulty: beginner
 estimated_time: 20
-xp: 70
 tags:
   - git
   - fundamentals
@@ -26,13 +25,22 @@ tasks:
       Create the directory `~/workspace/my-project` and initialize a Git repository inside it.
       This is where your next commits will live.
     type: terminal_action
+    hints:
+      - "Verify that you have created the directory at the exact path requested."
+      - "Initialize Git tracking inside that directory."
+    solution:
+      command: >-
+        mkdir -p ~/workspace/my-project &&
+        cd ~/workspace/my-project &&
+        git init
     validation:
       command: >-
         test -d ~/workspace/my-project/.git && echo REPO_READY
       match_type: exact
       expected_output: REPO_READY
     error_message: >-
-      No Git repository found at ~/workspace/my-project. Run: mkdir -p ~/workspace/my-project && cd ~/workspace/my-project && git init
+      No Git repository was found at ~/workspace/my-project. Make sure the repository
+      has been initialized correctly.
 
   - id: first-commit
     summary: Create a file and make your first commit.
@@ -40,6 +48,14 @@ tasks:
       Inside `~/workspace/my-project`, create a file named `README.md` with any content.
       Stage it and commit it with a meaningful message (not 'update', 'fix', or 'WIP').
     type: terminal_action
+    hints:
+      - "Make sure README.md is staged before creating the snapshot."
+      - "Use a commit message that clearly explains what was added."
+    solution:
+      command: >-
+        cd ~/workspace/my-project &&
+        git add README.md &&
+        git commit -m "Initialize project with README"
     validation:
       command: |-
         python3 -c "
@@ -79,7 +95,8 @@ tasks:
       match_type: exact
       expected_output: FIRST_COMMIT_OK
     error_message: >-
-      Either README.md was not committed, or the commit message is too vague. Write a message that explains what the file is.
+      The required file has not been committed correctly, or the commit message
+      does not meet the requirements. Inspect your repository history and commit state.
 
   - id: second-commit
     summary: Create a second commit and inspect the log.
@@ -87,8 +104,16 @@ tasks:
       Add a second file named `notes.md` to `~/workspace/my-project` with any content.
       Stage and commit it with a different, meaningful message.
 
-      Then run `git log --oneline` to confirm both commits appear.
+      Then inspect your commit log to confirm both commits appear.
     type: terminal_action
+    hints:
+      - "Stage the new file before creating your second commit."
+      - "Inspect your commit log to confirm at least two distinct snapshots exist."
+    solution:
+      command: >-
+        cd ~/workspace/my-project &&
+        git add notes.md &&
+        git commit -m "Add project notes documentation"
     validation:
       command: |-
         python3 -c "
@@ -115,38 +140,70 @@ tasks:
         "
       match_type: exact
       expected_output: TWO_COMMITS_OK
+      record:
+        key: corrupt_readme
+        command: |-
+          python3 -c "import os; open(os.path.expanduser('~/.labops_readme_corrupted'), 'w').write('1'); open(os.path.expanduser('~/workspace/my-project/README.md'), 'w').write('CRITICAL: Runaway background script accidentally overwrote this file!\n')"
+    on_complete:
+      - command: |-
+          python3 -c "import os; open(os.path.expanduser('~/.labops_readme_corrupted'), 'w').write('1'); open(os.path.expanduser('~/workspace/my-project/README.md'), 'w').write('CRITICAL: Runaway background script accidentally overwrote this file!\n')"
+        user: student
     error_message: >-
-      notes.md was not committed.
+      The repository does not contain the required second commit. Check your commit
+      history and verify that the second file was committed.
 
   - id: restore-accidental-change
-    summary: Break a file and recover it using git restore.
+    summary: Recover a corrupted file.
     prompt: >-
-      This is the recovery scenario from the chapter.
+      An automated process accidentally modified `README.md` in your repository.
 
-      In `~/workspace/my-project`, open `README.md` and delete all its content (or overwrite it
-      with garbage). Then use `git restore` to undo the change and bring back the committed version.
-
-      Run `git diff` before restoring to see the damage. After restoring, `git diff` should show nothing.
+      Inspect the repository and identify the unwanted working-tree change.
+      Recover the committed version of `README.md` without creating another commit.
+      Verify that the unwanted modification is gone.
     type: terminal_action
+    hints:
+      - "First inspect the repository's current status and working tree differences."
+      - "Think about which Git command discards unstaged changes in the working tree."
+      - "Verify that working tree changes are gone and the committed version is restored."
+    solution:
+      command: >-
+        cd ~/workspace/my-project &&
+        git restore README.md
     validation:
       command: |-
         python3 -c "
         import subprocess, sys, os
 
-        # Check working tree is clean (no unstaged changes to README.md)
+        cwd = os.path.expanduser('~/workspace/my-project')
+        readme = os.path.join(cwd, 'README.md')
+        marker = os.path.expanduser('~/.labops_readme_corrupted')
+
+        # Check working tree for modified README.md
         result = subprocess.run(
             ['git', 'diff', '--name-only'],
-            capture_output=True, cwd=os.path.expanduser('~/workspace/my-project')
+            capture_output=True, text=True, cwd=cwd
         )
-        modified = result.stdout.decode().strip()
+        modified = result.stdout.strip()
+
+        # If README.md still has unstaged changes, user hasn't restored it yet
         if 'README.md' in modified:
-            print('README.md still has uncommitted changes — restore did not work.')
+            print('README.md still contains an unexpected working-tree modification.')
             sys.exit(0)
 
-        # Check README.md has content (not empty)
+        # Fallback check: if README was never corrupted (e.g. user jumped straight to task 4),
+        # corrupt it now so the incident trigger happens and the user must restore!
+        if not os.path.exists(marker):
+            with open(marker, 'w') as mf:
+                mf.write('1\n')
+            with open(readme, 'w') as rf:
+                rf.write('CRITICAL: Runaway background script accidentally overwrote this file!\n')
+            print('INCIDENT_TRIGGERED: README.md was just modified by an automated process! Inspect the change and restore the committed version.')
+            sys.exit(0)
+
+        # Check README.md has content in HEAD
         check = subprocess.run(
             ['git', 'show', 'HEAD:README.md'],
-            capture_output=True, cwd=os.path.expanduser('~/workspace/my-project')
+            capture_output=True, text=True, cwd=cwd
         )
         if not check.stdout.strip():
             print('README.md in HEAD is empty — something went wrong.')
@@ -157,20 +214,21 @@ tasks:
       match_type: exact
       expected_output: RESTORE_OK
     error_message: >-
-      README.md still shows as modified. Run: git restore README.md — then verify with git diff.
+      README.md still contains an unexpected working-tree modification. Inspect the
+      repository state and restore the committed version of the file.
 
   - id: publish-to-remote
     summary: Connect the repository to LabOps Git and push main.
     prompt: >-
       Your local history is ready to share with the team. From
-      `~/workspace/my-project`, add `http://git-server:3000/student/my-project.git`
-      as the remote named `origin`, then push the local `main` branch with upstream
-      tracking enabled. Verify the remote and branch after pushing.
+      `~/workspace/my-project`, configure `http://git-server:3000/student/my-project.git`
+      as the remote named `origin`, then publish the local `main` branch with upstream
+      tracking enabled.
     type: terminal_action
     hints:
-      - "Add the remote with: git remote add origin http://git-server:3000/student/my-project.git"
-      - "Publish the branch with: git push -u origin main"
-      - "Use git remote -v and git ls-remote origin refs/heads/main to verify the result"
+      - "Check your configured remotes to verify origin points to the target URL."
+      - "Ensure you are pushing the main branch and setting it to track upstream."
+      - "Verify the remote repository state after publishing."
     solution:
       command: >-
         cd ~/workspace/my-project &&
@@ -224,7 +282,7 @@ tasks:
             capture_output=True, text=True, cwd=cwd
         )
         if upstream.returncode != 0 or upstream.stdout.strip() != 'origin/main':
-            print('main is not tracking origin/main. Push with: git push -u origin main')
+            print('main is not configured to track origin/main upstream.')
             sys.exit(0)
 
         print('PUSHED_TO_REMOTE_OK')
@@ -232,8 +290,8 @@ tasks:
       match_type: exact
       expected_output: PUSHED_TO_REMOTE_OK
     error_message: >-
-      The repository was not pushed successfully. Check that origin points to
-      http://git-server:3000/student/my-project.git, then run git push -u origin main.
+      The repository has not been published to the expected remote state. Check the
+      repository's remote configuration, current branch, and remote history.
 
 completion:
   required_tasks: all

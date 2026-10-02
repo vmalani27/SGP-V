@@ -235,40 +235,8 @@ examples:
 
 ## The Learning Loop (Cause & Effect)
 
-Now explore Compose's automatic network management and teardown semantics:
-
-:::terminal-demo
-id: docker-compose-demo
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-  - nginx:alpine
-  - redis:alpine
-steps:
-  - id: inspect-compose-networks
-    label: Inspect networks auto-provisioned by Compose
-    run: docker network ls | grep compose-stack
-    expect: |
-      Compose prefixed the network names with the project directory name:
-      `compose-stack_public-tier` and `compose-stack_private-tier`.
-  - id: test-dns-in-compose
-    label: Test service discovery by Compose service name
-    run: docker compose -f ~/compose-stack/compose.yaml exec gateway ping -c 2 cache
-    expect: |
-      Ping succeeds! Inside Compose networks, services resolve each other directly
-      by their service key name (`cache`).
-  - id: teardown-stack
-    label: Gracefully stop and destroy the stack
-    run: cd ~/compose-stack && docker compose down
-    expect: |
-      Compose stops containers in reverse dependency order, terminates processes,
-      and removes the auto-created networks.
-  - id: verify-cleanup
-    label: Confirm all resources were pruned
-    run: docker compose -f ~/compose-stack/compose.yaml ps && rm -rf ~/compose-stack
-    expect: |
-      Zero containers remain. The environment is completely clean.
 :::
+Now explore Compose's automatic network management and teardown semantics in the terminal: inspect the generated networks, test service-name DNS, tear down the stack, and confirm cleanup.
 
 ## Common Pitfalls & Anti-Patterns
 

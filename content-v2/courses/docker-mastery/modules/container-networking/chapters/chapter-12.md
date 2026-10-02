@@ -173,34 +173,8 @@ examples:
 
 ## The Learning Loop (Cause & Effect)
 
-Now observe what happens when network boundaries are enforced:
-
-:::terminal-demo
-id: container-networking
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-  - nginx:alpine
-  - redis:alpine
-steps:
-  - id: test-isolation-failure
-    label: Attempt to ping cache-db from outside app-net
-    run: docker run --rm alpine ping -c 2 cache-db 2>&1 || echo "RESOLVE_FAILED_ISOLATION_PROVEN"
-    expect: |
-      Fails with `bad address 'cache-db'`. Containers that are not members of `app-net`
-      have zero visibility into its DNS or traffic.
-  - id: inspect-embedded-dns
-    label: Query Docker's embedded DNS resolver address
-    run: docker run --rm --network app-net alpine nslookup cache-db
-    expect: |
-      Look at the `Server` address: `127.0.0.11`. Every user-defined bridge network
-      automatically routes DNS lookups through Docker's internal resolver at `127.0.0.11`.
-  - id: cleanup-network-demo
-    label: Clean up containers and custom network
-    run: docker rm -f cache-db web-proxy && docker network rm app-net
-    expect: |
-      All demo resources are cleanly removed.
 :::
+Now observe the enforced boundary in the terminal: try resolving `cache-db` from outside `app-net`, inspect Docker's embedded DNS from inside the network, and clean up the demo resources.
 
 ## Common Pitfalls & Anti-Patterns
 

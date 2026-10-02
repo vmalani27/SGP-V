@@ -1,13 +1,6 @@
 # Chapter 4: Ephemeral Storage, Signals & Cleanup
 
-:::terminal-demo
-id: storage-and-signals
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-  - nginx:alpine
 :::
-
 ---
 
 > **Note — Prerequisites:** What you need to know before reading this chapter

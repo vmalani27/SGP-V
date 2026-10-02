@@ -1,20 +1,8 @@
 # Chapter 4: Building Clean Commits
 
-:::terminal-demo
-id: git-clean-commits
-image: labops-git-fundamentals:latest
-:::
-
-> **Before this chapter:** You should know `git add`, `git commit`, `git status`, and `git diff` from Chapter 3.
-
-> **Hands-On Practice in the Terminal:**
-> Your terminal on the right comes with a pre-configured repository in `~/practice`. Enter it to inspect changes and try interactive staging:
-> ```bash
-> cd ~/practice
-> git status
-> ```
-
 ## The Problem With One File, Two Changes
+
+The terminal includes a pre-configured repository in the `~/practice` folder.
 
 You are working on `auth.py`. You fix a real bug — the password check was rejecting valid inputs with special characters. While you are in the file, you also rename a variable for clarity. These are two separate changes made for two distinct reasons.
 
@@ -34,8 +22,8 @@ Git splits the file into hunks — contiguous changed sections — and prompts y
 @@ -12,7 +12,7 @@ def authenticate(user, password):
 -    if password == "":
 +    if not password:
-         return False
-
+		 return False
+ 
 Stage this hunk [y,n,q,a,d,s,e,?]?
 ```
 
@@ -74,8 +62,8 @@ git commit -m "Fix password check rejecting inputs with special characters"
 Stage and commit the second chunk separately:
 ```bash
 git add -p auth.py
-# answer y to the variable rename hunk
-git commit -m "Rename pwd_input to raw_password for clarity"
+# answer y to the parameter rename hunk
+git commit -m "Rename user_id to uid in get_user_profile"
 ```
 
 Two commits. Two reasons. Each one tells a single, coherent story.

@@ -1,10 +1,6 @@
 # Chapter 11: Reading the Project's Story
 
-:::terminal-demo
-id: git-pull-requests
-image: labops-git-fundamentals:latest
 :::
-
 ## In this chapter, you will
 
 - Navigate commit history efficiently

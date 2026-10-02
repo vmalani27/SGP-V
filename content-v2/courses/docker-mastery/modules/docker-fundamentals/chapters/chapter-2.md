@@ -1,25 +1,8 @@
 # Chapter 2: Container Lifecycle
 
-:::terminal-demo
-id: container-lifecycle
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-:::
-
----
-
-> **Note — Prerequisites:** What you need to know before reading this chapter
->
-> - **Docker architecture (Chapter 1):** what the daemon, client, and registry are; how `docker run` creates a container from an image
-> - **What a process is:** PID, stdout/stderr, exit codes — covered in Linux Fundamentals chapter 3
-> - **Basic Linux terminal usage:** running commands, `Ctrl+C` to interrupt
-
----
-
 ## You're On-Call. A Container Is Down.
 
-It's 2 AM. PagerDuty fires. The monitoring dashboard shows your `payment-api` container is either not responding or has disappeared entirely. You SSH into the server and type:
+It's 2 AM. Grafana spams your inbox. The monitoring dashboard shows your `payment-api` container is either not responding. You SSH into the server and type:
 
 ```bash
 docker ps
@@ -27,7 +10,9 @@ docker ps
 
 Nothing. The container isn't listed. Does that mean it crashed? Was it removed? Did it never start?
 
-**This is the scenario this chapter is built around.** The commands you learn here — `docker ps -a`, `docker inspect`, `docker logs` — are not abstract exercises. They are your diagnostic tools the next time a container disappears on you.
+##This is the scenario this chapter is built around. 
+
+The commands you learn here — `docker ps -a`, `docker inspect`, `docker logs` — are not abstract exercises. They are your diagnostic tools the next time a container disappears on you.
 
 Here is the complete on-call diagnostic sequence we will walk through together:
 

@@ -126,114 +126,15 @@ CMD ["node", "dist/server.js"]
 
 Let's walk through the full lifecycle: generating local dependencies on the host, observing single-stage bloat, and building the optimized multi-stage image.
 
-Try it — click **Run this next**, review each command, and press Enter:
-
-:::terminal-demo
-id: multi-stage-builds
-image: labops-docker-build:latest
-pre_pull:
-  - node:20-alpine
-state:
-  label: order-api
-  command: docker inspect -f '{{.State.Status}}' order-api 2>/dev/null || echo "not running"
-steps:
-  - id: prepare-local-env
-    label: Install project dependencies on the host machine
-    run: cd ~/order-service && npm install && ls -la
-    expect: |
-      Running `npm install` creates `node_modules/` (containing TypeScript and type definitions)
-      and generates `package-lock.json` directly in your workspace.
-  - id: audit-dockerignore
-    label: Verify context protection in .dockerignore
-    run: cat ~/order-service/.dockerignore
-    expect: |
-      Notice that `node_modules` and `dist` are excluded. Because you just generated
-      a local `node_modules` directory, `.dockerignore` prevents Docker from copying
-      hundreds of megabytes of host modules into your image build context!
-  - id: inspect-single-stage
-    label: Review the naive single-stage Dockerfile
-    run: cat ~/order-service/Dockerfile.single
-    expect: |
-      Notice that this Dockerfile uses a single `FROM node:20-alpine`, runs `npm install`,
-      and compiles TypeScript in place with `npx tsc`.
-  - id: build-single
-    label: Build the single-stage image
-    run: cd ~/order-service && docker build -t order-service:single -f Dockerfile.single .
-    expect: |
-      The single-stage image builds, freezing the TypeScript compiler, devDependencies,
-      and source files into the final image layers.
-  - id: check-single-size
-    label: Inspect the single-stage image size and disk usage
-    run: docker images order-service:single
-    expect: |
-      The single-stage image consumes approximately 245–283 MB of disk usage (~60–64 MB
-      compressed content size). Over half of that space is build-time dead weight!
-  - id: inspect-multistage
-    label: Review the multi-stage Dockerfile
-    run: cat ~/order-service/Dockerfile
-    expect: |
-      Notice the two `FROM` instructions, the `AS builder` stage name, and
-      the `COPY --from=builder /usr/src/app/dist ./dist` directive.
-  - id: build-multi
-    label: Build the multi-stage image
-    run: cd ~/order-service && docker build -t order-service:multi .
-    expect: |
-      Docker builds the builder stage, compiles TypeScript, switches to a clean
-      new `node:20-alpine` stage, installs only production dependencies, and
-      extracts the compiled `dist/` directory.
-  - id: compare-sizes
-    label: Compare image sizes side-by-side
-    run: docker images | grep order-service
-    expect: |
-      `order-service:multi` drops down to ~135–199 MB disk usage (~49 MB content size).
-      Over 50–80 MB of build dead weight has been completely eliminated!
-  - id: run-production
-    label: Run the multi-stage container
-    run: docker run -d -p 3000:3000 --name order-api order-service:multi
-    expect: |
-      The container launches in detached mode, and the state chip switches to `running`.
-  - id: verify-health
-    label: Verify the service is responding
-    run: curl -i http://localhost:3000/api/health
-    expect: |
-      HTTP/1.1 200 OK with `{"status":"healthy"}`. The compiled application runs
-      flawlessly without the compiler present.
-examples:
-  - docker ps --filter name=order-api
-  - docker logs order-api
 :::
+Try it in the terminal: compare a single-stage build with a multi-stage build, then run and verify the production image.
 
 ## The Learning Loop (Cause & Effect)
 
 Now verify the security and hygiene benefits: are the build tools truly gone from the production container?
 
-Run these checks in the live terminal below:
-
-:::terminal-demo
-id: multi-stage-builds
-image: labops-docker-build:latest
-pre_pull:
-  - node:20-alpine
-steps:
-  - id: verify-compiler-stripped
-    label: Verify the TypeScript compiler is absent in production
-    run: docker exec order-api test -f ./node_modules/.bin/tsc && echo "COMPILER_FOUND" || echo "COMPILER_NOT_FOUND"
-    expect: |
-      Outputs `COMPILER_NOT_FOUND`. In `order-service:single`, `./node_modules/.bin/tsc`
-      was present. In `order-service:multi`, the compiler binary does not exist!
-  - id: check-user
-    label: Verify container runs as non-root user
-    run: docker exec order-api whoami
-    expect: |
-      Outputs `node`, not `root`. This adheres to `nodebestpractices` security guidelines
-      to prevent privilege escalation.
-  - id: inspect-history
-    label: Compare layer histories
-    run: docker history order-service:multi
-    expect: |
-      Look at the image layers. The heavy `npm ci` of devDependencies and the
-      `npx tsc` compilation step do not appear anywhere in this image's history.
 :::
+Run these checks in the terminal: verify the compiler is absent, confirm the container user, and compare the production image history.
 
 ## Common Pitfalls & Anti-Patterns
 

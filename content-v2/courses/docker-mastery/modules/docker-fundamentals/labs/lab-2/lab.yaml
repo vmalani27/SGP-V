@@ -16,7 +16,7 @@ setup:
        echo "INFO: loading config from /app/config.yaml" &&
        echo "ERROR: config file not found at /app/config.yaml" &&
        echo "FATAL: cannot start without configuration" &&
-       exit 127'
+       exit 127' || true
 
 objectives:
   - Use docker ps -a to find containers in any state
@@ -28,9 +28,6 @@ tasks:
   - id: find-all-containers
     summary: Locate both the running and exited containers.
     prompt: >-
-      You have just taken over a system. You know two containers should exist:
-      `api-service` and `payment-api`. Run `docker ps` — only one appears.
-
       Which command shows ALL containers, including ones that have exited?
     type: multiple_choice
     options:
@@ -96,20 +93,33 @@ tasks:
       ~/exit-code.txt should contain 127. Use: docker inspect payment-api --format '{{.State.ExitCode}}'
 
   - id: diagnose-root-cause
-    summary: Identify what exit code 127 means in this context.
+    summary: Write a diagnosis based on the container evidence.
     prompt: >-
-      `payment-api` exited with code 127. The logs show it tried to load a config file.
-      What does exit code 127 tell you about the root cause?
-    type: multiple_choice
-    options:
-      - "The application tried to run a command or access a file that was not found — the config file at /app/config.yaml does not exist in the image."
-      - "The container was killed by the Docker daemon due to memory limits."
-      - "The container exited cleanly after completing its job."
-      - "The container lost network connectivity to the database."
+      Use the evidence you collected from `docker logs` and `docker inspect` to diagnose
+      why `payment-api` failed. Write a short explanation to `~/diagnosis.txt` that names
+      the missing resource, explains what exit code 127 indicates, and connects both facts
+      to the container failure.
+    type: terminal_action
     validation:
-      expected_answer: "The application tried to run a command or access a file that was not found — the config file at /app/config.yaml does not exist in the image."
+      command: |-
+        python3 -c "
+        import os, sys
+        path = os.path.expanduser('~/diagnosis.txt')
+        if not os.path.isfile(path):
+            print('Diagnosis file missing.')
+            sys.exit(0)
+        content = open(path).read().lower()
+        required = ['config', '127']
+        if all(term in content for term in required) and ('missing' in content or 'not found' in content or 'does not exist' in content):
+            print('DIAGNOSIS_OK')
+        else:
+            print('Diagnosis must connect the missing config file with exit code 127.')
+        "
+      match_type: exact
+      expected_output: DIAGNOSIS_OK
     error_message: >-
-      Exit code 127 in shell means 'command not found' or a missing file. Combined with the log output, the config file is not present in the image.
+      Write ~/diagnosis.txt with a short explanation connecting the missing
+      /app/config.yaml file and exit code 127 to the container failure.
 
   - id: inspect-running-container
     summary: Extract the DB_HOST environment variable from api-service.

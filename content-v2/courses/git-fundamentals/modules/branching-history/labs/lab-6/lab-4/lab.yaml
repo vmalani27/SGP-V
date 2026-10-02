@@ -2,7 +2,6 @@ id: lab-4
 title: "Fixing Mistakes: Navigate the Undo Decision Tree"
 difficulty: intermediate
 estimated_time: 20
-xp: 70
 tags:
   - git
   - history

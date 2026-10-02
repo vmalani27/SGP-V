@@ -164,63 +164,8 @@ container
 cat /hello.txt
 ```
 
-Try it — the steps below load each command into the terminal for you. Click **Run this next**, review the command, then press Enter:
-
-:::terminal-demo
-id: build-first-image
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-state:
-  label: my-first-image
-  command: >-
-    docker image ls --format '{{.Repository}}:{{.Tag}}' 2>/dev/null |
-    grep -q '^my-first-image:' && echo built || echo "not built yet"
-steps:
-  - id: create-project
-    label: Create the project directory and file
-    run: mkdir -p ~/my-first-image && echo "hello from my image" > ~/my-first-image/hello.txt
-    expect: |
-      Nothing is printed — the commands succeed silently. `~/my-first-image`
-      now exists and holds `hello.txt`.
-  - id: write-dockerfile
-    label: Write the Dockerfile
-    run: printf 'FROM alpine:latest\n\nCOPY hello.txt /\n\nCMD ["cat", "/hello.txt"]\n' > ~/my-first-image/Dockerfile
-    expect: |
-      Nothing is printed. The file is named exactly `Dockerfile` — no
-      extension — because `docker build` looks for that name by default.
-  - id: enter-context
-    label: Enter the build context
-    run: cd ~/my-first-image
-    expect: |
-      Your prompt's directory changes. This directory is the **build context**
-      — the only place `docker build` can read files from, so `COPY` can find
-      `hello.txt`.
-  - id: build-image
-    label: Build the image
-    run: docker build -t my-first-image .
-    expect: |
-      Build steps run, ending in `Successfully tagged my-first-image:latest`,
-      and the state chip flips to `built`. The `.` is the build context you
-      just entered.
-  - id: list-image
-    label: Confirm the image exists
-    run: docker image ls
-    expect: |
-      A row for `my-first-image` with the `alpine` tag — the built artifact is
-      stored on this system, separate from any container.
-  - id: run-image
-    label: Run a container from it
-    run: docker run --rm my-first-image
-    expect: |
-      `hello from my image` is printed, then the container exits — the `CMD`
-      ran at container start.
-examples:
-  - docker run --rm my-first-image sh -c 'cat /hello.txt'
-  - docker image history my-first-image
-  - docker image inspect my-first-image --format '{{.Os}}/{{.Architecture}}'
-  - docker build -t my-first-image:v2 . && docker run --rm my-first-image:v2
 :::
+Try the build yourself in the terminal. Create the files, build the image, and run it to see the result.
 
 ## What Happened During the Build?
 

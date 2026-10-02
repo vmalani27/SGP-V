@@ -1,10 +1,6 @@
 # Chapter 12: Your Daily Git Routine
 
-:::terminal-demo
-id: git-full-team-workflow
-image: labops-git-fundamentals:latest
 :::
-
 ## In this chapter, you will
 
 - See how all the concepts connect in a real workflow

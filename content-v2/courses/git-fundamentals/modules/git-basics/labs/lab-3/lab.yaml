@@ -2,7 +2,6 @@ id: lab-3
 title: "Staging Selectively: Clean Commits from a Messy Working Tree"
 difficulty: beginner
 estimated_time: 20
-xp: 70
 tags:
   - git
   - staging
@@ -10,8 +9,8 @@ tags:
 environment: git-fundamentals
 summary: >
   You have just fixed three unrelated things in one sitting. Stage them
-  as separate, atomic commits, discard debug noise, and push clean history
-  to the remote server.
+  as separate, atomic commits, get rid of dev logging changes, and push clean code
+  to the repository
 
 objectives:
   - Stage individual files to create atomic commits
@@ -41,22 +40,18 @@ completion:
 
 tasks:
   - id: survey-the-damage
-    summary: Understand what is changed before touching anything
+    summary: Inspect modified working tree files
     prompt: >-
       You sit down Monday morning and find three files modified in `~/webapp`:
-      auth.py, styles.css, and api.py. Before you stage anything, understand
-      exactly what changed in each file.
-
-      Run git status to see which files are modified, then run git diff to read
-      the actual changes. Your goal is to know what each file changed before
-      committing anything.
+      auth.py, styles.css, and api.py. Before staging anything, inspect the
+      working tree and examine the changes across each file to understand what was modified.
 
       Work inside /home/student/webapp.
     type: terminal_action
     hints:
-      - "Run git status first to see the state of the working tree"
-      - "Then run git diff to read the line-by-line changes"
-      - "You can also run git diff auth.py to focus on one file at a time"
+      - "Inspect the current status of your working tree files."
+      - "Examine the uncommitted line changes to see what each modification contains."
+      - "Inspect files individually or together to understand their diffs."
     solution:
       command: "cd /home/student/webapp && git status && git diff"
     validation:
@@ -74,24 +69,22 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Run git status inside /home/student/webapp. You should see three modified
-      files. Make sure you are in the right directory.
+      Make sure you are in /home/student/webapp and that the working tree contains the expected modified files before proceeding.
 
   - id: commit-auth-fix
-    summary: Stage and commit only the authentication fix
+    summary: Commit the authentication fix
     prompt: >-
       auth.py has one real fix: the empty password check was changed from
       checking password == "" to using not password, which also catches None.
 
-      Stage only auth.py and commit it with a clear message. Leave styles.css
-      and api.py unstaged — they belong in separate commits.
-
-      After committing, run git status to confirm only two files remain modified.
+      Stage only auth.py and commit it with a clear, descriptive message. 
+      Leave styles.css
+      and api.py as it is
     type: terminal_action
     hints:
-      - "Use git add auth.py to stage only that one file"
-      - "Write a commit message describing what changed, not just the filename"
-      - "After committing, git status should show styles.css and api.py still modified"
+      - "Stage only the specific file needed for this logical commit."
+      - "Write a commit message that explains what the authentication fix does."
+      - "Verify that the other two modified files remain unstaged in your working tree."
     solution:
       command: "cd /home/student/webapp && git add auth.py && git commit -m 'Fix empty-string password check to also reject None'"
     validation:
@@ -107,7 +100,7 @@ tasks:
 
         status = subprocess.run(['git', 'status'], capture_output=True, text=True).stdout
         if 'styles.css' not in status or 'api.py' not in status:
-            print('RESULT_FAIL: expected styles.css and api.py still modified')
+            print('RESULT_FAIL: expected styles.css and api.py to remain unstaged')
             sys.exit(1)
 
         print('RESULT_OK')
@@ -115,20 +108,20 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Make sure you staged ONLY auth.py before committing. styles.css and api.py
-      should still show as modified in git status after the commit.
+      Ensure only auth.py is staged and committed. styles.css and api.py should still show as unstaged modifications.
 
   - id: commit-css-fix
-    summary: Stage and commit the CSS colour change separately
+    summary: commit the css change
     prompt: >-
-      styles.css changed the button colour from red to a proper blue (#2563eb).
+      styles.css changed the button colour from red to brand blue (#2563eb).
       That is a separate concern from the auth fix and deserves its own commit.
 
-      Stage styles.css and commit it. api.py should remain unstaged.
+      Stage styles.css and commit it with an appropriate message. api.py should remain unstaged.
     type: terminal_action
     hints:
-      - "Run git add styles.css then git commit with a message describing the visual change"
-      - "Check git status after to confirm only api.py is left modified"
+      - "Stage the stylesheet file independently from the remaining debug modifications."
+      - "Describe the visual styling change in your commit message."
+      - "Confirm that only api.py is left modified in your working tree."
     solution:
       command: "cd /home/student/webapp && git add styles.css && git commit -m 'Fix button colour from red to brand blue'"
     validation:
@@ -152,25 +145,21 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Stage and commit styles.css. api.py should still appear as modified in
-      git status — do not stage it yet.
+      styles.css was not committed as a separate snapshot, or api.py was prematurely staged. Check your repository status and commit log.
 
   - id: discard-debug-changes
-    summary: Discard the debug noise in api.py using git restore
+    summary: Discard the local debug changes in api.py
     prompt: >-
       api.py has debug log lines added for local testing. They should
       not be committed — debug noise in version history makes it harder to trace
       real changes later.
 
-      Your task:
-      Discard the changes in api.py entirely using git restore.
-
-      After running git restore, api.py should be clean with no modifications,
-      and git diff api.py should produce no output.
+      Discard the changes in api.py entirely so that the file returns to its cleanly
+      committed state from HEAD. After discarding, your working tree should be completely clean.
     type: terminal_action
     hints:
-      - "Run git restore api.py to discard unstaged working directory changes"
-      - "After restoring, git diff api.py should produce no output"
+      - "Recall which command discards unstaged working tree changes back to the committed snapshot."
+      - "Verify that no unstaged diffs remain for api.py after discarding the changes."
     solution:
       command: "cd /home/student/webapp && git restore api.py"
     validation:
@@ -181,7 +170,7 @@ tasks:
 
         diff = subprocess.run(['git', 'diff', 'api.py'], capture_output=True, text=True).stdout
         if diff.strip():
-            print('RESULT_FAIL: api.py still has changes - run git restore api.py')
+            print('RESULT_FAIL: api.py still contains unstaged modifications')
             sys.exit(1)
 
         print('RESULT_OK')
@@ -189,13 +178,12 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Run `git restore api.py` to discard the debug changes. After restoring,
-      `git diff api.py` should produce no output.
+      api.py still contains unstaged working-tree modifications. Discard the changes and restore the clean committed version.
 
   - id: read-the-history
     summary: Confirm the commit history tells a clean story
     prompt: >-
-      Run git log --oneline inside /home/student/webapp. You should see exactly
+      Inspect the commit log inside /home/student/webapp. You should see exactly
       three commits, each describing one logical change.
 
       Which command shows ONLY the files changed in the most recent commit,
@@ -209,8 +197,8 @@ tasks:
     validation:
       expected_answer: "git log --oneline -1 --name-only"
     hints:
-      - "You want the commit metadata and file list — not the line-level diff"
-      - "git show --stat is also useful but shows the diff summary too"
+      - "You want the commit metadata and file list — not the line-level diff."
+      - "Look for a log flag that outputs file names rather than the complete diff patch."
 
   - id: publish-atomic-commits
     summary: Push your clean atomic commits to the remote repository
@@ -218,11 +206,11 @@ tasks:
       Your working tree in `/home/student/webapp` is now clean, and your local
       `main` branch has two clean atomic commits ahead of `origin/main`.
 
-      Push your commits to the remote server by running `git push`.
+      Publish your commits to the remote server.
     type: terminal_action
     hints:
-      - "Run git push inside /home/student/webapp"
-      - "Because main already tracks origin/main, git push is all you need"
+      - "Push your local branch updates to the configured remote repository."
+      - "Because main already tracks origin/main, synchronize the remote with a standard push."
     solution:
       command: "cd /home/student/webapp && git push"
     validation:
@@ -243,13 +231,13 @@ tasks:
         remote_sha = remote_head[0] if remote_head else ''
 
         if not head or remote_sha != head:
-            print('RESULT_FAIL: Remote main does not match local HEAD. Run git push.')
+            print('RESULT_FAIL: Remote main does not match local HEAD.')
             sys.exit(0)
 
         # Check commit count
         log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True, cwd=cwd).stdout.strip().splitlines()
         if len(log) < 3:
-            print('RESULT_FAIL: Expected 3 commits in history.')
+            print('RESULT_FAIL: Expected at least 3 commits in history.')
             sys.exit(0)
 
         print('PUSH_OK')
@@ -257,5 +245,4 @@ tasks:
       match_type: exact
       expected_output: PUSH_OK
     error_message: >-
-      Run `git push` inside `/home/student/webapp`. Ensure all previous tasks
-      were completed so that local HEAD matches `origin/main` on the server.
+      The remote repository has not received your atomic commits, or your working tree is not clean. Ensure all prior tasks were completed and the commits are published to origin/main.

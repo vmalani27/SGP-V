@@ -1,13 +1,6 @@
 # Chapter 3: Configuring Containers
 
-:::terminal-demo
-id: configuring-containers
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-  - nginx:alpine
 :::
-
 ---
 
 > **Note — Prerequisites:** What you need to know before reading this chapter

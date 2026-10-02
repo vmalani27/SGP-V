@@ -9,101 +9,100 @@ tags:
   - fundamentals
 environment: git-fundamentals
 summary: >
-  Practice splitting a file that has two unrelated changes into two separate
+  Practice splitting a file that has three unrelated changes into separate
   atomic commits using interactive staging.
 
 objectives:
   - Use git add -p to stage individual hunks within a file
   - Verify staged content with git diff --staged before committing
-  - Produce two separate commits from changes in a single file
+  - Produce three separate commits from changes in a single file
   - Push atomic commits to the remote tracking branch
 
 setup:
   - command: >
-      mkdir -p /home/student/project && cd /home/student/project &&
+      curl -s -X DELETE -u student:password123 http://git-server:3000/api/v1/repos/student/order-service || true &&
+      rm -rf /home/student/order-service &&
+      mkdir -p /home/student/order-service && cd /home/student/order-service &&
       git init -b main &&
       git config user.email "student@labops.local" &&
       git config user.name "Student" &&
-      printf 'def authenticate(user, password):\n    if password == "":\n        return False\n    return check_db(user, password)\n\ndef get_user_profile(user_id):\n    result = db.query(user_id)\n    return result\n' > auth.py &&
-      git add auth.py &&
-      git commit -m "Initial auth module" &&
-      git remote add origin http://git-server:3000/student/project.git &&
+      printf 'def validate_order(item_id, quantity):\n    # Ensure item quantity is valid before processing inventory check\n    if quantity == 0:\n        return False\n    if not item_id or len(item_id) < 3:\n        return False\n    return check_inventory(item_id, quantity)\n\n\ndef calculate_discount(customer, subtotal):\n    # Apply promotional VIP discount rate to qualified accounts\n    disc = 0.0\n    if customer.get("is_vip"):\n        disc = subtotal * 0.10\n    if subtotal > 100.0:\n        disc += 5.0\n    return disc\n\n\ndef log_audit_trail(order_id, status):\n    # Internal audit logging for order state tracking\n    timestamp = get_current_timestamp()\n    record_audit_event(order_id, status, timestamp)\n    return True\n\n\ndef format_receipt(customer_id, total):\n    # Generate customer-facing summary receipt string\n    header = "=== ORDER RECEIPT ==="\n    summary = f"Customer #{customer_id}: Total ${total:.2f}"\n    footer = "Thank you for your purchase!"\n    return f"{header}\\n{summary}\\n{footer}"\n' > orders.py &&
+      git add orders.py &&
+      git commit -m "Initial order service module" &&
+      git remote add origin http://git-server:3000/student/order-service.git &&
       git push -u --force origin main &&
-      printf 'def authenticate(user, password):\n    if not password:\n        return False\n    return check_db(user, password)\n\ndef get_user_profile(uid):\n    result = db.query(uid)\n    return result\n' > auth.py
+      printf 'def validate_order(item_id, quantity):\n    # Ensure item quantity is valid before processing inventory check\n    if quantity <= 0:\n        return False\n    if not item_id or len(item_id) < 3:\n        return False\n    return check_inventory(item_id, quantity)\n\n\ndef calculate_discount(customer, subtotal):\n    # Apply promotional VIP discount rate to qualified accounts\n    discount_amount = 0.0\n    if customer.get("is_vip"):\n        discount_amount = subtotal * 0.10\n    if subtotal > 100.0:\n        discount_amount += 5.0\n    return discount_amount\n\n\ndef log_audit_trail(order_id, status):\n    # Internal audit logging for order state tracking\n    timestamp = get_current_timestamp()\n    record_audit_event(order_id, status, timestamp)\n    return True\n\n\ndef format_receipt(customer_id, total):\n    # Generate customer-facing summary receipt string\n    header = "=== ORDER RECEIPT ==="\n    summary = f"Customer #{customer_id}: Total ${total:.2f} USD"\n    footer = "Thank you for your purchase!"\n    return f"{header}\\n{summary}\\n{footer}"\n' > orders.py
 
 completion:
   required_tasks: all
 
 tasks:
   - id: inspect-changes
-    summary: Read what changed in auth.py before staging anything
-    prompt: >-
-      auth.py has two unrelated changes:
-      1. The password check was fixed (password == "" → not password)
-      2. A parameter was renamed (user_id → uid)
+    summary: Examine line-level changes in orders.py
+    prompt: |-
+      `orders.py` in `/home/student/order-service` has three unrelated changes:
 
-      Before staging anything, read the full diff to confirm you understand
-      what each change does.
+      1. A validation bug fix
+      2. A variable rename refactor
+      3. A receipt formatting enhancement
 
-      Run git diff auth.py inside /home/student/project.
+      Before committing anything, examine the full difference of changes made.
     type: terminal_action
     hints:
-      - "Run git diff auth.py to see the line-level changes"
-      - "Lines starting with - were removed, lines starting with + were added"
+      - "Use Git's diff inspection tool to view the uncommitted modifications."
+      - "Lines starting with '-' were removed, while lines starting with '+' were added."
     solution:
-      command: "cd /home/student/project && git diff auth.py"
+      command: "cd /home/student/order-service && git diff orders.py"
     validation:
       command: |-
         python3 -c "
         import subprocess, sys, os
-        os.chdir('/home/student/project')
-        result = subprocess.run(['git', 'diff', 'auth.py'], capture_output=True, text=True)
-        if 'not password' in result.stdout or 'password ==' in result.stdout:
+        os.chdir('/home/student/order-service')
+        result = subprocess.run(['git', 'diff', 'orders.py'], capture_output=True, text=True)
+        out = result.stdout
+        if 'quantity <= 0' in out and 'discount_amount' in out and 'USD' in out:
             print('RESULT_OK')
         else:
-            print('RESULT_FAIL: run git diff auth.py inside /home/student/project')
+            print('RESULT_FAIL')
             sys.exit(1)
         "
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Run git diff auth.py inside /home/student/project. You should see two
-      separate changes in the output.
+      Make sure you are in /home/student/order-service and inspect the uncommitted changes in orders.py before staging.
 
   - id: stage-first-hunk
-    summary: Stage only the password fix using git add -p
+    summary: Stage only the quantity validation fix hunk
     prompt: >-
-      Use git add -p auth.py to stage only the password check fix
-      (the change from password == "" to not password).
+      Use interactive patch staging to stage ONLY the bug fix in `validate_order`
+      (the change from quantity == 0 to quantity <= 0).
 
-      Skip the parameter rename hunk — answer n when git asks about it.
+      Skip the other two hunks so that they remain unstaged in your working directory.
 
-      After staging, run git diff --staged to confirm only the password fix
-      is staged.
+      Verify that only the validation fix is staged before moving forward.
     type: terminal_action
     hints:
-      - "Run git add -p auth.py and answer y to the password fix hunk"
-      - "Answer n to the parameter rename hunk"
-      - "If the hunks are combined, answer s to split them first"
-      - "After staging, git diff --staged should show only the password change"
+      - "Invoke interactive patch staging on orders.py to review individual hunks."
+      - "Accept the hunk corresponding to the quantity validation fix, and skip the remaining hunks."
+      - "Check your staged differences to confirm only the first change is staged."
     solution:
-      command: "cd /home/student/project && git add -p auth.py"
+      command: "cd /home/student/order-service && git add -p orders.py"
     validation:
       command: |-
         python3 -c "
         import subprocess, sys, os
-        os.chdir('/home/student/project')
+        os.chdir('/home/student/order-service')
 
-        staged = subprocess.run(['git', 'diff', '--staged', 'auth.py'], capture_output=True, text=True).stdout
+        staged = subprocess.run(['git', 'diff', '--staged', 'orders.py'], capture_output=True, text=True).stdout
 
-        # The password fix should be staged
-        if 'not password' not in staged and 'password ==' not in staged:
-            print('RESULT_FAIL: password fix not found in staged changes')
+        # The validation fix should be staged
+        if 'quantity <= 0' not in staged:
+            print('RESULT_FAIL: validation fix hunk not found in staged changes')
             sys.exit(1)
 
-        # The rename should NOT be staged
-        if 'uid' in staged and 'user_id' in staged:
-            print('RESULT_FAIL: parameter rename should not be staged yet')
+        # The other two hunks should NOT be staged
+        if 'discount_amount' in staged or 'USD' in staged:
+            print('RESULT_FAIL: other hunks should not be staged yet')
             sys.exit(1)
 
         print('RESULT_OK')
@@ -111,39 +110,35 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Use git add -p auth.py to stage only the password fix hunk. Answer y
-      to that hunk and n to the parameter rename. Then check git diff --staged
-      to confirm only the password change is staged.
+      Only the quantity validation fix hunk should be staged. The other modifications must remain unstaged in your working directory. Inspect your staged changes and adjust.
 
   - id: commit-first-hunk
-    summary: Commit the staged password fix
+    summary: Commit the staged validation fix
     prompt: >-
-      Commit the staged change with a message that describes exactly what
-      the fix does. The message should make sense to someone reading the
-      git log without looking at the diff.
+      Record the staged change with a commit message that clearly describes what
+      the validation fix does.
+
     type: terminal_action
     hints:
-      - "git commit -m 'your message here'"
-      - "A good message: Fix password check to reject None and empty string"
+      - "Record a new commit with a message explaining the validation bug fix."
     solution:
-      command: "cd /home/student/project && git commit -m 'Fix password check to reject None and empty string'"
+      command: "cd /home/student/order-service && git commit -m 'Reject non-positive quantities in validate_order'"
     validation:
       command: |-
         python3 -c "
         import subprocess, sys, os
-        os.chdir('/home/student/project')
+        os.chdir('/home/student/order-service')
 
         log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True).stdout
-        # Should have 2 commits now
         lines = [l for l in log.strip().splitlines() if l.strip()]
         if len(lines) < 2:
             print('RESULT_FAIL: expected 2 commits after committing the first hunk')
             sys.exit(1)
 
-        # The rename should still be unstaged
-        unstaged = subprocess.run(['git', 'diff', 'auth.py'], capture_output=True, text=True).stdout
-        if 'uid' not in unstaged:
-            print('RESULT_FAIL: parameter rename should still be unstaged')
+        # The other two hunks should still be unstaged
+        unstaged = subprocess.run(['git', 'diff', 'orders.py'], capture_output=True, text=True).stdout
+        if 'discount_amount' not in unstaged or 'USD' not in unstaged:
+            print('RESULT_FAIL: remaining hunks should still be unstaged')
             sys.exit(1)
 
         print('RESULT_OK')
@@ -151,39 +146,44 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Commit the staged hunk. After committing, git log --oneline should show
-      2 commits and git diff auth.py should still show the parameter rename
-      as unstaged.
+      The staged hunk has not been committed, or other changes were prematurely recorded. Check your commit log and working tree status.
 
-  - id: commit-second-hunk
-    summary: Stage and commit the parameter rename separately
+  - id: stage-and-commit-second-hunk
+    summary: Stage and commit the discount variable rename
     prompt: >-
-      The parameter rename (user_id → uid) is still unstaged. Stage it and
-      commit it with its own message.
+      1. Stage the discount variable rename refactor in
+      `calculate_discount` discount function
 
-      After this commit, git log --oneline should show 3 total commits.
-      git diff auth.py should produce no output — the working directory is clean.
+      2. Commit the refactor with its own descriptive message.
     type: terminal_action
     hints:
-      - "git add auth.py then git commit — or use git add -p if you want to practice again"
-      - "After committing, git status should show nothing to commit"
+      - "Use interactive patch staging again to select the discount refactor hunk."
+      - "Skip the receipt formatting modification so it remains unstaged."
+      - "Commit the staged refactor with a message describing the variable rename."
     solution:
-      command: "cd /home/student/project && git add auth.py && git commit -m 'Rename user_id to uid in get_user_profile'"
+      command: "cd /home/student/order-service && git add -p orders.py && git commit -m 'Rename disc to discount_amount for clarity'"
     validation:
       command: |-
         python3 -c "
         import subprocess, sys, os
-        os.chdir('/home/student/project')
+        os.chdir('/home/student/order-service')
 
         log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True).stdout
         lines = [l for l in log.strip().splitlines() if l.strip()]
         if len(lines) < 3:
-            print('RESULT_FAIL: expected 3 commits total')
+            print('RESULT_FAIL: expected 3 commits after committing the second hunk')
             sys.exit(1)
 
-        diff = subprocess.run(['git', 'diff', 'auth.py'], capture_output=True, text=True).stdout
-        if diff.strip():
-            print('RESULT_FAIL: auth.py still has unstaged changes')
+        # discount_amount should be committed in HEAD
+        head_commit = subprocess.run(['git', 'show', 'HEAD:orders.py'], capture_output=True, text=True).stdout
+        if 'discount_amount' not in head_commit:
+            print('RESULT_FAIL: discount refactor was not committed in HEAD')
+            sys.exit(1)
+
+        # The receipt formatting should still be unstaged
+        unstaged = subprocess.run(['git', 'diff', 'orders.py'], capture_output=True, text=True).stdout
+        if 'USD' not in unstaged:
+            print('RESULT_FAIL: receipt formatting change should still be unstaged')
             sys.exit(1)
 
         print('RESULT_OK')
@@ -191,28 +191,64 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Stage and commit the remaining change in auth.py. After committing,
-      git log --oneline should show 3 commits and git diff auth.py should
-      produce no output.
+      The discount refactor has not been committed as its own snapshot, or the receipt formatting change was prematurely staged. Check your commit history and working tree status.
 
-  - id: publish-hunk-commits
-    summary: Push your atomic commits to the remote tracking branch
+  - id: commit-third-hunk
+    summary: Stage and commit the receipt formatting change
     prompt: >-
-      Your working tree in `/home/student/project` is clean, and your local
-      `main` branch has two clean atomic commits ahead of `origin/main`.
+      Stage the final remaining change in `orders.py` (the receipt formatting update) and
+      commit it with a clear, descriptive message.
 
-      Push your commits to the remote server by running `git push`.
+      After this commit, your repository should show 4 total commits and a completely clean working directory.
     type: terminal_action
     hints:
-      - "Run git push inside /home/student/project"
-      - "Because main already tracks origin/main, git push is all you need"
+      - "Stage the remaining modification in orders.py."
+      - "Commit it with a message describing the currency formatting update."
+      - "Confirm your working tree has no remaining uncommitted changes."
     solution:
-      command: "cd /home/student/project && git push"
+      command: "cd /home/student/order-service && git add orders.py && git commit -m 'Include currency unit USD in receipt summary'"
     validation:
       command: |-
         python3 -c "
         import subprocess, sys, os
-        cwd = '/home/student/project'
+        os.chdir('/home/student/order-service')
+
+        log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True).stdout
+        lines = [l for l in log.strip().splitlines() if l.strip()]
+        if len(lines) < 4:
+            print('RESULT_FAIL: expected 4 commits total')
+            sys.exit(1)
+
+        diff = subprocess.run(['git', 'diff', 'orders.py'], capture_output=True, text=True).stdout
+        if diff.strip():
+            print('RESULT_FAIL: orders.py still has unstaged changes')
+            sys.exit(1)
+
+        print('RESULT_OK')
+        "
+      match_type: exact
+      expected_output: RESULT_OK
+    error_message: >-
+      The remaining receipt formatting change in orders.py has not been committed, or uncommitted modifications still exist. Verify that 4 total commits exist and your working tree is clean.
+
+  - id: publish-hunk-commits
+    summary: Push your atomic commits to the remote tracking branch
+    prompt: >-
+      Your working tree in `/home/student/order-service` is clean, and your local
+      `main` branch has three clean atomic commits ahead of `origin/main`.
+
+      Publish your commits to the remote tracking branch.
+    type: terminal_action
+    hints:
+      - "Synchronize your local branch with its remote tracking branch."
+      - "Ensure the remote repository receives all new atomic commits."
+    solution:
+      command: "cd /home/student/order-service && git push"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+        cwd = '/home/student/order-service'
 
         status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, cwd=cwd).stdout
         if status.strip():
@@ -224,12 +260,12 @@ tasks:
         remote_sha = remote_head[0] if remote_head else ''
 
         if not head or remote_sha != head:
-            print('RESULT_FAIL: Remote main does not match local HEAD. Run git push.')
+            print('RESULT_FAIL: Remote main does not match local HEAD.')
             sys.exit(0)
 
         log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True, cwd=cwd).stdout.strip().splitlines()
-        if len(log) < 3:
-            print('RESULT_FAIL: Expected 3 commits in history.')
+        if len(log) < 4:
+            print('RESULT_FAIL: Expected 4 commits in history.')
             sys.exit(0)
 
         print('PUSH_OK')
@@ -237,6 +273,4 @@ tasks:
       match_type: exact
       expected_output: PUSH_OK
     error_message: >-
-      Run `git push` inside `/home/student/project`. Ensure all previous tasks
-      were completed so that local HEAD matches `origin/main` on the server.
-
+      The remote tracking branch has not received your commits. Verify that your working tree is clean and that local HEAD is synchronized with origin/main.

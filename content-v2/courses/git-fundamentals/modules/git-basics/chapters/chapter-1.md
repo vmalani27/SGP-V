@@ -1,10 +1,6 @@
 # Chapter 1: Why Version Control Exists
 
-:::terminal-demo
-id: git-why-vcs
-image: labops-git-fundamentals:latest
 :::
-
 > **No prior Git knowledge required.** 
 > You must be comfortable in a terminal — `ls`, `cd`, `mkdir`.
 >

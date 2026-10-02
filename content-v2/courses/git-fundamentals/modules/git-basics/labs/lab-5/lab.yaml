@@ -2,21 +2,18 @@ id: lab-5
 title: "Keeping Unwanted Files Out with .gitignore"
 difficulty: beginner
 estimated_time: 20
-xp: 70
 tags:
   - git
   - gitignore
   - fundamentals
 environment: git-fundamentals
 summary: >
-  Practice the full .gitignore workflow: observe untracked files, create
-  ignore rules, verify ignored status, and stop tracking a file that was
-  already committed.
+  Practice the introductory .gitignore workflow: observe untracked files,
+  create ignore rules, verify ignored status, and commit the rules.
 
 objectives:
   - Create a .gitignore that prevents secrets and build artifacts from being staged
   - Understand the difference between untracked and ignored files
-  - Use git rm --cached to stop tracking an already-committed file
   - Commit .gitignore and push the clean repository to the remote server
 
 setup:
@@ -41,14 +38,13 @@ completion:
 
 tasks:
   - id: observe-untracked
-    summary: See what Git sees before .gitignore exists
-    prompt: >-
-      The repository has four files that should never be committed:
-      .env, .env.local, app.pyc, and __pycache__/app.cpython-311.pyc
+    summary: See what Git sees
+    prompt: |-
+      Work inside the prepared repository at `/home/student/webapp`.
 
-      Run git status inside /home/student/webapp to see how Git currently
-      sees these files. They will appear as untracked — Git knows they exist
-      but is not tracking them yet. A git add . would stage all of them.
+      It contains four files that should never be committed: `.env`, `.env.local`, `app.pyc`, and `__pycache__/`.
+
+      Run `git status` and inspect the current working tree. Confirm that these files appear as untracked before you create any ignore rules.
     type: terminal_action
     hints:
       - "Run git status — all four files should appear under Untracked files"
@@ -75,20 +71,20 @@ tasks:
   - id: create-gitignore
     summary: Create a .gitignore that covers secrets and Python build artifacts
     prompt: >-
-      Create a .gitignore file in /home/student/webapp that ignores:
-      - .env and .env.* (secrets)
-      - *.pyc (Python bytecode)
-      - __pycache__/ (Python cache directory)
-
-      After creating it, run git status again. The .env, .env.local, app.pyc,
-      and __pycache__/ entries should disappear from the output. Only .gitignore
-      itself should appear as a new untracked file.
+      Based on what you found in the previous task, create a `.gitignore` in the project that keeps those files out of normal Git staging.
+      Just create the file, dont stage it.
     type: terminal_action
     hints:
-      - "Create the file with: printf '.env\\n.env.*\\n*.pyc\\n__pycache__/\\n' > .gitignore"
+      - "Create or open `.gitignore` in the repository root and add one ignore pattern per line."
       - "After creating it, git status should show .gitignore as the only new file"
     solution:
-      command: "cd /home/student/webapp && printf '.env\\n.env.*\\n*.pyc\\n__pycache__/\\n' > .gitignore"
+      command: |-
+        cd /home/student/webapp && cat > .gitignore <<'EOF'
+        .env
+        .env.*
+        *.pyc
+        __pycache__/
+        EOF
     validation:
       command: |-
         python3 -c "
@@ -123,76 +119,49 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Create .gitignore with patterns for .env, .env.*, *.pyc, and __pycache__/.
+      Create .gitignore with patterns for .env, .env.*, *.pyc, and `__pycache__/`.
       After creating it, git status should show only .gitignore as a new file.
 
-  - id: check-ignored
-    summary: Confirm what is being ignored
+  - id: publish-gitignore
+    summary: Commit and synchronize the ignore rules
     prompt: >-
-      git status --ignored shows files that are actively being ignored by
-      .gitignore patterns, in addition to regular status output.
-
-      Run it inside /home/student/webapp to confirm .env, .env.local, app.pyc,
-      and __pycache__/ are all in the ignored list.
+      Your `.gitignore` is now configured and the unwanted files are being ignored.
+      Commit the file to the repository and push your changes. When finished, the working tree should be clean and the remote
+      `main` branch should contain your latest commit.
     type: terminal_action
     hints:
-      - "git status --ignored shows the ignored files section"
+      - "Check `git status` to see what still needs to be committed."
+      - "You need to stage and commit `.gitignore` before synchronizing with the remote."
+      - "Check `git status` again after pushing to verify that the working tree is clean."
     solution:
-      command: "cd /home/student/webapp && git status --ignored"
-    validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys, os
-        os.chdir('/home/student/webapp')
-        result = subprocess.run(['git', 'status', '--ignored'], capture_output=True, text=True)
-        if 'Ignored files' in result.stdout and '.env' in result.stdout:
-            print('RESULT_OK')
-        else:
-            print('RESULT_FAIL: run git status --ignored')
-            sys.exit(1)
-        "
-      match_type: exact
-      expected_output: RESULT_OK
-    error_message: >-
-      Run git status --ignored inside /home/student/webapp. You should see
-      an Ignored files section listing .env, .env.local, app.pyc, and __pycache__/.
-
-  - id: untrack-already-committed
-    summary: Stop tracking a file that was already committed
-    prompt: >-
-      Suppose app.py had contained a secret that was committed in the initial
-      commit. Adding app.py to .gitignore would do nothing — Git is already
-      tracking it.
-
-      Simulate this: add .env to the repository by staging and committing it
-      (git add --force .env, then commit). This represents what happens when
-      someone commits a secret before setting up .gitignore.
-
-      Then use git rm --cached .env to stop tracking it, and commit that removal.
-      After this: .env should still exist on disk but should not appear in
-      git diff or git status as a tracked file.
-    type: terminal_action
-    hints:
-      - "git add --force .env bypasses .gitignore and stages the file"
-      - "After committing it, git rm --cached .env removes it from tracking"
-      - "Commit the removal with git commit -m 'Remove .env from tracking'"
-    solution:
-      command: "cd /home/student/webapp && git add --force .env && git commit -m 'Accidentally commit .env' && git rm --cached .env && git commit -m 'Remove .env from tracking'"
+      command: "cd /home/student/webapp && git add .gitignore && git commit -m 'Add .gitignore to ignore secrets and build artifacts' && git push origin main"
     validation:
       command: |-
         python3 -c "
         import subprocess, sys, os
         os.chdir('/home/student/webapp')
 
-        # .env should still exist on disk
-        if not os.path.exists('.env'):
-            print('RESULT_FAIL: .env was deleted from disk — git rm --cached should leave the file intact')
+        # Check that .gitignore is included in the latest commit
+        committed_files = subprocess.run(
+          ['git', 'show', '--name-only', '--format=', 'HEAD'],
+          capture_output=True, text=True
+        ).stdout.splitlines()
+        if '.gitignore' not in committed_files:
+          print('RESULT_FAIL: .gitignore is not included in the latest commit')
+          sys.exit(1)
+
+        # Check if working tree is clean
+        status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True).stdout
+        if status.strip():
+            print('RESULT_FAIL: working tree not clean after commit and push')
             sys.exit(1)
 
-        # .env should not be tracked
-        tracked = subprocess.run(['git', 'ls-files', '.env'], capture_output=True, text=True).stdout
-        if tracked.strip():
-            print('RESULT_FAIL: .env is still tracked — run git rm --cached .env and commit')
+        # Check if remote has the latest commit
+        remote_log = subprocess.run(['git', 'ls-remote', 'origin', 'main'], capture_output=True, text=True).stdout
+        local_commit = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+        remote_commit = remote_log.split()[0] if remote_log else ''
+        if local_commit != remote_commit:
+            print('RESULT_FAIL: remote main branch does not have the latest commit')
             sys.exit(1)
 
         print('RESULT_OK')
@@ -200,60 +169,4 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Use git add --force .env to stage it despite .gitignore, commit it,
-      then run git rm --cached .env and commit again. After both commits,
-      .env should exist on disk but not be tracked by Git.
-
-  - id: publish-gitignore
-    summary: Commit .gitignore and push the clean repository to the remote server
-    prompt: >-
-      Now that your sensitive files and build artifacts are properly ignored
-      and untracked, record .gitignore into the repository history and synchronize
-      with the remote.
-
-      1. Stage and commit .gitignore:
-         `git add .gitignore`
-         `git commit -m "Add .gitignore for secrets and build artifacts"`
-      2. Push your commits to the remote:
-         `git push`
-    type: terminal_action
-    hints:
-      - "Run git add .gitignore followed by git commit -m 'Add .gitignore'"
-      - "Run git push to upload your commits to origin/main"
-    solution:
-      command: "cd /home/student/webapp && git add .gitignore && git commit -m 'Add .gitignore for secrets and build artifacts' && git push"
-    validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys, os
-        cwd = '/home/student/webapp'
-
-        # .gitignore should be committed and tracked
-        ls = subprocess.run(['git', 'ls-files', '.gitignore'], capture_output=True, text=True, cwd=cwd).stdout
-        if not ls.strip():
-            print('RESULT_FAIL: .gitignore is not tracked. Run git add .gitignore and commit.')
-            sys.exit(0)
-
-        # Working tree status should show no untracked/modified tracked files
-        status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, cwd=cwd).stdout
-        if status.strip():
-            print('RESULT_FAIL: Working tree has uncommitted changes.')
-            sys.exit(0)
-
-        # Remote sync check
-        head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=cwd).stdout.strip()
-        remote_head = subprocess.run(['git', 'ls-remote', 'origin', 'refs/heads/main'], capture_output=True, text=True, cwd=cwd).stdout.split()
-        remote_sha = remote_head[0] if remote_head else ''
-
-        if not head or remote_sha != head:
-            print('RESULT_FAIL: Remote main does not match local HEAD. Run git push.')
-            sys.exit(0)
-
-        print('PUSH_OK')
-        "
-      match_type: exact
-      expected_output: PUSH_OK
-    error_message: >-
-      Stage and commit .gitignore, then run `git push` inside `/home/student/webapp`.
-      Ensure local HEAD matches `origin/main`.
-
+      Commit .gitignore and push to the remote. After pushing, the working tree should be clean and the remote main branch should contain your latest commit.

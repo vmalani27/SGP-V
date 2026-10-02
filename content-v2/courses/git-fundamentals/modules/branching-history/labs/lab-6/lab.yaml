@@ -2,7 +2,6 @@ id: lab-6
 title: Merging and Resolving Conflicts
 difficulty: intermediate
 estimated_time: 20
-xp: 75
 tags:
   - git
   - branches

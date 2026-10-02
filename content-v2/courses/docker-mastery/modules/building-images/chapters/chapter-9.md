@@ -104,90 +104,15 @@ Let's build and run the application. Notice:
 - `EXPOSE 3000` documents the port, but `-p 3000:3000` is what maps incoming host traffic to the container port.
 - `-d` runs the container in detached mode so your terminal stays free.
 
-Try it — click **Run this next**, review the command, then press Enter:
-
-:::terminal-demo
-id: building-application-image
-image: labops-docker-build:latest
-port: 3000
-pre_pull:
-  - node:20-alpine
-state:
-  label: web-server
-  command: docker inspect -f '{{.State.Status}}' web-server 2>/dev/null || echo "not running"
-steps:
-  - id: inspect-project
-    label: Enter the project directory and inspect files
-    run: cd ~/express-app && ls -la
-    expect: |
-      `Dockerfile`, `package.json`, `server.js`, and `.dockerignore` are present.
-  - id: inspect-dockerfile
-    label: View the Dockerfile
-    run: cat Dockerfile
-    expect: |
-      Notice the layer sequence: runtime base, working directory, package manifest,
-      npm install, application source copy, exposed port, and startup CMD.
-  - id: build-image
-    label: Build and tag the image
-    run: docker build -t express-app:1.0 .
-    expect: |
-      Docker loads the build context, downloads dependencies into a layer via
-      `RUN npm install`, and tags the image as `express-app:1.0`.
-  - id: run-container
-    label: Run in detached mode with port publishing
-    run: docker run -d -p 3000:3000 --name web-server express-app:1.0
-    expect: |
-      A container ID is printed, and the state chip flips to `running`. Port 3000
-      is mapped from your host into the container.
-  - id: verify-ps
-    label: Confirm the container is running
-    run: docker ps
-    expect: |
-      A row for `web-server` appears showing image `express-app:1.0` and status `Up`.
-  - id: verify-logs
-    label: Inspect application logs
-    run: docker logs web-server
-    expect: |
-      `Application listening on port 3000` is printed by the Express process.
-  - id: test-http
-    label: Send an HTTP request to the published port
-    run: curl -i http://localhost:3000
-    expect: |
-      HTTP/1.1 200 OK with `{"status":"ok","message":"Hello from inside the container!"}`.
-examples:
-  - docker inspect web-server --format '{{json .NetworkSettings.Ports}}'
-  - docker top web-server
 :::
+Try it in the terminal: inspect the project, build the image, run it with port publishing, and verify its logs and HTTP response.
 
 ## The Learning Loop (Cause & Effect)
 
 Now verify the real-world performance payoff of copying `package*.json` before application code. When you change `server.js`, Docker skips the expensive `npm install` layer and pulls it straight from cache.
 
-Run the experiment in the live terminal below:
-
-:::terminal-demo
-id: building-application-image
-image: labops-docker-build:latest
-pre_pull:
-  - node:20-alpine
-steps:
-  - id: edit-code
-    label: Modify the application response message
-    run: sed -i 's/Hello from inside the container!/Rebuilt in milliseconds with cached layers!/' server.js
-    expect: |
-      `server.js` is updated. `package.json` remains completely untouched.
-  - id: rebuild-cached
-    label: Rebuild the image
-    run: docker build -t express-app:1.1 .
-    expect: |
-      Look for `CACHED RUN npm install`. Because dependencies did not change,
-      Docker reuses the cached layer and the rebuild completes in under a second.
-  - id: compare-history
-    label: Compare image layer history
-    run: docker history express-app:1.1
-    expect: |
-      Earlier layers match `express-app:1.0`; only the top layers changed.
 :::
+Run the experiment in the terminal: change `server.js`, rebuild the image, and inspect its layer history to see Docker reuse the dependency layer.
 
 ## Key Takeaways
 

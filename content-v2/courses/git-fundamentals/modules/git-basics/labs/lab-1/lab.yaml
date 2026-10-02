@@ -2,7 +2,6 @@ id: lab-1
 title: Setting Up Git
 difficulty: beginner
 estimated_time: 10
-xp: 50
 tags:
   - git
   - fundamentals
@@ -22,57 +21,69 @@ tasks:
     prompt: >-
       Set your global Git username to 'Alex Chen'. Every commit you make on this system will use this name.
     type: terminal_action
+    hints:
+      - "Use the Git configuration command with the global scope flag."
+      - "Ensure the key matches the standard user name property."
+    solution:
+      command: git config --global user.name "Alex Chen"
     validation:
       command: git config --global user.name
       match_type: exact
       expected_output: "Alex Chen"
     error_message: >-
-      Global username is not set to 'Alex Chen'.
-    hint: >-
-      Check the user.name setting using Git's global configuration flag.
+      Global username is not set to 'Alex Chen'. Make sure your global user configuration is set accurately.
 
   - id: set-global-email
     title: Set your global Git email
     prompt: >-
       Set your global Git email to 'alex.chen@engineering.local'.
     type: terminal_action
+    hints:
+      - "Set the email configuration property at the global level."
+      - "Check that the email address is spelled exactly as specified."
+    solution:
+      command: git config --global user.email "alex.chen@engineering.local"
     validation:
       command: git config --global user.email
       match_type: exact
       expected_output: "alex.chen@engineering.local"
     error_message: >-
-      Global email is not set to 'alex.chen@engineering.local'.
-    hint: >-
-      Check the user.email setting in your global configuration.
+      Global email is not set to 'alex.chen@engineering.local'. Check your global configuration settings.
 
   - id: change-default-branch
     title: Change your default branch to 'main'
     prompt: >-
-      Tell Git to name the starting branch 'main' whenever you initialize a new repo.
+      Configure Git so that any newly initialized repository creates its initial branch as 'main' instead of the legacy default.
     type: terminal_action
+    hints:
+      - "Git has an initialization configuration setting for the default branch name."
+      - "Apply this setting globally so all future repositories inherit it."
+    solution:
+      command: git config --global init.defaultBranch main
     validation:
       command: git config --global init.defaultBranch
       match_type: exact
       expected_output: "main"
     error_message: >-
-      Default branch name is not set to 'main'.
-    hint: >-
-      Git has an init setting to pick the starting branch name.
+      Default initial branch name is not set to 'main'. Verify your global initialization configuration.
 
   - id: create-test-repo
     title: Create a test repo to confirm settings
     prompt: >-
-      Make a new directory at '~/workspace/verification-project' and initialize a Git repo inside it.
+      Create a new project directory at '~/workspace/verification-project' and initialize a Git repository inside it to verify your configuration settings.
     type: terminal_action
+    hints:
+      - "Ensure the target directory exists before running repository initialization."
+      - "Verify that Git initialized the repository with the newly configured default branch."
+    solution:
+      command: mkdir -p ~/workspace/verification-project && cd ~/workspace/verification-project && git init
     validation:
       command: >-
         test -d ~/workspace/verification-project/.git && grep -q 'refs/heads/main' ~/workspace/verification-project/.git/HEAD && echo READY
       match_type: exact
       expected_output: "READY"
     error_message: >-
-      Repo was not created at ~/workspace/verification-project with branch 'main'.
-    hint: >-
-      Create the folder first and run Git initialization inside it.
+      Repository was not found at ~/workspace/verification-project with initial branch 'main'. Verify directory creation and repository initialization.
 
 completion:
   required_tasks: all

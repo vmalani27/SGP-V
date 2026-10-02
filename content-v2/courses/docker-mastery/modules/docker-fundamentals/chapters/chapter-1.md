@@ -46,32 +46,16 @@ Namespaces are a Linux kernel feature that gives each container its own isolated
 
 When Docker starts a container, it creates a new set of namespaces for that container. The container's init process (PID 1) runs in its own PID namespace and sees no other processes on the host. It has its own network stack with its own loopback interface. Its filesystem is the image layers, mounted in an isolated mount namespace. From the container's perspective, it is the only thing running on the machine.
 
-See for yourself — each command below spins up a fresh Alpine container whose isolation you observe from inside:
+You can observe these boundaries by running a few commands inside Alpine:
 
-:::terminal-demo
-id: why-containers
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-steps:
-  - id: see-own-processes
-    label: The container sees only its own processes
-    run: docker run --rm alpine:latest ps aux
-    expect: |
-      Only a handful of processes, with `PID 1` being the container's own
-      shell — the host's processes are invisible. That is the PID namespace.
-  - id: see-own-hostname
-    label: The container has its own hostname
-    run: docker run --rm alpine:latest hostname
-    expect: |
-      A short random ID, not your machine's hostname — its own UTS namespace.
-  - id: see-own-filesystem
-    label: The container has its own filesystem
-    run: docker run --rm alpine:latest ls /
-    expect: |
-      A minimal Alpine root filesystem — `bin`, `etc`, `lib` — not the host's
-      directory tree. Each container mounts its image layers in an isolated
-      mount namespace.
+```bash
+docker run --rm alpine:latest ps aux
+docker run --rm alpine:latest hostname
+docker run --rm alpine:latest ls /
+```
+
+The process list shows only the container's own processes, the hostname is separate from the host, and the filesystem is the minimal Alpine image rather than the host's directory tree.
+
 :::
 
 ### How Containers Stay Under Control: Cgroups
@@ -107,35 +91,16 @@ Image (read-only layers)   Container (CoW layer + process tree)
 
 When you run a container, Docker adds a thin writable layer on top of the read-only image. Any changes the running application makes go into this layer. When you stop the container, this layer is discarded. The image stays unchanged.
 
-Run the same image and watch it stay unchanged while a fresh container is created, runs, and exits on its own:
+Run the same image twice and inspect the image afterward:
 
-:::terminal-demo
-id: why-containers
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-steps:
-  - id: run-first
-    label: Run the image as a container
-    run: docker run --rm alpine:latest echo HELLO_FROM_ALPINE
-    expect: |
-      `HELLO_FROM_ALPINE` is printed and the container exits on its own — the
-      `--rm` flag removes it as soon as it stops.
-  - id: run-again
-    label: Run the same image again
-    run: docker run --rm alpine:latest echo SECOND_CONTAINER
-    expect: |
-      `SECOND_CONTAINER` is printed. The same image produced another,
-      independent container.
-  - id: confirm-image
-    label: The image is still there
-    run: docker images alpine
-    expect: |
-      A row for `alpine` with tag `latest` — running containers did not modify
-      the image; it stays as the read-only recipe.
-examples:
-  - docker run --rm alpine:latest cat /etc/os-release
-  - docker run --rm alpine:latest echo "same everywhere"
+```bash
+docker run --rm alpine:latest echo HELLO_FROM_ALPINE
+docker run --rm alpine:latest echo SECOND_CONTAINER
+docker images alpine
+```
+
+Both containers run independently and are removed after they exit. The Alpine image remains unchanged because containers use a separate writable layer.
+
 :::
 
 ## Docker Architecture

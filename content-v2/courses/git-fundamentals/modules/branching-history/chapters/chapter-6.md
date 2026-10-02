@@ -1,10 +1,6 @@
 # Chapter 6: Fixing Mistakes Without Panic
 
-:::terminal-demo
-id: git-fixing-mistakes
-image: labops-git-fundamentals:latest
 :::
-
 > **Before this chapter:** You should know the three Git areas — working directory, staging area, and repository — and be comfortable with `git add`, `git commit`, and `git log`.
 
 ## Nothing Is Permanent Until You Push
