@@ -277,7 +277,7 @@ export default function RoadmapView({
                         <div className={`shrink-0 ${getCourseBadgeShell(node.id)}`}>
                           {getCourseIcon(node.id)}
                         </div>
-                        {ongoingModule ? (
+                        {ongoingModule && !isUnreleased ? (
                           <div className="relative h-6 overflow-hidden flex-1">
                             <div
                               className={`flex flex-col ${
@@ -339,7 +339,7 @@ export default function RoadmapView({
 
                       {/* Row 3: Footer (Tally with Looping Swipe-up Transition & Action Trigger) */}
                       <div className="flex items-center justify-between text-xs font-mono pt-1 mt-auto">
-                        {ongoingModule ? (
+                        {ongoingModule && !isUnreleased ? (
                           <div className="relative h-4 overflow-hidden">
                             <div
                               className={`flex flex-col ${
@@ -358,7 +358,7 @@ export default function RoadmapView({
                               <div className="h-4 flex items-center shrink-0">
                                 <span className="text-zinc-500 font-mono text-xs">
                                   {isUnreleased
-                                    ? totalLabs > 0 ? `${totalLabs} Labs` : ''
+                                    ? 'Coming Soon'
                                     : `${completedCount} / ${totalLabs} Labs`}
                                 </span>
                               </div>
@@ -374,7 +374,7 @@ export default function RoadmapView({
                               <div className="h-4 flex items-center shrink-0">
                                 <span className="text-zinc-500 font-mono text-xs">
                                   {isUnreleased
-                                    ? totalLabs > 0 ? `${totalLabs} Labs` : ''
+                                    ? 'Coming Soon'
                                     : `${completedCount} / ${totalLabs} Labs`}
                                 </span>
                               </div>
@@ -383,7 +383,7 @@ export default function RoadmapView({
                         ) : (
                           <span className="text-zinc-500 font-mono text-xs">
                             {isUnreleased
-                              ? totalLabs > 0 ? `${totalLabs} Labs` : ''
+                              ? 'Coming Soon'
                               : `${completedCount} / ${totalLabs} Labs`}
                           </span>
                         )}

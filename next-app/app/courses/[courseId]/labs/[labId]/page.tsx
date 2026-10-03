@@ -18,6 +18,12 @@ export default async function LabPage({
   const nextItem = idx >= 0 ? items[idx + 1] : undefined;
 
   return (
-    <LabClient courseId={courseId} labId={labId} course={course} nextItem={nextItem} />
+    <LabClient
+      key={`${courseId}-${labId}`}
+      courseId={courseId}
+      labId={labId}
+      course={course}
+      nextItem={nextItem}
+    />
   );
 }

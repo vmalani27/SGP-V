@@ -341,12 +341,13 @@ export default function LabClient({
   const [lastPolledAt, setLastPolledAt] = useState<Date | null>(null);
   const celebrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskProgressRef = useRef<TaskProgressData | null>(null);
-  const initialCheckDone = useRef(false);
+  const lastCheckedKey = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !courseId || !labId) return;
-    if (initialCheckDone.current) return;
-    initialCheckDone.current = true;
+    const currentKey = `${courseId}:${labId}`;
+    if (lastCheckedKey.current === currentKey) return;
+    lastCheckedKey.current = currentKey;
 
     let labInfoResult: LabInfo | null = null;
 

@@ -13,7 +13,7 @@ export const roadmapNodes: RoadmapNode[] = [
     slug: 'linux-basics',
     title: 'Linux Fundamentals',
     stage: 'Foundations',
-    status: 'available',
+    status: 'unreleased',
     progress: { completed: 0, total: 8 },
   },
   {
@@ -31,14 +31,6 @@ export const roadmapNodes: RoadmapNode[] = [
     stage: 'Runtimes & Networks',
     status: 'available',
     progress: { completed: 0, total: 29 },
-  },
-  {
-    id: 'docker-compose',
-    slug: 'docker-mastery',
-    title: 'Docker Compose & Multi-Container',
-    stage: 'Runtimes & Networks',
-    status: 'available',
-    progress: { completed: 0, total: 12 },
   },
   {
     id: 'kubernetes-fundamentals',
