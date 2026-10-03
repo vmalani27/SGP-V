@@ -9,7 +9,7 @@
 #   docker build -t labops-docker-build:latest -f Dockerfile.docker-build .
 # ──────────────────────────────────────────────────────────────
 
-ARG BASE_IMAGE=labops-docker:latest
+ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/vmalani27/labops-docker:latest
 FROM ${BASE_IMAGE}
 
 # Ensure git, curl, and Node.js 20 are present for repository inspection & local testing in labs

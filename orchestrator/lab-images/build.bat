@@ -28,15 +28,15 @@ set "DOCKER_CONFIG=%DOCKER_CONFIG_DIR%"
 call :pull_preloads
 if errorlevel 1 goto :failed
 
-call :build_and_push "labops-ubuntu:latest" "labops-base:%TAG%" "Dockerfile.ubuntu"
+call :build_and_push "labops-ubuntu:latest" "labops-ubuntu:%TAG%" "Dockerfile.ubuntu"
 if errorlevel 1 goto :failed
-call :build_and_push "labops-docker:latest" "labops-labs:docker-%TAG%" "Dockerfile.docker"
+call :build_and_push "labops-docker:latest" "labops-docker:%TAG%" "Dockerfile.docker"
 if errorlevel 1 goto :failed
-call :build_and_push "labops-docker-fundamentals:latest" "labops-labs:docker-fundamentals-%TAG%" "Dockerfile.docker-fundamentals"
+call :build_and_push "labops-docker-fundamentals:latest" "labops-docker-fundamentals:%TAG%" "Dockerfile.docker-fundamentals"
 if errorlevel 1 goto :failed
-call :build_and_push "labops-docker-build:latest" "labops-labs:docker-build-%TAG%" "Dockerfile.docker-build"
+call :build_and_push "labops-docker-build:latest" "labops-docker-build:%TAG%" "Dockerfile.docker-build"
 if errorlevel 1 goto :failed
-call :build_and_push "labops-git-fundamentals:latest" "labops-labs:git-fundamentals-%TAG%" "Dockerfile.git-fundamentals"
+call :build_and_push "labops-git-fundamentals:latest" "labops-git-fundamentals:%TAG%" "Dockerfile.git-fundamentals"
 if errorlevel 1 goto :failed
 
 echo All images built and pushed successfully.

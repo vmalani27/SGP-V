@@ -24,7 +24,7 @@
 #   - credential helper pointed at git-server:3000 with student:password123
 # ──────────────────────────────────────────────────────────────
 
-ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/vmalani27/labops-base:ubuntu-22.04
+ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/vmalani27/labops-ubuntu:latest
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive

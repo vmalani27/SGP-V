@@ -12,11 +12,15 @@ on:
   workflow_dispatch:
     inputs:
       specific_image:
-        description: 'Optional single image to mirror (e.g., python:3.11-slim). Leave blank to mirror the standard matrix.'
+        description: 'Optional single source image to mirror (e.g., python:3.11-slim). Leave blank to mirror matrix.'
+        required: false
+        type: string
+      target_repo:
+        description: 'Target ECR repo (e.g., labops-ubuntu, labops-python, labops-git-server)'
         required: false
         type: string
       target_tag:
-        description: 'Tag name under vmalani27/labops-base (e.g., python-3.11-slim)'
+        description: 'Tag name under target repo (e.g., latest, 22.04)'
         required: false
         type: string
 
@@ -26,17 +30,16 @@ permissions:
   security-events: write
 
 env:
-  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION || 'us-east-1' }}
-  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
-  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY || 'public.ecr.aws/i9t1l0m7' }}
-  TARGET_REPO: vmalani27/labops-base
-  DYNAMODB_REGION: ${{ vars.DYNAMODB_REGION || 'ap-south-1' }}
-  DYNAMODB_TABLE: ${{ vars.DYNAMODB_TABLE || 'labops-image-audit' }}
+  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+  DYNAMODB_REGION: ${{ vars.DYNAMODB_REGION }}
+  DYNAMODB_TABLE: ${{ vars.DYNAMODB_TABLE }}
 
 jobs:
   # ── 1. MATRIX MIRROR JOB ───────────────────────────────────────────
   mirror-matrix:
-    name: Mirror ${{ matrix.image.tag }}
+    name: Mirror ${{ matrix.image.repo }}:${{ matrix.image.tag }}
     if: "${{ github.event.inputs.specific_image == '' }}"
     runs-on: ubuntu-latest
     environment: dev
@@ -44,14 +47,21 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { source: "ubuntu:22.04",       tag: "ubuntu-22.04"         }
-          - { source: "python:3.12-alpine",  tag: "python-3.12-alpine"   }
-          - { source: "node:20-alpine",      tag: "node-20-alpine"       }
-          - { source: "golang:1.23-alpine",  tag: "golang-1.23-alpine"   }
-          - { source: "alpine:3.20",         tag: "alpine-3.20"          }
-          - { source: "gitea/gitea:latest",  tag: "gitea-latest"         }
-          - { source: "nginx:alpine",        tag: "nginx-alpine"         }
-          - { source: "redis:alpine",        tag: "redis-alpine"         }
+          - { source: "ubuntu:22.04",       repo: "labops-ubuntu",     tag: "latest"       }
+          - { source: "ubuntu:22.04",       repo: "labops-ubuntu",     tag: "22.04"        }
+          - { source: "gitea/gitea:latest",  repo: "labops-git-server", tag: "latest"       }
+          - { source: "python:3.12-alpine",  repo: "labops-python",     tag: "3.12-alpine" }
+          - { source: "python:3.12-alpine",  repo: "labops-python",     tag: "latest"       }
+          - { source: "node:20-alpine",      repo: "labops-node",       tag: "20-alpine"   }
+          - { source: "node:20-alpine",      repo: "labops-node",       tag: "latest"       }
+          - { source: "golang:1.23-alpine",  repo: "labops-golang",     tag: "1.23-alpine" }
+          - { source: "golang:1.23-alpine",  repo: "labops-golang",     tag: "latest"       }
+          - { source: "alpine:3.20",         repo: "labops-alpine",     tag: "3.20"        }
+          - { source: "alpine:3.20",         repo: "labops-alpine",     tag: "latest"       }
+          - { source: "nginx:1.27-alpine",   repo: "labops-nginx",      tag: "1.27-alpine" }
+          - { source: "nginx:1.27-alpine",   repo: "labops-nginx",      tag: "latest"       }
+          - { source: "redis:alpine",        repo: "labops-redis",      tag: "alpine"      }
+          - { source: "redis:alpine",        repo: "labops-redis",      tag: "latest"       }
 
     steps:
       - name: Configure AWS credentials
@@ -65,10 +75,10 @@ jobs:
         with:
           registry-type: public
 
-      - name: Pull, Retag, and Push Image to labops-base
+      - name: Pull, Retag, and Push Image to Dedicated Repo
         run: |
           SOURCE="${{ matrix.image.source }}"
-          DEST="${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ matrix.image.tag }}"
+          DEST="${{ env.ECR_PUBLIC_REGISTRY }}/${{ matrix.image.repo }}:${{ matrix.image.tag }}"
 
           echo "==> [1/3] Pulling from Docker Hub: ${SOURCE}"
           docker pull "${SOURCE}"
@@ -85,7 +95,7 @@ jobs:
       - name: Run Trivy Vulnerability Scanner (SARIF)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ matrix.image.tag }}'
+          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ matrix.image.repo }}:${{ matrix.image.tag }}'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -93,7 +103,7 @@ jobs:
       - name: Run Trivy Vulnerability Scanner (JSON for DynamoDB)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ matrix.image.tag }}'
+          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ matrix.image.repo }}:${{ matrix.image.tag }}'
           format: 'json'
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH'
@@ -103,11 +113,11 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
-          category: '${{ matrix.image.tag }}'
+          category: '${{ matrix.image.repo }}-${{ matrix.image.tag }}'
 
       - name: Log to DynamoDB
         run: |
-          TAG="${{ matrix.image.tag }}"
+          TAG="${{ matrix.image.repo }}:${{ matrix.image.tag }}"
           CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
           HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
           CRIT_VAL=$(echo "${CRITICAL_COUNT:-0}" | tr -dc '0-9')
@@ -117,7 +127,7 @@ jobs:
 
           DIGEST=$(jq -r '.Metadata.RepoDigests[0] // empty' trivy-results.json 2>/dev/null || true)
           if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
-            DIGEST=$(docker inspect --format='{{range .RepoDigests}}{{.}}{{end}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:$TAG" 2>/dev/null || true)
+            DIGEST=$(docker inspect --format='{{range .RepoDigests}}{{.}}{{end}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ matrix.image.repo }}:${{ matrix.image.tag }}" 2>/dev/null || true)
           fi
           DIGEST=$(echo "$DIGEST" | tr -d '\r\n"' | xargs)
           [ -z "$DIGEST" ] && DIGEST="unknown"
@@ -153,8 +163,8 @@ jobs:
     steps:
       - name: Validate Inputs
         run: |
-          if [ -z "${{ github.event.inputs.target_tag }}" ]; then
-            echo "[-] ERROR: When providing a specific_image, target_tag is required (e.g., python-3.11-slim)."
+          if [ -z "${{ github.event.inputs.target_repo }}" ] || [ -z "${{ github.event.inputs.target_tag }}" ]; then
+            echo "[-] ERROR: When providing a specific_image, target_repo and target_tag are required (e.g., target_repo=labops-ubuntu, target_tag=latest)."
             exit 1
           fi
 
@@ -169,10 +179,10 @@ jobs:
         with:
           registry-type: public
 
-      - name: Pull, Retag, and Push Single Image to labops-base
+      - name: Pull, Retag, and Push Single Image to Dedicated Repo
         run: |
           SOURCE="${{ github.event.inputs.specific_image }}"
-          DEST="${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ github.event.inputs.target_tag }}"
+          DEST="${{ env.ECR_PUBLIC_REGISTRY }}/${{ github.event.inputs.target_repo }}:${{ github.event.inputs.target_tag }}"
 
           echo "==> [1/3] Pulling from Docker Hub: ${SOURCE}"
           docker pull "${SOURCE}"
@@ -189,7 +199,7 @@ jobs:
       - name: Run Trivy Vulnerability Scanner (SARIF)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ github.event.inputs.target_tag }}'
+          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ github.event.inputs.target_repo }}:${{ github.event.inputs.target_tag }}'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -197,7 +207,7 @@ jobs:
       - name: Run Trivy Vulnerability Scanner (JSON for DynamoDB)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:${{ github.event.inputs.target_tag }}'
+          image-ref: '${{ env.ECR_PUBLIC_REGISTRY }}/${{ github.event.inputs.target_repo }}:${{ github.event.inputs.target_tag }}'
           format: 'json'
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH'
@@ -207,11 +217,11 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
-          category: '${{ github.event.inputs.target_tag }}'
+          category: '${{ github.event.inputs.target_repo }}-${{ github.event.inputs.target_tag }}'
 
       - name: Log to DynamoDB
         run: |
-          TAG="${{ github.event.inputs.target_tag }}"
+          TAG="${{ github.event.inputs.target_repo }}:${{ github.event.inputs.target_tag }}"
           CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
           HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
           CRIT_VAL=$(echo "${CRITICAL_COUNT:-0}" | tr -dc '0-9')
@@ -221,7 +231,7 @@ jobs:
 
           DIGEST=$(jq -r '.Metadata.RepoDigests[0] // empty' trivy-results.json 2>/dev/null || true)
           if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
-            DIGEST=$(docker inspect --format='{{range .RepoDigests}}{{.}}{{end}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.TARGET_REPO }}:$TAG" 2>/dev/null || true)
+            DIGEST=$(docker inspect --format='{{range .RepoDigests}}{{.}}{{end}}' "${{ env.ECR_PUBLIC_REGISTRY }}/${{ github.event.inputs.target_repo }}:${{ github.event.inputs.target_tag }}" 2>/dev/null || true)
           fi
           DIGEST=$(echo "$DIGEST" | tr -d '\r\n"' | xargs)
           [ -z "$DIGEST" ] && DIGEST="unknown"

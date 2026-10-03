@@ -64,35 +64,35 @@ def generate_release_manifest(
                 "digest": "",
             },
             "proxy": {
-                "remote": f"{registry_base}/labops-base:nginx-alpine",
+                "remote": f"{registry_base}/labops-proxy:{tag}",
                 "digest": "",
             },
             "git-server": {
-                "remote": f"{registry_base}/labops-base:gitea-latest",
+                "remote": f"{registry_base}/labops-git-server:latest",
                 "digest": "",
             },
             "labops-ubuntu": {
-                "remote": f"{registry_base}/labops-base:{tag}",
+                "remote": f"{registry_base}/labops-ubuntu:{tag}",
                 "digest": "",
                 "alias": "labops-ubuntu:latest",
             },
             "labops-docker": {
-                "remote": f"{registry_base}/labops-labs:docker-{tag}",
+                "remote": f"{registry_base}/labops-docker:{tag}",
                 "digest": "",
                 "alias": "labops-docker:latest",
             },
             "labops-docker-fundamentals": {
-                "remote": f"{registry_base}/labops-labs:docker-fundamentals-{tag}",
+                "remote": f"{registry_base}/labops-docker-fundamentals:{tag}",
                 "digest": "",
                 "alias": "labops-docker-fundamentals:latest",
             },
             "labops-docker-build": {
-                "remote": f"{registry_base}/labops-labs:docker-build-{tag}",
+                "remote": f"{registry_base}/labops-docker-build:{tag}",
                 "digest": "",
                 "alias": "labops-docker-build:latest",
             },
             "labops-git-fundamentals": {
-                "remote": f"{registry_base}/labops-labs:git-fundamentals-{tag}",
+                "remote": f"{registry_base}/labops-git-fundamentals:{tag}",
                 "digest": "",
                 "alias": "labops-git-fundamentals:latest",
             },

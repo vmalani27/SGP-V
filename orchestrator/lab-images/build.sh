@@ -30,12 +30,12 @@ docker save alpine:latest -o preloads/alpine.tar
 docker pull nginx:alpine
 docker save nginx:alpine -o preloads/nginx.tar
 echo "Building base ubuntu..."
-build_and_push "labops-ubuntu:latest" "labops-base:$TAG" "Dockerfile.ubuntu"
+build_and_push "labops-ubuntu:latest" "labops-ubuntu:$TAG" "Dockerfile.ubuntu"
 echo "Building docker base..."
-build_and_push "labops-docker:latest" "labops-labs:docker-$TAG" "Dockerfile.docker"
+build_and_push "labops-docker:latest" "labops-docker:$TAG" "Dockerfile.docker"
 echo "Building docker fundamentals..."
-build_and_push "labops-docker-fundamentals:latest" "labops-labs:docker-fundamentals-$TAG" "Dockerfile.docker-fundamentals"
+build_and_push "labops-docker-fundamentals:latest" "labops-docker-fundamentals:$TAG" "Dockerfile.docker-fundamentals"
 echo "Building docker build..."
-build_and_push "labops-docker-build:latest" "labops-labs:docker-build-$TAG" "Dockerfile.docker-build"
+build_and_push "labops-docker-build:latest" "labops-docker-build:$TAG" "Dockerfile.docker-build"
 echo "Building git fundamentals..."
-build_and_push "labops-git-fundamentals:latest" "labops-labs:git-fundamentals-$TAG" "Dockerfile.git-fundamentals"
+build_and_push "labops-git-fundamentals:latest" "labops-git-fundamentals:$TAG" "Dockerfile.git-fundamentals"

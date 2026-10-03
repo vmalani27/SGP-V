@@ -66,13 +66,13 @@ func labOpsImages(channel string) []managedImage {
 		{Name: "Frontend Service", Remote: base + "/labops-frontend:" + channel},
 		{Name: "Orchestrator Service", Remote: base + "/labops-orchestrator:" + channel},
 		{Name: "Content-Sync Sidecar", Remote: base + "/labops-content-sync:" + channel},
-		{Name: "Proxy Image", Remote: base + "/labops-base:nginx-alpine"},
-		{Name: "Git Server Image", Remote: base + "/labops-base:gitea-latest"},
-		{Name: "Base Ubuntu Lab Image", Remote: base + "/labops-base:" + channel, Tags: []string{"labops-ubuntu:latest"}},
-		{Name: "Docker Lab (DinD)", Remote: base + "/labops-labs:docker-" + channel, Tags: []string{"labops-docker:latest"}},
-		{Name: "Docker Fundamentals Lab", Remote: base + "/labops-labs:docker-fundamentals-" + channel, Tags: []string{"labops-docker-fundamentals:latest"}},
-		{Name: "Docker Build Lab", Remote: base + "/labops-labs:docker-build-" + channel, Tags: []string{"labops-docker-build:latest"}},
-		{Name: "Git Fundamentals Lab", Remote: base + "/labops-labs:git-fundamentals-" + channel, Tags: []string{"labops-git-fundamentals:latest"}},
+		{Name: "Proxy Image", Remote: base + "/labops-proxy:" + channel},
+		{Name: "Git Server Image", Remote: base + "/labops-git-server:latest"},
+		{Name: "Base Ubuntu Lab Image", Remote: base + "/labops-ubuntu:" + channel, Tags: []string{"labops-ubuntu:latest"}},
+		{Name: "Docker Lab (DinD)", Remote: base + "/labops-docker:" + channel, Tags: []string{"labops-docker:latest"}},
+		{Name: "Docker Fundamentals Lab", Remote: base + "/labops-docker-fundamentals:" + channel, Tags: []string{"labops-docker-fundamentals:latest"}},
+		{Name: "Docker Build Lab", Remote: base + "/labops-docker-build:" + channel, Tags: []string{"labops-docker-build:latest"}},
+		{Name: "Git Fundamentals Lab", Remote: base + "/labops-git-fundamentals:" + channel, Tags: []string{"labops-git-fundamentals:latest"}},
 	}
 }
 

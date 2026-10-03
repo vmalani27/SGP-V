@@ -141,12 +141,9 @@ jobs:
       - name: Materialize .env.production
         run: |
           cat << 'EOF' > next-app/.env.production
-          NEXT_PUBLIC_ORCHESTRATOR_URL=${{ vars.NEXT_PUBLIC_ORCHESTRATOR_URL || secrets.NEXT_PUBLIC_ORCHESTRATOR_URL || '' }}
-          NEXT_PUBLIC_ORCHESTRATOR_SECRET=${{ vars.NEXT_PUBLIC_ORCHESTRATOR_SECRET || secrets.NEXT_PUBLIC_ORCHESTRATOR_SECRET || 'local-dev-super-secret' }}
+          NEXT_PUBLIC_ORCHESTRATOR_SECRET=${{ secrets.NEXT_PUBLIC_ORCHESTRATOR_SECRET }}
           CONTENT_LOCAL_DIR=/app/.content
           USER_DATA_DIR=/app/.user_data
-          CONTENT_PUBLIC_BASE_URL=${{ vars.CDN_URL }}
-          CDN_URL=${{ vars.CDN_URL }}
           EOF
 
       - name: Build & Push Frontend Image
@@ -229,59 +226,59 @@ jobs:
           echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
-      # 1. Base Image: labops-base
+      # 1. Base Image: labops-ubuntu
       - name: Build & Push Lab Base Image (lab-ubuntu)
         run: |
           docker build \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.ubuntu ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.sha }}"
 
-      # 2. DinD Image: labops-labs:docker
+      # 2. DinD Image: labops-docker
       - name: Build & Push Lab Image (lab-docker)
         run: |
           docker build \
-            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.docker ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker:${{ steps.tags.outputs.sha }}"
 
-      # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals
+      # 3. Preloaded Fundamentals Image: labops-docker-fundamentals
       - name: Build & Push Lab Image (lab-docker-fundamentals)
         run: |
           docker build \
-            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}" \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker-fundamentals:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker-fundamentals:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.docker-fundamentals ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker-fundamentals:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker-fundamentals:${{ steps.tags.outputs.sha }}"
 
-      # 4. Building Images Course Image: labops-labs:docker-build
+      # 4. Building Images Course Image: labops-docker-build
       - name: Build & Push Lab Image (lab-docker-build)
         run: |
           docker build \
-            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-build-${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-build-${{ steps.tags.outputs.sha }}" \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker-build:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker-build:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.docker-build ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-build-${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-build-${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker-build:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-docker-build:${{ steps.tags.outputs.sha }}"
 
-      # 5. Git Fundamentals Course Image: labops-labs:git-fundamentals
+      # 5. Git Fundamentals Course Image: labops-git-fundamentals
       - name: Build & Push Lab Image (lab-git-fundamentals)
         run: |
           docker build \
-            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:git-fundamentals-${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:git-fundamentals-${{ steps.tags.outputs.sha }}" \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-git-fundamentals:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-git-fundamentals:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.git-fundamentals ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:git-fundamentals-${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:git-fundamentals-${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-git-fundamentals:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-git-fundamentals:${{ steps.tags.outputs.sha }}"
 
   # ── AUDIT & NOTIFY ──────────────────────────────────────────────
   audit-and-notify:
@@ -316,7 +313,7 @@ jobs:
           [ "${{ needs.changes.outputs.orchestrator }}" == "true" ] && [ "${{ needs.build-orchestrator.result }}" == "success" ] && IMAGES+=("labops-orchestrator:${SHA}")
           [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ] && IMAGES+=("labops-frontend:${SHA}")
           [ "${{ needs.changes.outputs.content_sync }}" == "true" ] && [ "${{ needs.build-content-sync.result }}" == "success" ] && IMAGES+=("labops-content-sync:${SHA}")
-          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("labops-base:${SHA}" "labops-labs:docker-${SHA}" "labops-labs:docker-fundamentals-${SHA}" "labops-labs:docker-build-${SHA}" "labops-labs:git-fundamentals-${SHA}")
+          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("labops-ubuntu:${SHA}" "labops-docker:${SHA}" "labops-docker-fundamentals:${SHA}" "labops-docker-build:${SHA}" "labops-git-fundamentals:${SHA}")
 
           echo "==> Built images to audit: ${IMAGES[@]}"
 

@@ -33,11 +33,11 @@ def get_canonical_ecr_ref(normalized_image: str) -> str | None:
     registry = ECR_PUBLIC_REGISTRY.rstrip("/")
     tag = IMAGE_TAG
     mapping = {
-        "labops-ubuntu:latest": f"{registry}/vmalani27/labops-base:{tag}",
-        "labops-docker:latest": f"{registry}/vmalani27/labops-labs:docker-{tag}",
-        "labops-docker-fundamentals:latest": f"{registry}/vmalani27/labops-labs:docker-fundamentals-{tag}",
-        "labops-docker-build:latest": f"{registry}/vmalani27/labops-labs:docker-build-{tag}",
-        "labops-git-fundamentals:latest": f"{registry}/vmalani27/labops-labs:git-fundamentals-{tag}",
+        "labops-ubuntu:latest": f"{registry}/labops-ubuntu:{tag}",
+        "labops-docker:latest": f"{registry}/labops-docker:{tag}",
+        "labops-docker-fundamentals:latest": f"{registry}/labops-docker-fundamentals:{tag}",
+        "labops-docker-build:latest": f"{registry}/labops-docker-build:{tag}",
+        "labops-git-fundamentals:latest": f"{registry}/labops-git-fundamentals:{tag}",
     }
     return mapping.get(normalized_image)
 
