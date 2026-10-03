@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "REGISTRY=%ECR_REGISTRY%"
-if "%REGISTRY%"=="" set "REGISTRY=public.ecr.aws/i9t1l0m7/vmalani27"
+if "%REGISTRY%"=="" set "REGISTRY=public.ecr.aws/i9t1l0m7"
 
 set "TAG=%~1"
 if "%TAG%"=="" set "TAG=dev"

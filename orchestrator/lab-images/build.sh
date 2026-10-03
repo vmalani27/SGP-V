@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REGISTRY="${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27}"
+REGISTRY="${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7}"
 TAG="${1:-dev}"
 DOCKER_CONFIG_DIR="$(mktemp -d)"
 trap 'rm -rf "$DOCKER_CONFIG_DIR"' EXIT
