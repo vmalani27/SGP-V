@@ -52,9 +52,6 @@ jobs:
           - os: linux
             arch: amd64
             binary: labops-linux-amd64
-          - os: linux
-            arch: arm64
-            binary: labops-linux-arm64
           - os: windows
             arch: amd64
             binary: labops-windows-amd64.exe
