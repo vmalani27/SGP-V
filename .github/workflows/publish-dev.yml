@@ -99,19 +99,19 @@ jobs:
           PROXY_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-proxy:dev" --raw | sha256sum | cut -d' ' -f1)
 
           # 5. Base Labs & Preloaded Labs
-          docker buildx build --platform linux/amd64,linux/arm64 -t "${REG}/labops-ubuntu:dev" --push ./orchestrator/lab-images/base
+          docker buildx build --platform linux/amd64,linux/arm64 -t "${REG}/labops-ubuntu:dev" -f ./orchestrator/lab-images/Dockerfile.ubuntu --push ./orchestrator/lab-images
           UBUNTU_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-ubuntu:dev" --raw | sha256sum | cut -d' ' -f1)
 
-          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-docker:dev" --push ./orchestrator/lab-images/docker
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-docker:dev" -f ./orchestrator/lab-images/Dockerfile.docker --push ./orchestrator/lab-images
           DOCKER_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker:dev" --raw | sha256sum | cut -d' ' -f1)
 
-          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-docker-fundamentals:dev" --push ./orchestrator/lab-images/docker-fundamentals
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-docker-fundamentals:dev" -f ./orchestrator/lab-images/Dockerfile.docker-fundamentals --push ./orchestrator/lab-images
           FUND_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-fundamentals:dev" --raw | sha256sum | cut -d' ' -f1)
 
-          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-docker:dev" -t "${REG}/labops-docker-build:dev" --push ./orchestrator/lab-images/docker-build
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-docker:dev" -t "${REG}/labops-docker-build:dev" -f ./orchestrator/lab-images/Dockerfile.docker-build --push ./orchestrator/lab-images
           BUILD_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-build:dev" --raw | sha256sum | cut -d' ' -f1)
 
-          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-git-fundamentals:dev" --push ./orchestrator/lab-images/git-fundamentals
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-git-fundamentals:dev" -f ./orchestrator/lab-images/Dockerfile.git-fundamentals --push ./orchestrator/lab-images
           GIT_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-git-fundamentals:dev" --raw | sha256sum | cut -d' ' -f1)
 
           # Create images.json audit map
