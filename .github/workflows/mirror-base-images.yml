@@ -47,21 +47,14 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { source: "ubuntu:22.04",       repo: "labops-ubuntu",     tag: "latest"       }
-          - { source: "ubuntu:22.04",       repo: "labops-ubuntu",     tag: "22.04"        }
-          - { source: "gitea/gitea:latest",  repo: "labops-git-server", tag: "latest"       }
-          - { source: "python:3.12-alpine",  repo: "labops-python",     tag: "3.12-alpine" }
-          - { source: "python:3.12-alpine",  repo: "labops-python",     tag: "latest"       }
-          - { source: "node:20-alpine",      repo: "labops-node",       tag: "20-alpine"   }
-          - { source: "node:20-alpine",      repo: "labops-node",       tag: "latest"       }
-          - { source: "golang:1.23-alpine",  repo: "labops-golang",     tag: "1.23-alpine" }
-          - { source: "golang:1.23-alpine",  repo: "labops-golang",     tag: "latest"       }
-          - { source: "alpine:3.20",         repo: "labops-alpine",     tag: "3.20"        }
-          - { source: "alpine:3.20",         repo: "labops-alpine",     tag: "latest"       }
-          - { source: "nginx:1.27-alpine",   repo: "labops-nginx",      tag: "1.27-alpine" }
-          - { source: "nginx:1.27-alpine",   repo: "labops-nginx",      tag: "latest"       }
-          - { source: "redis:alpine",        repo: "labops-redis",      tag: "alpine"      }
-          - { source: "redis:alpine",        repo: "labops-redis",      tag: "latest"       }
+          - { source: "ubuntu:22.04", repo: "labops-ubuntu", tag: "22.04" }
+          - { source: "gitea/gitea:latest", repo: "labops-git-server", tag: "latest" }
+          - { source: "python:3.12-alpine", repo: "labops-python", tag: "3.12-alpine" }
+          - { source: "node:20-alpine", repo: "labops-node", tag: "20-alpine" }
+          - { source: "golang:1.23-alpine", repo: "labops-golang", tag: "1.23-alpine" }
+          - { source: "alpine:3.20", repo: "labops-alpine", tag: "3.20" }
+          - { source: "nginx:1.27-alpine", repo: "labops-nginx", tag: "1.27-alpine" }
+          - { source: "redis:alpine", repo: "labops-redis", tag: "alpine" }
 
     steps:
       - name: Configure AWS credentials

@@ -101,6 +101,7 @@ jobs:
       - name: Build & Push Orchestrator Image
         run: |
           docker build \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-python:3.12-alpine" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-orchestrator:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-orchestrator:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/Dockerfile ./orchestrator
@@ -149,6 +150,7 @@ jobs:
       - name: Build & Push Frontend Image
         run: |
           docker build \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-node:20-alpine" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-frontend:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-frontend:${{ steps.tags.outputs.sha }}" \
             -f ./next-app/Dockerfile ./next-app
@@ -189,6 +191,8 @@ jobs:
       - name: Build & Push Content-Sync Image
         run: |
           docker build \
+            --build-arg BUILD_BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-golang:1.23-alpine" \
+            --build-arg RUNTIME_BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-alpine:3.20" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-content-sync:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-content-sync:${{ steps.tags.outputs.sha }}" \
             -f ./sidecars/content-sync/Dockerfile ./sidecars/content-sync
@@ -230,6 +234,7 @@ jobs:
       - name: Build & Push Lab Base Image (lab-ubuntu)
         run: |
           docker build \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:22.04" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.branch }}" \
             -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-ubuntu:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.ubuntu ./orchestrator/lab-images

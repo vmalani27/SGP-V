@@ -1,0 +1,329 @@
+name: release-tag-publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release Tag version (e.g. v0.4.0)'
+        required: true
+        type: string
+        default: 'v0.4.0'
+      channel:
+        description: 'Release Channel'
+        required: true
+        type: choice
+        options:
+          - stable
+          - beta
+          - dev
+        default: stable
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-tag-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+  CDN_URL: ${{ vars.CDN_URL }}
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+  CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
+
+jobs:
+  # ── 1. RESOLVE METADATA ───────────────────────────────────────────
+  setup-release:
+    name: Setup Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+    steps:
+      - name: Resolve Release Tag & Channel
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+            CHANNEL="${{ github.event.inputs.channel }}"
+          else
+            TAG="${{ github.ref_name }}"
+            if [[ "$TAG" == *"-beta"* ]]; then
+              CHANNEL="beta"
+            elif [[ "$TAG" == *"-dev"* ]]; then
+              CHANNEL="dev"
+            else
+              CHANNEL="stable"
+            fi
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "Release Tag: $TAG | Channel: $CHANNEL"
+
+  # ── 2. BUILD & PACK CURRICULUM CONTENT ───────────────────────────
+  build-content:
+    name: Build Curriculum Content & Catalog
+    runs-on: ubuntu-latest
+    needs: setup-release
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: pip install pyyaml
+
+      - name: Validate Curriculum Content
+        run: python scripts/validate_content.py content-v2/
+
+      - name: Generate Content Manifest & Tarball
+        run: python scripts/generate_manifest.py content-v2/ out/
+
+      - name: Upload Content Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-content-out
+          path: out/
+          retention-days: 1
+
+  # ── 3. BUILD & PUSH IMMUTABLE OCI IMAGES ─────────────────────────
+  build-images:
+    name: Build & Push OCI Images to ECR
+    runs-on: ubuntu-latest
+    needs: setup-release
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
+
+      - name: Log in to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push All Services & Lab Images
+        id: docker-build
+        run: |
+          TAG="${{ needs.setup-release.outputs.tag }}"
+          REG="${{ env.ECR_PUBLIC_REGISTRY }}"
+
+          echo "Building Services and Lab Images for release ${TAG}..."
+          
+          # 1. Frontend
+          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-node:20-alpine" -t "${REG}/labops-frontend:${TAG}" --push ./next-app
+          FE_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-frontend:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          # 2. Orchestrator
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-python:3.12-alpine" -t "${REG}/labops-orchestrator:${TAG}" --push ./orchestrator
+          ORCH_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-orchestrator:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          # 3. Content-Sync
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BUILD_BASE_IMAGE="${REG}/labops-golang:1.23-alpine" --build-arg RUNTIME_BASE_IMAGE="${REG}/labops-alpine:3.20" -t "${REG}/labops-content-sync:${TAG}" --push ./sidecars/content-sync
+          SYNC_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-content-sync:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          # 4. Proxy
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-nginx:1.27-alpine" -t "${REG}/labops-proxy:${TAG}" --push ./proxy
+          PROXY_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-proxy:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          # 5. Base Labs & Preloaded Labs
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:22.04" -t "${REG}/labops-ubuntu:${TAG}" -f ./orchestrator/lab-images/Dockerfile.ubuntu --push ./orchestrator/lab-images
+          UBUNTU_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-ubuntu:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:${TAG}" -t "${REG}/labops-docker:${TAG}" -f ./orchestrator/lab-images/Dockerfile.docker --push ./orchestrator/lab-images
+          DOCKER_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:${TAG}" -t "${REG}/labops-docker-fundamentals:${TAG}" -f ./orchestrator/lab-images/Dockerfile.docker-fundamentals --push ./orchestrator/lab-images
+          FUND_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-fundamentals:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-docker:${TAG}" -t "${REG}/labops-docker-build:${TAG}" -f ./orchestrator/lab-images/Dockerfile.docker-build --push ./orchestrator/lab-images
+          BUILD_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-build:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:${TAG}" -t "${REG}/labops-git-fundamentals:${TAG}" -f ./orchestrator/lab-images/Dockerfile.git-fundamentals --push ./orchestrator/lab-images
+          GIT_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-git-fundamentals:${TAG}" --raw | sha256sum | cut -d' ' -f1)
+
+          # Create images.json audit map
+          cat <<EOF > images.json
+          {
+            "frontend": { "remote": "${REG}/labops-frontend:${TAG}", "digest": "sha256:${FE_DIGEST}" },
+            "orchestrator": { "remote": "${REG}/labops-orchestrator:${TAG}", "digest": "sha256:${ORCH_DIGEST}" },
+            "content-sync": { "remote": "${REG}/labops-content-sync:${TAG}", "digest": "sha256:${SYNC_DIGEST}" },
+            "proxy": { "remote": "${REG}/labops-proxy:${TAG}", "digest": "sha256:${PROXY_DIGEST}" },
+            "git-server": { "remote": "${REG}/labops-git-server:latest", "digest": "" },
+            "labops-ubuntu": { "remote": "${REG}/labops-ubuntu:${TAG}", "digest": "sha256:${UBUNTU_DIGEST}", "alias": "labops-ubuntu:latest" },
+            "labops-docker": { "remote": "${REG}/labops-docker:${TAG}", "digest": "sha256:${DOCKER_DIGEST}", "alias": "labops-docker:latest" },
+            "labops-docker-fundamentals": { "remote": "${REG}/labops-docker-fundamentals:${TAG}", "digest": "sha256:${FUND_DIGEST}", "alias": "labops-docker-fundamentals:${TAG}" },
+            "labops-docker-build": { "remote": "${REG}/labops-docker-build:${TAG}", "digest": "sha256:${BUILD_DIGEST}", "alias": "labops-docker-build:${TAG}" },
+            "labops-git-fundamentals": { "remote": "${REG}/labops-git-fundamentals:${TAG}", "digest": "sha256:${GIT_DIGEST}", "alias": "labops-git-fundamentals:${TAG}" }
+          }
+          EOF
+
+      - name: Upload Images Metadata Map
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-images-meta
+          path: images.json
+          retention-days: 1
+
+  # ── 4. PUBLISH RELEASE MANIFEST & CDN ────────────────────────────
+  publish-release:
+    name: Publish Unified Release Manifest & Content
+    runs-on: ubuntu-latest
+    needs: [setup-release, build-content, build-images]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download Content Output
+        uses: actions/download-artifact@v4
+        with:
+          name: release-content-out
+          path: out/
+
+      - name: Download Images Metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: release-images-meta
+          path: ./
+
+      - name: Generate Unified Release Manifest
+        run: |
+          python scripts/generate_release_manifest.py \
+            "${{ needs.setup-release.outputs.tag }}" \
+            "${{ needs.setup-release.outputs.channel }}" \
+            out/ \
+            images.json \
+            --cdn-url "${{ env.CDN_URL }}"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
+
+      - name: Upload Content & Manifests to S3
+        run: |
+          # 1. Immutable content & release version manifest
+          aws s3 cp out/published/ "s3://${S3_BUCKET}/published/" --recursive --cache-control "public, max-age=31536000, immutable"
+          aws s3 cp out/releases/ "s3://${S3_BUCKET}/releases/" --recursive --cache-control "public, max-age=60, s-maxage=60"
+
+          # 2. Root pointers
+          aws s3 cp out/catalog.json "s3://${S3_BUCKET}/catalog.json" --cache-control "public, max-age=60, s-maxage=60"
+          aws s3 cp out/latest.json "s3://${S3_BUCKET}/latest.json" --cache-control "public, max-age=60, s-maxage=60"
+
+      - name: Invalidate CloudFront CDN Cache
+        run: |
+          if [ -n "$CLOUDFRONT_DIST_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$CLOUDFRONT_DIST_ID" \
+              --paths "/releases/*" "/latest.json" "/catalog.json"
+          fi
+
+  # ── 5. CROSS-COMPILE LABOPS CLI & CREATE GITHUB RELEASE ──────────
+  build-release-cli:
+    name: Build LabOps CLI & Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [setup-release, publish-release]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            binary: labops-linux-amd64
+          - os: linux
+            arch: arm64
+            binary: labops-linux-arm64
+          - os: darwin
+            arch: amd64
+            binary: labops-darwin-amd64
+          - os: darwin
+            arch: arm64
+            binary: labops-darwin-arm64
+          - os: windows
+            arch: amd64
+            binary: labops-windows-amd64.exe
+          - os: windows
+            arch: arm64
+            binary: labops-windows-arm64.exe
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          check-latest: true
+
+      - name: Compile Binary
+        working-directory: ./cli
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          TAG: ${{ needs.setup-release.outputs.tag }}
+          CHANNEL: ${{ needs.setup-release.outputs.channel }}
+          REGISTRY: ${{ env.ECR_PUBLIC_REGISTRY }}
+          CDN: ${{ env.CDN_URL }}
+        run: |
+          go build \
+            -ldflags="-s -w -X main.defaultChannel=${CHANNEL} -X main.defaultRegistry=${REGISTRY} -X main.defaultCDNURL=${CDN}" \
+            -trimpath \
+            -o "${{ matrix.binary }}" .
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-release-binaries
+          path: ./cli/${{ matrix.binary }}
+
+  # ── 6. PUBLISH GITHUB RELEASE ────────────────────────────────────
+  publish-github-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [setup-release, build-release-cli]
+    steps:
+      - name: Download All Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-release-binaries
+          path: ./binaries
+
+      - name: Generate Checksums
+        working-directory: ./binaries
+        run: |
+          chmod +x labops-linux-* labops-darwin-* 2>/dev/null || true
+          sha256sum labops-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.setup-release.outputs.tag }}
+          name: LabOps Release ${{ needs.setup-release.outputs.tag }}
+          draft: false
+          prerelease: ${{ needs.setup-release.outputs.channel != 'stable' }}
+          files: ./binaries/*

@@ -1,9 +1,11 @@
 # syntax=docker/dockerfile:1
 
+ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/labops-python:3.12-alpine
+
 ###############################################################################
 # builder - compile wheels and install dependencies
 ###############################################################################
-FROM python:3.12-alpine AS builder
+FROM ${BASE_IMAGE} AS builder
 
 WORKDIR /build
 
@@ -20,7 +22,8 @@ RUN python -m venv /opt/venv && \
 ###############################################################################
 # base - runtime dependencies and user setup
 ###############################################################################
-FROM python:3.12-alpine AS base
+ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/labops-python:3.12-alpine
+FROM ${BASE_IMAGE} AS base
 
 WORKDIR /app
 
