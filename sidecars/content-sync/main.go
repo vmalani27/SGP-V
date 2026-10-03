@@ -86,6 +86,7 @@ func (s *Syncer) readLocalVersion() string {
 }
 
 func (s *Syncer) checkAndSync() error {
+	var etag string
 	channel := os.Getenv("LABOPS_CHANNEL")
 	if channel == "" {
 		channel = "stable"
@@ -131,7 +132,7 @@ func (s *Syncer) checkAndSync() error {
 				if fResp.StatusCode == http.StatusOK {
 					bodyBytes, _ := io.ReadAll(fResp.Body)
 					_ = json.Unmarshal(bodyBytes, &info)
-					etag := fResp.Header.Get("ETag")
+					etag = fResp.Header.Get("ETag")
 					if etag != "" {
 						s.lastETag = etag
 					}
@@ -139,7 +140,7 @@ func (s *Syncer) checkAndSync() error {
 			}
 		}
 	} else if resp.StatusCode == http.StatusOK {
-		etag := resp.Header.Get("ETag")
+		etag = resp.Header.Get("ETag")
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("failed to read response body: %w", err)
@@ -175,7 +176,9 @@ func (s *Syncer) checkAndSync() error {
 	}
 
 	if currentVersion == info.Version && hasCourses {
-		s.lastETag = etag
+		if etag != "" {
+			s.lastETag = etag
+		}
 		log.Printf("[content-sync] Content is current (version %s)", currentVersion)
 		return nil
 	}
@@ -282,7 +285,9 @@ func (s *Syncer) checkAndSync() error {
 	changesBytes, _ := json.MarshalIndent(changesMap, "", "  ")
 	_ = os.WriteFile(filepath.Join(s.contentDir, "changes.json"), append(changesBytes, '\n'), 0o644)
 
-	s.lastETag = etag
+	if etag != "" {
+		s.lastETag = etag
+	}
 	log.Printf("[content-sync] Successfully synced curriculum version %s in %v", info.Version, time.Since(start).Round(time.Millisecond))
 	return nil
 }
