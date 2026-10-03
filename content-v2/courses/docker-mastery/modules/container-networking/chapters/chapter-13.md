@@ -28,23 +28,23 @@ This manual workflow suffers from three fatal operational flaws:
 2. **The Startup Race Condition:** Launching `api` immediately after `db` fails because PostgreSQL takes several seconds to initialize database files and listen on port 5432. Standard `docker run` cannot coordinate startup based on application readiness.
 3. **Lifecycle Overhead:** Stopping, updating, or tearing down the stack requires executing dozens of interdependent commands in reverse order.
 
-**Docker Compose** solves this by defining the entire desired state in a single declarative file—typically named `compose.yaml` (or `docker-compose.yml`).
+**Docker Compose** solves this by defining the entire desired state in a single declarative fileâ€”typically named `compose.yaml` (or `docker-compose.yml`).
 
 ## Concept & Architecture
 
 Docker Compose reads your declarative specification, automatically provisions networks and volumes, resolves dependencies, and boots services in the correct sequence:
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│ compose.yaml                                                │
-│                                                             │
-│  services:                                                  │
-│    proxy  ──(public-net)──►  api  ──(internal-net)──► cache │
-│                                                             │
-│  networks:                                                  │
-│    public-net:                                              │
-│    internal-net:                                            │
-└─────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ compose.yaml                                                â”‚
+â”‚                                                             â”‚
+â”‚  services:                                                  â”‚
+â”‚    proxy  â”€â”€(public-net)â”€â”€â–º  api  â”€â”€(internal-net)â”€â”€â–º cache â”‚
+â”‚                                                             â”‚
+â”‚  networks:                                                  â”‚
+â”‚    public-net:                                              â”‚
+â”‚    internal-net:                                            â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### Deterministic Startup with Health Checks
@@ -150,88 +150,7 @@ Example: `docker compose exec cache redis-cli ping` sends a ping directly to the
 
 Let's inspect, validate, and orchestrate a multi-tier application stack using Docker Compose.
 
-Try it — click **Run this next**, review each command, and press Enter:
-
-:::terminal-demo
-id: docker-compose-demo
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-  - nginx:alpine
-  - redis:alpine
-state:
-  label: web-gateway
-  command: docker inspect -f '{{.State.Status}}' compose-stack-gateway-1 2>/dev/null || docker inspect -f '{{.State.Status}}' gateway 2>/dev/null || echo "not running"
-steps:
-  - id: prepare-compose-file
-    label: Create the multi-tier Compose specification
-    run: |
-      mkdir -p ~/compose-stack && cd ~/compose-stack
-      cat <<'EOF' > compose.yaml
-      services:
-        cache:
-          image: redis:alpine
-          networks:
-            - private-tier
-          healthcheck:
-            test: ["CMD", "redis-cli", "ping"]
-            interval: 2s
-            timeout: 2s
-            retries: 5
-
-        gateway:
-          image: nginx:alpine
-          ports:
-            - "8080:80"
-          networks:
-            - public-tier
-            - private-tier
-          depends_on:
-            cache:
-              condition: service_healthy
-
-      networks:
-        public-tier:
-        private-tier:
-      EOF
-      ls -la && cat compose.yaml
-    expect: |
-      The `compose.yaml` specification defines two services (`cache` and `gateway`),
-      isolated network tiers (`public-tier` and `private-tier`), and a healthcheck-gated
-      dependency.
-  - id: validate-config
-    label: Validate the Compose specification syntax
-    run: cd ~/compose-stack && docker compose config
-    expect: |
-      Docker Compose parses and canonicalizes the configuration, verifying syntax
-      and validating network definitions.
-  - id: launch-stack
-    label: Launch the entire stack in detached mode
-    run: cd ~/compose-stack && docker compose up -d
-    expect: |
-      Compose creates the networks, launches `cache`, waits for it to become healthy,
-      and then starts `gateway`. The state chip switches to `running`.
-  - id: check-services
-    label: Inspect the running Compose services
-    run: cd ~/compose-stack && docker compose ps
-    expect: |
-      Notice the STATUS column. `cache` displays `running (healthy)`, and `gateway`
-      displays `running` with port mapping `0.0.0.0:8080->80/tcp`.
-  - id: view-logs
-    label: Inspect aggregated service logs
-    run: cd ~/compose-stack && docker compose logs --tail 10
-    expect: |
-      Compose aggregates logs across all containers with distinct service prefixes
-      (`cache-1` and `gateway-1`).
-  - id: verify-ingress
-    label: Verify public ingress to the Compose gateway
-    run: curl -I http://localhost:8080
-    expect: |
-      HTTP/1.1 200 OK from Nginx. The composed architecture is serving live traffic.
-examples:
-  - docker compose -f ~/compose-stack/compose.yaml top
-  - docker compose -f ~/compose-stack/compose.yaml images
-:::
+Try it â€” click **Run this next**, review each command, and press Enter:
 
 ## The Learning Loop (Cause & Effect)
 
@@ -241,7 +160,7 @@ Now explore Compose's automatic network management and teardown semantics in the
 ## Common Pitfalls & Anti-Patterns
 
 ### 1. Using `depends_on` Without Health Checks
-Using bare `depends_on` only verifies that the dependency container process started. Databases like Postgres or MySQL often take 5–15 seconds to create lock files and listen on sockets. Always specify a `healthcheck` and use `condition: service_healthy` to eliminate startup crashes.
+Using bare `depends_on` only verifies that the dependency container process started. Databases like Postgres or MySQL often take 5â€“15 seconds to create lock files and listen on sockets. Always specify a `healthcheck` and use `condition: service_healthy` to eliminate startup crashes.
 
 ### 2. Hardcoding Secrets in `compose.yaml`
 Committing database passwords or API keys directly into `compose.yaml` leads to credential leakage in version control. Instead, define variable placeholders in `compose.yaml` (e.g. `POSTGRES_PASSWORD: ${DB_PASS}`) and store local secrets in a `.env` file that is excluded in `.gitignore`.

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 )
@@ -47,18 +46,7 @@ func RunStop() bool {
 		}
 	}
 
-	// 2. Stop Vagrant VM only if explicitly requested
-	for _, arg := range os.Args[2:] {
-		lower := strings.ToLower(arg)
-		if lower == "--vm" || lower == "-v" || lower == "--vagrant" {
-			if vDir, err := FindVagrantfileDir(); err == nil {
-				cmd := exec.Command("vagrant", "halt")
-				cmd.Dir = vDir
-				_ = cmd.Run()
-			}
-			break
-		}
-	}
+	// TODO: VM stop logic (e.g. Vagrant / QEMU) can be re-added here during CLI refactoring if needed.
 
 	fmt.Println("done.")
 	return true

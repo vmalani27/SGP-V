@@ -19,11 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+import os
+
+
 def generate_release_manifest(
-    tag: str, channel: str, out_dir: Path, images_json_path: Path | None = None, cdn_url: str = "https://d3rqfqpemi0u1s.cloudfront.net"
+    tag: str, channel: str, out_dir: Path, images_json_path: Path | None = None, cdn_url: str = ""
 ) -> dict:
     out_dir = Path(out_dir)
-    cdn_url = cdn_url.rstrip("/")
+    cdn_url = (cdn_url or os.getenv("CDN_URL", "")).rstrip("/")
 
     # 1. Read latest content version metadata
     latest_json_path = out_dir / "latest.json"
@@ -45,8 +48,8 @@ def generate_release_manifest(
         except Exception as e:
             print(f"Warning: Could not parse {images_json_path}: {e}", file=sys.stderr)
     else:
-        # Fallback default image structure if no images.json provided
-        registry_base = "public.ecr.aws/i9t1l0m7/vmalani27"
+        # Default image structure if no images.json provided
+        registry_base = os.getenv("ECR_PUBLIC_REGISTRY", "")
         images_meta = {
             "frontend": {
                 "remote": f"{registry_base}/labops-frontend:{tag}",
@@ -131,7 +134,7 @@ def main() -> int:
     parser.add_argument("channel", help="Release channel (e.g. stable, beta, dev)")
     parser.add_argument("out_dir", help="Output directory (e.g. out/)")
     parser.add_argument("images_json", nargs="?", default=None, help="Path to images metadata JSON file")
-    parser.add_argument("--cdn-url", default="https://d3rqfqpemi0u1s.cloudfront.net", help="Public CDN URL")
+    parser.add_argument("--cdn-url", default=os.getenv("CDN_URL", ""), help="Public CDN URL")
 
     args = parser.parse_args()
 

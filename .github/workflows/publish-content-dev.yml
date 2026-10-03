@@ -61,6 +61,9 @@ jobs:
       - name: Generate manifest + tarball
         run: python scripts/generate_manifest.py content-v2/ out/
 
+      - name: Generate Dev Release Manifest
+        run: python scripts/generate_release_manifest.py dev dev out/
+
       - name: Upload publish artifact
         uses: actions/upload-artifact@v4
         with:
@@ -102,6 +105,11 @@ jobs:
             --recursive \
             --cache-control "public, max-age=31536000, immutable"
 
+          aws s3 cp out/releases/ \
+            "s3://${S3_BUCKET}/releases/" \
+            --recursive \
+            --cache-control "public, max-age=60, s-maxage=60"
+
           aws s3 cp out/catalog.json \
             "s3://${S3_BUCKET}/catalog.json" \
             --cache-control "public, max-age=60, s-maxage=60"
@@ -117,7 +125,7 @@ jobs:
           if [ -n "$CLOUDFRONT_DIST_ID" ]; then
             aws cloudfront create-invalidation \
               --distribution-id "$CLOUDFRONT_DIST_ID" \
-              --paths "/latest.json" "/catalog.json"
+              --paths "/latest.json" "/catalog.json" "/releases/*"
           else
             echo "CLOUDFRONT_DIST_ID is not set; skipping invalidation."
           fi

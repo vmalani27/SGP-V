@@ -24,33 +24,7 @@ func CheckPortAvailable(port int) bool {
 	return true
 }
 
-// FindVagrantfileDir attempts to locate the directory containing the Vagrantfile.
-func FindVagrantfileDir() (string, error) {
-	// 1. Check current working directory and the repository's vagrant directory.
-	for _, candidate := range []string{"Vagrantfile", filepath.Join("vagrant", "Vagrantfile")} {
-		if _, err := os.Stat(candidate); err == nil {
-			return filepath.Dir(candidate), nil
-		}
-	}
-
-	// 2. Check binary directory
-	exePath, err := os.Executable()
-	if err == nil {
-		exeDir := filepath.Dir(exePath)
-		for _, candidate := range []string{
-			filepath.Join(exeDir, "Vagrantfile"),
-			filepath.Join(exeDir, "vagrant", "Vagrantfile"),
-			filepath.Join(exeDir, "..", "Vagrantfile"),
-			filepath.Join(exeDir, "..", "vagrant", "Vagrantfile"),
-		} {
-			if _, err := os.Stat(candidate); err == nil {
-				return filepath.Dir(candidate), nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("could not locate Vagrantfile in current directory or binary directory")
-}
+// TODO: Future VM mode support (e.g. Vagrant / QEMU) can be re-introduced here during CLI refactoring if needed.
 
 // FindComposeFile attempts to locate a docker-compose file.
 func FindComposeFile() (string, string, error) {
@@ -343,84 +317,7 @@ func StartDockerMode() bool {
 	return true
 }
 
-// StartVagrantMode boots LabOps using the Vagrant Sysbox VM.
-func StartVagrantMode() bool {
-	fmt.Println("\nStarting LabOps in Vagrant VM Mode...")
-	fmt.Println("--------------------------------------------------")
-
-	// 1. Port checks
-	fmt.Println("Checking local ports...")
-	portsFree := true
-	if !CheckPortAvailable(3000) {
-		fmt.Println("  - Port 3000 (Frontend): Already in use!")
-		portsFree = false
-	} else {
-		fmt.Println("  - Port 3000 (Frontend): Free")
-	}
-
-	if !CheckPortAvailable(8001) {
-		fmt.Println("  - Port 8001 (Orchestrator): Already in use!")
-		portsFree = false
-	} else {
-		fmt.Println("  - Port 8001 (Orchestrator): Free")
-	}
-
-	if !portsFree {
-		fmt.Println("\nWarning: Port conflict detected! Please stop conflicting services or run 'labops stop'.")
-		return false
-	}
-
-	// 2. Find Vagrantfile directory
-	dir, err := FindVagrantfileDir()
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
-	}
-
-	// 3. Boot VM
-	fmt.Println("\nBooting Vagrant VM (Sysbox container runtime)...")
-	cmd := exec.Command("vagrant", "up")
-	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error: Failed to boot VM: %v\n", err)
-		return false
-	}
-
-	// 4. Poll services
-	fmt.Println("\nWaiting for LabOps services to initialize inside the VM...")
-
-	frontendURL := "http://localhost:3000"
-
-	fmt.Print("  - Checking Orchestrator API (Gateway /health or :8001)... ")
-	if PollOrchestratorEndpoint(90 * time.Second) {
-		fmt.Println("OK")
-	} else {
-		fmt.Println("FAILED (Timeout waiting for orchestrator)")
-		return false
-	}
-
-	fmt.Print("  - Checking Frontend Portal (port 3000)... ")
-	if PollEndpoint(frontendURL, 90*time.Second) {
-		fmt.Println("OK")
-	} else {
-		fmt.Println("FAILED (Timeout waiting for frontend)")
-		return false
-	}
-
-	fmt.Println("\n==================================================")
-	fmt.Println("LabOps is running successfully inside the Vagrant VM!")
-	fmt.Println("Opening browser to http://localhost:3000...")
-
-	if err := OpenBrowser(frontendURL); err != nil {
-		fmt.Printf("Warning: Could not automatically open browser: %v\n", err)
-		fmt.Println("Please open http://localhost:3000 manually.")
-	}
-
-	return true
-}
+// TODO: Future VM mode (e.g. Vagrant / QEMU) can be added here if needed during refactoring.
 
 // RunStart handles runtime selection, port checks, and environment bootstrap.
 func RunStart() bool {
@@ -449,7 +346,9 @@ func RunStart() bool {
 	for _, arg := range os.Args[2:] {
 		lower := strings.ToLower(arg)
 		if lower == "--vm" || lower == "-v" || lower == "--vagrant" {
-			return StartVagrantMode()
+			fmt.Println("Notice: Vagrant/VM mode is currently disabled. Defaulting to Docker runtime.")
+			// Fall back directly to Docker/WSL2
+			break
 		}
 		if lower == "--docker" || lower == "-d" || lower == "--desktop" {
 			return StartDockerMode()

@@ -28,6 +28,20 @@ type ContentVersionInfo struct {
 	DownloadURL    string          `json:"download_url,omitempty"`
 }
 
+type ReleaseContentMeta struct {
+	Version        string `json:"version"`
+	ArtifactSHA256 string `json:"artifact_sha256"`
+	ArchiveURL     string `json:"archive_url"`
+	CatalogURL     string `json:"catalog_url"`
+}
+
+type ReleaseManifest struct {
+	Version     string             `json:"version"`
+	Channel     string             `json:"channel"`
+	PublishedAt string             `json:"published_at"`
+	Content     ReleaseContentMeta `json:"content"`
+}
+
 type Syncer struct {
 	cdnURL     string
 	contentDir string
@@ -37,11 +51,7 @@ type Syncer struct {
 }
 
 func NewSyncer() *Syncer {
-	cdnURL := os.Getenv("CONTENT_PUBLIC_BASE_URL")
-	if cdnURL == "" {
-		cdnURL = "https://d3rqfqpemi0u1s.cloudfront.net"
-	}
-	cdnURL = strings.TrimRight(cdnURL, "/")
+	cdnURL := strings.TrimRight(os.Getenv("CDN_URL"), "/")
 
 	contentDir := os.Getenv("CONTENT_DIR")
 	if contentDir == "" {
@@ -76,8 +86,13 @@ func (s *Syncer) readLocalVersion() string {
 }
 
 func (s *Syncer) checkAndSync() error {
-	latestURL := s.cdnURL + "/latest.json"
-	req, err := http.NewRequest("GET", latestURL, nil)
+	channel := os.Getenv("LABOPS_CHANNEL")
+	if channel == "" {
+		channel = "stable"
+	}
+
+	targetURL := fmt.Sprintf("%s/releases/%s.json", s.cdnURL, channel)
+	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -88,7 +103,7 @@ func (s *Syncer) checkAndSync() error {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to fetch latest.json: %w", err)
+		return fmt.Errorf("failed to fetch release manifest: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -97,22 +112,59 @@ func (s *Syncer) checkAndSync() error {
 		return nil
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected HTTP %d from %s", resp.StatusCode, latestURL)
-	}
-
-	etag := resp.Header.Get("ETag")
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-
+	// Fallback to latest.json if releases/<channel>.json is not found
 	var info ContentVersionInfo
-	if err := json.Unmarshal(bodyBytes, &info); err != nil {
-		return fmt.Errorf("invalid latest.json format: %w", err)
+	if resp.StatusCode == http.StatusNotFound {
+		targetURL = s.cdnURL + "/latest.json"
+		fallbackReq, fErr := http.NewRequest("GET", targetURL, nil)
+		if fErr == nil {
+			if s.lastETag != "" {
+				fallbackReq.Header.Set("If-None-Match", s.lastETag)
+			}
+			fResp, fDoErr := s.client.Do(fallbackReq)
+			if fDoErr == nil {
+				defer fResp.Body.Close()
+				if fResp.StatusCode == http.StatusNotModified {
+					log.Printf("[content-sync] HTTP 304: Content is up-to-date at CloudFront edge (ETag %s)", s.lastETag)
+					return nil
+				}
+				if fResp.StatusCode == http.StatusOK {
+					bodyBytes, _ := io.ReadAll(fResp.Body)
+					_ = json.Unmarshal(bodyBytes, &info)
+					etag := fResp.Header.Get("ETag")
+					if etag != "" {
+						s.lastETag = etag
+					}
+				}
+			}
+		}
+	} else if resp.StatusCode == http.StatusOK {
+		etag := resp.Header.Get("ETag")
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		var relManifest ReleaseManifest
+		if err := json.Unmarshal(bodyBytes, &relManifest); err == nil && relManifest.Content.Version != "" {
+			info = ContentVersionInfo{
+				Version:        relManifest.Content.Version,
+				ArtifactSHA256: relManifest.Content.ArtifactSHA256,
+				PublishedAt:    relManifest.PublishedAt,
+				DownloadURL:    relManifest.Content.ArchiveURL,
+			}
+		} else {
+			_ = json.Unmarshal(bodyBytes, &info)
+		}
+		if etag != "" {
+			s.lastETag = etag
+		}
+	} else {
+		return fmt.Errorf("unexpected HTTP %d from %s", resp.StatusCode, targetURL)
 	}
+
 	if info.Version == "" {
-		return fmt.Errorf("empty version field in latest.json")
+		return fmt.Errorf("empty version field in release manifest")
 	}
 
 	currentVersion := s.readLocalVersion()

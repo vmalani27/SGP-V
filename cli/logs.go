@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 // RunLogs displays troubleshooting logs from the workspace.
@@ -33,29 +32,7 @@ func RunLogs() bool {
 		}
 	}
 
-	// 2. Check Vagrant VM only if explicitly requested
-	checkVagrant := false
-	for _, arg := range os.Args[2:] {
-		lower := strings.ToLower(arg)
-		if lower == "--vm" || lower == "-v" || lower == "--vagrant" {
-			checkVagrant = true
-			break
-		}
-	}
-	if checkVagrant {
-		vDir, err := FindVagrantfileDir()
-		if err == nil {
-			fmt.Println("\nVagrant VM Orchestrator Service Logs (systemd):")
-			fmt.Println("--------------------------------------------------")
-			orcCmd := exec.Command("vagrant", "ssh", "-c", "sudo journalctl -u labops-orchestrator -n 40 --no-pager")
-			orcCmd.Dir = vDir
-			orcCmd.Stdout = os.Stdout
-			orcCmd.Stderr = os.Stderr
-			if err := orcCmd.Run(); err == nil {
-				foundLogs = true
-			}
-		}
-	}
+	// TODO: VM log fetching (e.g. Vagrant / QEMU) can be re-added here during CLI refactoring if needed.
 
 	if !foundLogs {
 		fmt.Println("No active LabOps logs were found.")

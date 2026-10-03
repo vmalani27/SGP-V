@@ -29,11 +29,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION || 'us-east-1' }}
-  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::586177432842:role/labops-role-dev' }}
-  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY || 'public.ecr.aws/i9t1l0m7' }}
-  DYNAMODB_REGION: ${{ vars.DYNAMODB_REGION || 'ap-south-1' }}
-  DYNAMODB_TABLE: ${{ vars.DYNAMODB_TABLE || 'labops-image-audit' }}
+  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION}}
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+  DYNAMODB_REGION: ${{ vars.DYNAMODB_REGION }} #later switch to aws deffault region
+  DYNAMODB_TABLE: ${{ vars.DYNAMODB_TABLE }}
 
 jobs:
   # ── DETECT CHANGES ──────────────────────────────────────────────
@@ -101,11 +101,11 @@ jobs:
       - name: Build & Push Orchestrator Image
         run: |
           docker build \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-orchestrator:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-orchestrator:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/Dockerfile ./orchestrator
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-orchestrator:${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-orchestrator:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-orchestrator:${{ steps.tags.outputs.sha }}"
 
   # ── FRONTEND SERVICE ────────────────────────────────────────────
   build-frontend:
@@ -145,17 +145,18 @@ jobs:
           NEXT_PUBLIC_ORCHESTRATOR_SECRET=${{ vars.NEXT_PUBLIC_ORCHESTRATOR_SECRET || secrets.NEXT_PUBLIC_ORCHESTRATOR_SECRET || 'local-dev-super-secret' }}
           CONTENT_LOCAL_DIR=/app/.content
           USER_DATA_DIR=/app/.user_data
-          CONTENT_PUBLIC_BASE_URL=${{ vars.CONTENT_PUBLIC_BASE_URL || secrets.CONTENT_PUBLIC_BASE_URL || '' }}
+          CONTENT_PUBLIC_BASE_URL=${{ vars.CDN_URL }}
+          CDN_URL=${{ vars.CDN_URL }}
           EOF
 
       - name: Build & Push Frontend Image
         run: |
           docker build \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-frontend:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-frontend:${{ steps.tags.outputs.sha }}" \
             -f ./next-app/Dockerfile ./next-app
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-frontend:${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-frontend:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-frontend:${{ steps.tags.outputs.sha }}"
 
   # ── CONTENT-SYNC SIDECAR SERVICE ────────────────────────────────
   build-content-sync:
@@ -191,11 +192,11 @@ jobs:
       - name: Build & Push Content-Sync Image
         run: |
           docker build \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-content-sync:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-content-sync:${{ steps.tags.outputs.sha }}" \
             -f ./sidecars/content-sync/Dockerfile ./sidecars/content-sync
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-content-sync:${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-content-sync:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-content-sync:${{ steps.tags.outputs.sha }}"
 
   # ── LAB RUNTIME IMAGES ──────────────────────────────────────────
   build-lab-images:
@@ -232,55 +233,55 @@ jobs:
       - name: Build & Push Lab Base Image (lab-ubuntu)
         run: |
           docker build \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.ubuntu ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}"
 
       # 2. DinD Image: labops-labs:docker
       - name: Build & Push Lab Image (lab-docker)
         run: |
           docker build \
-            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.docker ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.sha }}"
 
       # 3. Preloaded Fundamentals Image: labops-labs:docker-fundamentals
       - name: Build & Push Lab Image (lab-docker-fundamentals)
         run: |
           docker build \
-            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}" \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.docker-fundamentals ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-fundamentals-${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-fundamentals-${{ steps.tags.outputs.sha }}"
 
       # 4. Building Images Course Image: labops-labs:docker-build
       - name: Build & Push Lab Image (lab-docker-build)
         run: |
           docker build \
-            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}" \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-build-${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-build-${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.docker-build ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:docker-build-${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-build-${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:docker-build-${{ steps.tags.outputs.sha }}"
 
       # 5. Git Fundamentals Course Image: labops-labs:git-fundamentals
       - name: Build & Push Lab Image (lab-git-fundamentals)
         run: |
           docker build \
-            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-base:${{ steps.tags.outputs.sha }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:git-fundamentals-${{ steps.tags.outputs.branch }}" \
-            -t "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:git-fundamentals-${{ steps.tags.outputs.sha }}" \
+            --build-arg BASE_IMAGE="${{ env.ECR_PUBLIC_REGISTRY }}/labops-base:${{ steps.tags.outputs.sha }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:git-fundamentals-${{ steps.tags.outputs.branch }}" \
+            -t "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:git-fundamentals-${{ steps.tags.outputs.sha }}" \
             -f ./orchestrator/lab-images/Dockerfile.git-fundamentals ./orchestrator/lab-images
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:git-fundamentals-${{ steps.tags.outputs.branch }}"
-          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/vmalani27/labops-labs:git-fundamentals-${{ steps.tags.outputs.sha }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:git-fundamentals-${{ steps.tags.outputs.branch }}"
+          docker push "${{ env.ECR_PUBLIC_REGISTRY }}/labops-labs:git-fundamentals-${{ steps.tags.outputs.sha }}"
 
   # ── AUDIT & NOTIFY ──────────────────────────────────────────────
   audit-and-notify:
@@ -312,10 +313,10 @@ jobs:
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           IMAGES=()
-          [ "${{ needs.changes.outputs.orchestrator }}" == "true" ] && [ "${{ needs.build-orchestrator.result }}" == "success" ] && IMAGES+=("vmalani27/labops-orchestrator:${SHA}")
-          [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ] && IMAGES+=("vmalani27/labops-frontend:${SHA}")
-          [ "${{ needs.changes.outputs.content_sync }}" == "true" ] && [ "${{ needs.build-content-sync.result }}" == "success" ] && IMAGES+=("vmalani27/labops-content-sync:${SHA}")
-          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("vmalani27/labops-base:${SHA}" "vmalani27/labops-labs:docker-${SHA}" "vmalani27/labops-labs:docker-fundamentals-${SHA}" "vmalani27/labops-labs:docker-build-${SHA}" "vmalani27/labops-labs:git-fundamentals-${SHA}")
+          [ "${{ needs.changes.outputs.orchestrator }}" == "true" ] && [ "${{ needs.build-orchestrator.result }}" == "success" ] && IMAGES+=("labops-orchestrator:${SHA}")
+          [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ] && IMAGES+=("labops-frontend:${SHA}")
+          [ "${{ needs.changes.outputs.content_sync }}" == "true" ] && [ "${{ needs.build-content-sync.result }}" == "success" ] && IMAGES+=("labops-content-sync:${SHA}")
+          [ "${{ needs.changes.outputs.lab_images }}" == "true" ] && [ "${{ needs.build-lab-images.result }}" == "success" ] && IMAGES+=("labops-base:${SHA}" "labops-labs:docker-${SHA}" "labops-labs:docker-fundamentals-${SHA}" "labops-labs:docker-build-${SHA}" "labops-labs:git-fundamentals-${SHA}")
 
           echo "==> Built images to audit: ${IMAGES[@]}"
 

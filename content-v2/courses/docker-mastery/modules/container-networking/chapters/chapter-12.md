@@ -12,7 +12,7 @@
 
 When developing on your local machine, applications typically communicate over `localhost` (e.g. your API connects to `localhost:5432` for PostgreSQL).
 
-However, in Docker, **every container has its own private network namespace**. Inside a container, `localhost` refers exclusively to that specific container—not your host machine, and not any other container. If you run a web API and a database without configuring networking, neither can reach the other over `localhost`.
+However, in Docker, **every container has its own private network namespace**. Inside a container, `localhost` refers exclusively to that specific containerâ€”not your host machine, and not any other container. If you run a web API and a database without configuring networking, neither can reach the other over `localhost`.
 
 To connect containers, Docker virtualizes network stacks using distinct **network modes**.
 
@@ -23,25 +23,25 @@ To connect containers, Docker virtualizes network stacks using distinct **networ
 When Docker runs a container, it attaches it to one of three primary network modes:
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 1. BRIDGE (Default)                                                         │
-│    Host (e.g. 192.168.1.50)                                                 │
-│       │                                                                     │
-│       ├── [ Virtual Bridge Switch: 172.18.0.1 ]                             │
-│       │        ├── Container A (eth0: 172.18.0.2) ──► Port Mapping (-p)    │
-│       │        └── Container B (eth0: 172.18.0.3)                           │
-│    Isolated private subnet. External traffic enters via port forwarding.    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 2. HOST                                                                     │
-│    Host (192.168.1.50) ◄═══ Container shares host stack directly           │
-│    No network isolation. Port 80 inside container = Port 80 on host.        │
-│    Maximum performance, but risk of host port collisions.                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 3. NONE                                                                     │
-│    Container (lo: 127.0.0.1 ONLY)                                           │
-│    Completely air-gapped. Zero network interfaces, zero connectivity.       │
-│    Ideal for isolated batch jobs, crypto key generation, and secure compute.│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ 1. BRIDGE (Default)                                                         â”‚
+â”‚    Host (e.g. 192.168.1.50)                                                 â”‚
+â”‚       â”‚                                                                     â”‚
+â”‚       â”œâ”€â”€ [ Virtual Bridge Switch: 172.18.0.1 ]                             â”‚
+â”‚       â”‚        â”œâ”€â”€ Container A (eth0: 172.18.0.2) â”€â”€â–º Port Mapping (-p)    â”‚
+â”‚       â”‚        â””â”€â”€ Container B (eth0: 172.18.0.3)                           â”‚
+â”‚    Isolated private subnet. External traffic enters via port forwarding.    â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚ 2. HOST                                                                     â”‚
+â”‚    Host (192.168.1.50) â—„â•â•â• Container shares host stack directly           â”‚
+â”‚    No network isolation. Port 80 inside container = Port 80 on host.        â”‚
+â”‚    Maximum performance, but risk of host port collisions.                   â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚ 3. NONE                                                                     â”‚
+â”‚    Container (lo: 127.0.0.1 ONLY)                                           â”‚
+â”‚    Completely air-gapped. Zero network interfaces, zero connectivity.       â”‚
+â”‚    Ideal for isolated batch jobs, crypto key generation, and secure compute.â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### 1. `bridge` Mode (Standard Isolation)
@@ -112,64 +112,7 @@ Allows a running container to attach to multiple networks on the fly (dual-homin
 
 Let's test all three network modes (`none`, `host`, and `bridge`) and experience user-defined DNS in action.
 
-Try it — click **Run this next**, review each command, and press Enter:
-
-:::terminal-demo
-id: container-networking
-image: labops-docker:latest
-pre_pull:
-  - alpine:latest
-  - nginx:alpine
-  - redis:alpine
-state:
-  label: web-proxy
-  command: docker inspect -f '{{.State.Status}}' web-proxy 2>/dev/null || echo "not running"
-steps:
-  - id: list-networks
-    label: Inspect default networks
-    run: docker network ls
-    expect: |
-      Notice the three built-in networks corresponding to the three modes:
-      `bridge`, `host`, and `none`.
-  - id: test-none-mode
-    label: Test the 'none' air-gapped network mode
-    run: docker run --rm --network none alpine ip addr
-    expect: |
-      Notice there is ONLY the loopback interface (`lo`). There is no `eth0` interface
-      and no default gateway. The container is completely air-gapped.
-  - id: create-custom-network
-    label: Create a user-defined bridge network
-    run: docker network create app-net
-    expect: |
-      Docker provisions a new virtual bridge network with automatic DNS resolution enabled.
-  - id: run-backend-cache
-    label: Launch a private Redis container on app-net
-    run: docker run -d --name cache-db --network app-net redis:alpine
-    expect: |
-      The container launches on `app-net`. Notice no `-p` flag was used:
-      `cache-db` is accessible to peer containers on `app-net`, but completely hidden from the host.
-  - id: test-dns-resolution
-    label: Verify automatic DNS service discovery by container name
-    run: docker run --rm --network app-net alpine ping -c 2 cache-db
-    expect: |
-      The ping succeeds! Docker's embedded DNS server resolved `cache-db` directly
-      to its assigned container IP on `app-net`.
-  - id: deploy-public-proxy
-    label: Deploy a public proxy with port publishing
-    run: docker run -d --name web-proxy --network app-net -p 8080:80 nginx:alpine
-    expect: |
-      `web-proxy` runs on `app-net` with host port 8080 mapped to container port 80.
-      The state chip switches to `running`.
-  - id: test-ingress-traffic
-    label: Verify external traffic reaches web-proxy
-    run: curl -I http://localhost:8080
-    expect: |
-      HTTP/1.1 200 OK from Nginx. Traffic from your host arrives on port 8080 and routes
-      directly into the container.
-examples:
-  - docker network inspect app-net
-  - docker port web-proxy
-:::
+Try it â€” click **Run this next**, review each command, and press Enter:
 
 ## The Learning Loop (Cause & Effect)
 
