@@ -2,37 +2,36 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
+	"strings"
 )
 
-// RunLogs displays troubleshooting logs from the workspace.
+// RunLogs displays troubleshooting logs from active LabOps containers.
 func RunLogs() bool {
+	wslReady, distro := CheckWSLDockerReady()
+	wslDistro := ""
+	if wslReady {
+		wslDistro = distro
+	}
+
+	containers := []string{"labops-proxy", "labops-frontend", "labops-orchestrator", "labops-git-server", "labops-content-sync"}
 	foundLogs := false
 
-	// 1. Check workspace logs
-	composeDir, composeFile, err := FindComposeFile()
-	if err == nil {
-		if IsDockerDaemonRunning() {
-			cmd := exec.Command("docker", "compose", "-f", composeFile, "logs", "--tail", "40")
-			cmd.Dir = composeDir
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
-				foundLogs = true
+	fmt.Println("LabOps Service Logs (last 40 lines per container)")
+	fmt.Println("==================================================")
+
+	for _, c := range containers {
+		out, stderr, err := RunDockerCmd(wslDistro, "logs", "--tail", "40", c)
+		if err == nil && (len(out) > 0 || len(stderr) > 0) {
+			foundLogs = true
+			fmt.Printf("\n--- Container: %s ---\n", c)
+			if len(out) > 0 {
+				fmt.Println(out)
 			}
-		} else if wslReady, distro := CheckWSLDockerReady(); wslReady {
-			wslDir := ToWSLPath(composeDir)
-			cmd := exec.Command("wsl.exe", "-d", distro, "sh", "-c", fmt.Sprintf("cd '%s' && docker compose -f '%s' logs --tail 40", wslDir, composeFile))
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
-				foundLogs = true
+			if len(stderr) > 0 && !strings.Contains(stderr, "No such container") {
+				fmt.Println(stderr)
 			}
 		}
 	}
-
-	// TODO: VM log fetching (e.g. Vagrant / QEMU) can be re-added here during CLI refactoring if needed.
 
 	if !foundLogs {
 		fmt.Println("No active LabOps logs were found.")

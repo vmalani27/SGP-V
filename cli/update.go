@@ -55,9 +55,9 @@ var defaultRegistry = ""
 
 func registryBase() string {
 	if reg := strings.TrimSpace(os.Getenv("ECR_PUBLIC_REGISTRY")); reg != "" {
-		return reg
+		return strings.TrimRight(reg, "/")
 	}
-	return defaultRegistry
+	return strings.TrimRight(defaultRegistry, "/")
 }
 
 func labOpsImages(channel string) []managedImage {
@@ -123,9 +123,9 @@ func selectedChannel() string {
 // GetContentCDNURL returns the content CDN URL injected at build or overridden via environment.
 func GetContentCDNURL() string {
 	if env := strings.TrimSpace(os.Getenv("CDN_URL")); env != "" {
-		return env
+		return strings.TrimRight(env, "/")
 	}
-	return defaultCDNURL
+	return strings.TrimRight(defaultCDNURL, "/")
 }
 
 func fetchReleaseManifest(cdnURL string, channel string) (*ReleaseManifest, error) {
@@ -203,6 +203,15 @@ func RunUpdate() bool {
 			fmt.Println("LabOps cannot update because the Docker daemon is not running on host or inside WSL2.")
 			return false
 		}
+	}
+
+	targetDistro := ""
+	if useWSL {
+		targetDistro = wslDistro
+	}
+	if !EnsureDockerReady(targetDistro) {
+		fmt.Println("LabOps cannot update because the Docker daemon did not respond in time.")
+		return false
 	}
 
 	channel := selectedChannel()

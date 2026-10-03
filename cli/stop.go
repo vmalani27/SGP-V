@@ -2,51 +2,66 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
-// RunStop stops any running LabOps containers and VMs.
+// RunStop stops any running LabOps containers and networks natively.
 func RunStop() bool {
-	// If already stopped and not running, exit gracefully
-	if !IsAlreadyHealthy() {
-		// Clean up any dangling containers silently
-		if IsDockerDaemonRunning() {
-			if out, err := exec.Command("docker", "ps", "-a", "-q", "--filter", "name=labops-").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-				ids := strings.Fields(string(out))
-				args := append([]string{"rm", "-f"}, ids...)
-				_ = exec.Command("docker", args...).Run()
-			}
+	wslReady, distro := CheckWSLDockerReady()
+	wslDistro := ""
+	if wslReady {
+		wslDistro = distro
+	}
+
+	// Stop Docker stack on host and/or WSL2
+	hasContainers := false
+
+	// Check if any containers exist on host
+	if IsDockerDaemonRunning() {
+		if out, _, err := RunDockerCmd("", "ps", "-a", "-q", "--filter", "name=labops-"); err == nil && len(out) > 0 {
+			hasContainers = true
 		}
+	}
+	// Check if any containers exist in WSL2
+	if wslDistro != "" {
+		if out, _, err := RunDockerCmd(wslDistro, "ps", "-a", "-q", "--filter", "name=labops-"); err == nil && len(out) > 0 {
+			hasContainers = true
+		}
+	}
+
+	if !hasContainers && !IsAlreadyHealthy() {
 		fmt.Println("LabOps is not running.")
 		return true
 	}
 
 	fmt.Print("Stopping LabOps... ")
 
-	// 1. Stop Docker Compose stack silently
-	composeDir, composeFile, err := FindComposeFile()
-	if err == nil {
-		if IsDockerDaemonRunning() {
-			// Silently stop and remove dynamically spawned lab containers first so the network is not held in use
-			if out, err := exec.Command("docker", "ps", "-a", "-q", "--filter", "name=labops-").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-				ids := strings.Fields(string(out))
-				args := append([]string{"rm", "-f"}, ids...)
-				_ = exec.Command("docker", args...).Run()
-			}
+	stackContainers := []string{"labops-proxy", "labops-frontend", "labops-orchestrator", "labops-git-server", "labops-content-sync"}
 
-			cmd := exec.Command("docker", "compose", "-f", composeFile, "down")
-			cmd.Dir = composeDir
-			_ = cmd.Run()
+	if IsDockerDaemonRunning() {
+		// Stop dynamic lab containers
+		if out, _, err := RunDockerCmd("", "ps", "-a", "-q", "--filter", "name=labops-"); err == nil && len(out) > 0 {
+			ids := strings.Fields(out)
+			args := append([]string{"rm", "-f"}, ids...)
+			_, _, _ = RunDockerCmd("", args...)
+		} else {
+			args := append([]string{"rm", "-f"}, stackContainers...)
+			_, _, _ = RunDockerCmd("", args...)
 		}
-		if wslReady, distro := CheckWSLDockerReady(); wslReady {
-			wslDir := ToWSLPath(composeDir)
-			cmd := exec.Command("wsl.exe", "-d", distro, "sh", "-c", fmt.Sprintf("docker ps -a -q --filter 'name=labops-' | xargs -r docker rm -f 2>/dev/null; cd '%s' && docker compose -f '%s' down", wslDir, composeFile))
-			_ = cmd.Run()
-		}
+		_, _, _ = RunDockerCmd("", "network", "rm", "labops-net")
 	}
 
-	// TODO: VM stop logic (e.g. Vagrant / QEMU) can be re-added here during CLI refactoring if needed.
+	if wslDistro != "" {
+		if out, _, err := RunDockerCmd(wslDistro, "ps", "-a", "-q", "--filter", "name=labops-"); err == nil && len(out) > 0 {
+			ids := strings.Fields(out)
+			args := append([]string{"rm", "-f"}, ids...)
+			_, _, _ = RunDockerCmd(wslDistro, args...)
+		} else {
+			args := append([]string{"rm", "-f"}, stackContainers...)
+			_, _, _ = RunDockerCmd(wslDistro, args...)
+		}
+		_, _, _ = RunDockerCmd(wslDistro, "network", "rm", "labops-net")
+	}
 
 	fmt.Println("done.")
 	return true
