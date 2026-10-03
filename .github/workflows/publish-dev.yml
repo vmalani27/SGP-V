@@ -1,0 +1,274 @@
+name: publish-dev-release
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: publish-dev-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+  CDN_URL: ${{ vars.CDN_URL }}
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+  CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
+
+jobs:
+  # ── 1. BUILD & PACK CURRICULUM CONTENT ───────────────────────────
+  build-content:
+    name: Build Curriculum Content & Catalog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: pip install pyyaml
+
+      - name: Validate Curriculum Content
+        run: python scripts/validate_content.py content-v2/
+
+      - name: Generate Content Manifest & Tarball
+        run: python scripts/generate_manifest.py content-v2/ out/
+
+      - name: Upload Content Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-content-out
+          path: out/
+          retention-days: 1
+
+  # ── 2. BUILD & PUSH OCI IMAGES FOR DEV ───────────────────────────
+  build-images:
+    name: Build & Push OCI Images to ECR (dev)
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
+
+      - name: Log in to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push All Services & Lab Images (dev)
+        id: docker-build
+        run: |
+          REG="${{ env.ECR_PUBLIC_REGISTRY }}"
+
+          echo "Building Services and Lab Images for dev branch..."
+
+          # 1. Frontend
+          docker buildx build --platform linux/amd64,linux/arm64 -t "${REG}/labops-frontend:dev" --push ./next-app
+          FE_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-frontend:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          # 2. Orchestrator
+          docker buildx build --platform linux/amd64,linux/arm64 -t "${REG}/labops-orchestrator:dev" --push ./orchestrator
+          ORCH_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-orchestrator:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          # 3. Content-Sync
+          docker buildx build --platform linux/amd64,linux/arm64 -t "${REG}/labops-content-sync:dev" --push ./sidecars/content-sync
+          SYNC_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-content-sync:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          # 4. Proxy
+          docker buildx build --platform linux/amd64,linux/arm64 -t "${REG}/labops-proxy:dev" --push ./proxy
+          PROXY_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-proxy:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          # 5. Base Labs & Preloaded Labs
+          docker buildx build --platform linux/amd64,linux/arm64 -t "${REG}/labops-ubuntu:dev" --push ./orchestrator/lab-images/base
+          UBUNTU_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-ubuntu:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-docker:dev" --push ./orchestrator/lab-images/docker
+          DOCKER_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-docker-fundamentals:dev" --push ./orchestrator/lab-images/docker-fundamentals
+          FUND_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-fundamentals:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-docker:dev" -t "${REG}/labops-docker-build:dev" --push ./orchestrator/lab-images/docker-build
+          BUILD_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-build:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:dev" -t "${REG}/labops-git-fundamentals:dev" --push ./orchestrator/lab-images/git-fundamentals
+          GIT_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-git-fundamentals:dev" --raw | sha256sum | cut -d' ' -f1)
+
+          # Create images.json audit map
+          cat <<EOF > images.json
+          {
+            "frontend": { "remote": "${REG}/labops-frontend:dev", "digest": "sha256:${FE_DIGEST}" },
+            "orchestrator": { "remote": "${REG}/labops-orchestrator:dev", "digest": "sha256:${ORCH_DIGEST}" },
+            "content-sync": { "remote": "${REG}/labops-content-sync:dev", "digest": "sha256:${SYNC_DIGEST}" },
+            "proxy": { "remote": "${REG}/labops-proxy:dev", "digest": "sha256:${PROXY_DIGEST}" },
+            "git-server": { "remote": "${REG}/labops-git-server:latest", "digest": "" },
+            "labops-ubuntu": { "remote": "${REG}/labops-ubuntu:dev", "digest": "sha256:${UBUNTU_DIGEST}", "alias": "labops-ubuntu:latest" },
+            "labops-docker": { "remote": "${REG}/labops-docker:dev", "digest": "sha256:${DOCKER_DIGEST}", "alias": "labops-docker:latest" },
+            "labops-docker-fundamentals": { "remote": "${REG}/labops-docker-fundamentals:dev", "digest": "sha256:${FUND_DIGEST}", "alias": "labops-docker-fundamentals:latest" },
+            "labops-docker-build": { "remote": "${REG}/labops-docker-build:dev", "digest": "sha256:${BUILD_DIGEST}", "alias": "labops-docker-build:latest" },
+            "labops-git-fundamentals": { "remote": "${REG}/labops-git-fundamentals:dev", "digest": "sha256:${GIT_DIGEST}", "alias": "labops-git-fundamentals:latest" }
+          }
+          EOF
+
+      - name: Upload Images Metadata Map
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-images-meta
+          path: images.json
+          retention-days: 1
+
+  # ── 3. PUBLISH DEV RELEASE MANIFEST & CDN ─────────────────────────
+  publish-release:
+    name: Publish Unified Dev Release Manifest & Content
+    runs-on: ubuntu-latest
+    needs: [build-content, build-images]
+    environment: dev
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download Content Output
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-content-out
+          path: out/
+
+      - name: Download Images Metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-images-meta
+          path: ./
+
+      - name: Generate Unified Dev Release Manifest
+        run: |
+          python scripts/generate_release_manifest.py \
+            "dev" \
+            "dev" \
+            out/ \
+            images.json \
+            --cdn-url "${{ env.CDN_URL }}"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
+
+      - name: Upload Content & Manifests to S3
+        run: |
+          # 1. Immutable content & release version manifest
+          aws s3 cp out/published/ "s3://${S3_BUCKET}/published/" --recursive --cache-control "public, max-age=31536000, immutable"
+          aws s3 cp out/releases/ "s3://${S3_BUCKET}/releases/" --recursive --cache-control "public, max-age=60, s-maxage=60"
+
+          # 2. Root pointers
+          aws s3 cp out/catalog.json "s3://${S3_BUCKET}/catalog.json" --cache-control "public, max-age=60, s-maxage=60"
+          aws s3 cp out/latest.json "s3://${S3_BUCKET}/latest.json" --cache-control "public, max-age=60, s-maxage=60"
+
+      - name: Invalidate CloudFront CDN Cache
+        run: |
+          if [ -n "$CLOUDFRONT_DIST_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$CLOUDFRONT_DIST_ID" \
+              --paths "/releases/*" "/latest.json" "/catalog.json"
+          fi
+
+  # ── 4. CROSS-COMPILE LABOPS CLI (DEV) ─────────────────────────────
+  build-dev-cli:
+    name: Build LabOps CLI (dev)
+    runs-on: ubuntu-latest
+    needs: publish-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            binary: labops-linux-amd64
+          - os: linux
+            arch: arm64
+            binary: labops-linux-arm64
+          - os: windows
+            arch: amd64
+            binary: labops-windows-amd64.exe
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          check-latest: true
+
+      - name: Compile Binary
+        working-directory: ./cli
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CHANNEL: dev
+          REGISTRY: ${{ env.ECR_PUBLIC_REGISTRY }}
+          CDN: ${{ env.CDN_URL }}
+        run: |
+          go build \
+            -ldflags="-s -w -X main.defaultChannel=${CHANNEL} -X main.defaultRegistry=${REGISTRY} -X main.defaultCDNURL=${CDN}" \
+            -trimpath \
+            -o "${{ matrix.binary }}" .
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-dev-binaries
+          path: ./cli/${{ matrix.binary }}
+
+  # ── 5. BUNDLE & CHECKSUM ────────────────────────────────────────
+  package-bundle:
+    name: Package Dev Release Bundle & Checksums
+    runs-on: ubuntu-latest
+    needs: build-dev-cli
+    steps:
+      - name: Download All Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-dev-binaries
+          path: ./binaries
+
+      - name: Generate Checksums
+        working-directory: ./binaries
+        run: |
+          chmod +x labops-linux-* 2>/dev/null || true
+          sha256sum labops-* > SHA256SUMS.txt
+          echo "=== Generated Dev Checksums ==="
+          cat SHA256SUMS.txt
+
+      - name: Upload Unified Bundle Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: labops-cli-dev-bundle
+          path: ./binaries/
+          retention-days: 30
