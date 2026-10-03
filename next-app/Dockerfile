@@ -32,7 +32,6 @@ RUN npm run build
 ###############################################################################
 # runtime - secure non-root production runner
 ###############################################################################
-ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/labops-node:20-alpine
 FROM ${BASE_IMAGE} AS runtime
 WORKDIR /app
 

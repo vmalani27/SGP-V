@@ -22,7 +22,6 @@ RUN python -m venv /opt/venv && \
 ###############################################################################
 # base - runtime dependencies and user setup
 ###############################################################################
-ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/labops-python:3.12-alpine
 FROM ${BASE_IMAGE} AS base
 
 WORKDIR /app
