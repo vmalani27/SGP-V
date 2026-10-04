@@ -216,11 +216,104 @@ systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null ||
 	return true
 }
 
+// EnsureNativeLinuxProvisioned verifies and auto-provisions Docker CE & Sysbox CE on Native Linux if needed.
+func EnsureNativeLinuxProvisioned() bool {
+	if runtime.GOOS != "linux" {
+		return true
+	}
+
+	// 1. Try starting existing docker daemon first
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = exec.CommandContext(ctx1, "systemctl", "start", "docker").Run()
+	cancel1()
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = exec.CommandContext(ctx2, "service", "docker", "start").Run()
+	cancel2()
+
+	// Fast check: verify if native dockerd, docker CLI, and sysbox-runc exist inside Linux
+	cmdCheck := exec.Command("sh", "-c", "[ -x /usr/bin/dockerd ] && [ -x /usr/bin/docker ] && [ -f /usr/bin/sysbox-runc ]")
+	if cmdCheck.Run() == nil {
+		return true
+	}
+
+	fmt.Println("\n[Bootstrap] Auto-provisioning Native Linux with Docker CE & Sysbox runtime...")
+	fmt.Println("This initial setup may take 1-2 minutes. Please wait...")
+
+	script := `set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+if [ "$(id -u)" -ne 0 ]; then
+  SUDO="sudo"
+else
+  SUDO=""
+fi
+
+$SUDO apt-get update -y || true
+$SUDO apt-get install -y ca-certificates curl gnupg lsb-release jq apt-transport-https rsync kmod || true
+
+$SUDO install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | $SUDO gpg --dearmor --yes --batch -o /etc/apt/keyrings/docker.gpg || true
+UBUNTU_RELEASE=$(lsb_release -cs 2>/dev/null || echo "jammy")
+if [ "$UBUNTU_RELEASE" != "jammy" ] && [ "$UBUNTU_RELEASE" != "focal" ]; then
+  UBUNTU_RELEASE="jammy"
+fi
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${UBUNTU_RELEASE} stable" | $SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
+$SUDO apt-get update -y || true
+
+if [ ! -x /usr/bin/dockerd ] || [ ! -x /usr/bin/docker ]; then
+  echo "Installing Docker CE Engine & CLI..."
+  $SUDO apt-mark unhold docker-ce docker-ce-cli containerd.io 2>/dev/null || true
+  $SUDO apt-get install --reinstall -y docker-ce=5:27.5.1-1~ubuntu.22.04~jammy docker-ce-cli=5:27.5.1-1~ubuntu.22.04~jammy containerd.io=1.7.29-1~ubuntu.22.04~jammy docker-buildx-plugin docker-compose-plugin || $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  $SUDO apt-mark hold docker-ce docker-ce-cli containerd.io || true
+fi
+
+if [ ! -f /usr/bin/sysbox-runc ]; then
+  echo "Installing Sysbox CE runtime..."
+  SYSBOX_VERSION="0.7.0"
+  SYSBOX_URL="https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_amd64.deb"
+  curl -fsSL -o /tmp/sysbox-ce.deb "$SYSBOX_URL"
+  $SUDO systemctl stop docker docker.socket 2>/dev/null || $SUDO service docker stop 2>/dev/null || true
+  $SUDO apt-get install -y /tmp/sysbox-ce.deb
+  rm -f /tmp/sysbox-ce.deb
+  $SUDO mkdir -p /etc/docker
+  cat <<'EOF' | $SUDO tee /etc/docker/daemon.json >/dev/null
+{
+  "runtimes": {
+    "sysbox-runc": {
+      "path": "/usr/bin/sysbox-runc"
+    }
+  }
+}
+EOF
+fi
+
+$SUDO systemctl daemon-reload 2>/dev/null || true
+$SUDO systemctl enable --now sysbox 2>/dev/null || $SUDO service sysbox start 2>/dev/null || true
+$SUDO systemctl enable --now docker 2>/dev/null || $SUDO service docker start 2>/dev/null || true
+`
+
+	cleanScript := strings.ReplaceAll(script, "\r\n", "\n")
+	cmd := exec.Command("bash", "-c", cleanScript)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("Warning: Native Linux auto-bootstrap encountered an issue: %v\n", err)
+		return false
+	}
+
+	fmt.Println("Native Linux environment auto-provisioned successfully!")
+	return true
+}
+
 // EnsureDockerReady ensures that the target Docker engine (host or WSL2) is active and ready to process commands.
 func EnsureDockerReady(wslDistro string) bool {
 	if _, _, err := RunDockerCmd(wslDistro, "info"); err == nil {
 		if wslDistro != "" && wslDistro != "native" {
 			EnsureWSL2Provisioned(wslDistro)
+		} else if runtime.GOOS == "linux" {
+			EnsureNativeLinuxProvisioned()
 		}
 		return true
 	}
@@ -234,6 +327,16 @@ func EnsureDockerReady(wslDistro string) bool {
 
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = exec.CommandContext(ctx2, "wsl.exe", "-d", wslDistro, "-u", "root", "systemctl", "start", "docker").Run()
+		cancel2()
+	} else if runtime.GOOS == "linux" {
+		EnsureNativeLinuxProvisioned()
+
+		ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = exec.CommandContext(ctx1, "systemctl", "start", "docker").Run()
+		cancel1()
+
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = exec.CommandContext(ctx2, "service", "docker", "start").Run()
 		cancel2()
 	}
 
@@ -624,6 +727,15 @@ func StartDockerMode() bool {
 			fmt.Println("Switching to Native WSL2 Mode...")
 			return StartWSL2Mode(distro)
 		}
+		if runtime.GOOS == "linux" {
+			fmt.Println("Host 'docker' CLI not found. Attempting Native Linux auto-provisioning...")
+			if EnsureNativeLinuxProvisioned() && EnsureDockerReady("") {
+				return StartNativeStack("")
+			}
+			fmt.Println("Error: 'docker' CLI is not found in PATH.")
+			fmt.Println("Please install Docker CE or run 'sudo apt-get install docker-ce docker-ce-cli'.")
+			return false
+		}
 		fmt.Println("Error: 'docker' CLI is not found in PATH.")
 		fmt.Println("Please install Docker Desktop or ensure docker is in your PATH.")
 		return false
@@ -634,6 +746,15 @@ func StartDockerMode() bool {
 			fmt.Printf("Docker daemon not running on Windows host, but detected WSL2 (%s).\n", distro)
 			fmt.Println("Switching to Native WSL2 Mode...")
 			return StartWSL2Mode(distro)
+		}
+		if runtime.GOOS == "linux" {
+			fmt.Println("Docker daemon not running. Attempting to start daemon / auto-provision...")
+			if EnsureNativeLinuxProvisioned() && EnsureDockerReady("") {
+				return StartNativeStack("")
+			}
+			fmt.Println("Error: Docker daemon is not running.")
+			fmt.Println("Please start Docker daemon with 'sudo systemctl start docker' or run labops as root.")
+			return false
 		}
 		fmt.Println("Error: Docker daemon is not running.")
 		fmt.Println("Please start Docker Desktop or start Docker inside WSL2 and try again.")

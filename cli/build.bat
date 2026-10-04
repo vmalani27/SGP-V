@@ -28,6 +28,15 @@ if /I "%ARG%"=="all" (
     goto :end
 )
 
+if /I "%ARG%"=="linux" (
+    set "LIN_ENV=%~2"
+    if "!LIN_ENV!"=="" set "LIN_ENV=dev"
+    echo Building labops for Linux amd64 [channel: !LIN_ENV!]...
+    call :build_one linux amd64 labops-linux !LIN_ENV!
+    copy /y labops-linux labops >nul 2>&1
+    goto :end
+)
+
 if not "%ARG%"=="" (
     set "TARGET_ENV=%ARG%"
 )
