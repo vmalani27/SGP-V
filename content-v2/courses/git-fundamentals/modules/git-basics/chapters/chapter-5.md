@@ -1,14 +1,12 @@
 # Chapter 5: Keeping Unwanted Files Out
 
-> **Before this chapter:** You should be comfortable with `git add`, `git commit`, and `git status` from Chapter 3.
-
 ## The Problem
 
 A project directory contains more than source code. Local configuration, generated files, downloaded dependencies, editor settings, operating-system metadata, and credentials may all exist beside the files you intend to commit.
 
 Git does not know which files you consider temporary, generated, or private. If an untracked file is not ignored, Git reports it and a broad command such as `git add .` can stage it.
 
-`.gitignore` tells Git which untracked files to leave out of normal status and staging operations.
+`.gitignore` tells Git which untracked files to leave out of normal status and staging operations. Throughout this chapter, you will use the pre-configured repository in the `~/practice` folder in your terminal to see how Git handles ignored files.
 
 ## Discover the Difference
 

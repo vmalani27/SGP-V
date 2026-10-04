@@ -1,17 +1,5 @@
 # Chapter 3: Configuring Containers
 
-:::
----
-
-> **Note — Prerequisites:** What you need to know before reading this chapter
->
-> - **Container lifecycle (Chapter 2):** `docker ps`, `docker logs`, `docker inspect` — you'll use these to verify configuration worked
-> - **IP addresses and ports — what they are:** the difference between `localhost` (127.0.0.1) and `0.0.0.0`, what a port number means, what "binding" to a port means — covered in Linux Fundamentals chapter 5
-> - **Environment variables:** what they are and how applications use them to change their behaviour
-> - **Basic networking:** what it means for a service to be "reachable" vs "only accessible from this machine"
-
----
-
 ## Your Teammate Can't Reach Your Container. Why?
 
 You've been running a web service locally all morning. It works fine in your browser. You tell your teammate to hit `http://YOUR_IP:9090` so they can review the UI before you push it.
@@ -26,9 +14,9 @@ The container is running. `docker logs` shows the service started normally. But 
 
 **This is the most common port mapping problem in Docker.** It has nothing to do with firewalls. The fix is one word in your `docker run` command. This chapter explains exactly what's happening and how to diagnose it.
 
-A second scenario: same image deployed to staging and production behaves completely differently — the staging database gets wiped, the production one doesn't. Same image. Different behaviour. That's the second thing this chapter covers: environment variables as the correct mechanism for per-environment configuration.
+A second scenario: same image deployed to staging and production behaves completely differently — the staging database gets wiped, the production one doesn't. Same image. Different behaviour. That's the second thing this chapter covers: environment variables as the correct mechanism for per-environment configuration. Throughout this chapter, you will use the interactive terminal on the right to test environment variables, map ports, and diagnose container reachability.
 
----
+
 
 ## Environment Variables: Same Image, Different Behaviour
 
@@ -85,7 +73,7 @@ docker rm -f api-test
 
 You'll see the injected variables in the output alongside any defaults baked into the image itself.
 
----
+
 
 ## Port Mapping: How Containers Reach the Outside World
 
@@ -149,7 +137,7 @@ docker port <container>
 
 Useful for testing, but in production you want predictable port numbers — use explicit `-p HOST:CONTAINER`.
 
----
+
 
 ## Overriding the Command
 
@@ -171,7 +159,7 @@ docker inspect cmd-demo --format '{{.Config.Cmd}}'
 docker rm -f cmd-demo
 ```
 
----
+
 
 ## When Configuration Goes Wrong
 
@@ -185,7 +173,7 @@ A container that fails to start usually has one of these causes:
 | Port conflicts | Host port already in use | Error message at `docker run` time |
 | Wrong behaviour vs last time | Env var pointing to wrong DB/service | `docker inspect <name> --format '{{json .Config.Env}}'` |
 
----
+
 
 ## Lab: Diagnose a Misconfigured Port Mapping
 
@@ -248,7 +236,7 @@ A container that fails to start usually has one of these causes:
 > docker rm -f teammate-web
 > ```
 
----
+
 
 ## Connecting to docker-compose, Kubernetes, and Production
 
@@ -282,7 +270,7 @@ services:
 - Your CI pipeline has its own set of env vars (staging credentials) that it injects at test time
 - Production has a different set (prod credentials) managed by whatever secrets system your team uses (AWS Secrets Manager, HashiCorp Vault, GitHub Secrets)
 
----
+
 
 ## Key Takeaways
 

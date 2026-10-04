@@ -1,20 +1,10 @@
 # Chapter 1: Why Version Control Exists
 
-:::
-> **No prior Git knowledge required.** 
-> You must be comfortable in a terminal — `ls`, `cd`, `mkdir`.
->
-> **Hands-On Practice in the Terminal:**
-> Your terminal on the right comes with a pre-configured practice repository located in `~/practice`. Enter it to follow along with the commands in this chapter:
-> ```bash
-> cd ~/practice
-> ```
-
 ## The Situation
 
 It is your second week as a DevOps intern. You are asked to update a deployment script on the production CI server. You make the change, test it locally, and push it. An hour later, builds start failing. Someone else on the team had changed the same file yesterday. Your push overwrote theirs. Nobody knows what the file looked like before.
 
-Git is the system that prevents this — and recovers from it when it happens anyway. Let's understand how it works.
+Git is the system that prevents this — and recovers from it when it happens anyway. Throughout this chapter, you can follow along directly using the pre-configured practice repository in the `~/practice` folder in your terminal. Let's understand how it works.
 
 ## What Git Records
 

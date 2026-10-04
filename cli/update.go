@@ -76,6 +76,38 @@ func labOpsImages(channel string) []managedImage {
 	}
 }
 
+// GetManagedImages resolves target images & tags directly from the CDN release manifest.
+func GetManagedImages(channel string) ([]managedImage, error) {
+	cdnURL := GetContentCDNURL()
+	manifest, err := fetchReleaseManifest(cdnURL, channel)
+	if err != nil || manifest == nil || len(manifest.Images) == 0 {
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch release manifest for channel '%s' from %s: %v", channel, cdnURL, err)
+		}
+		return nil, fmt.Errorf("empty or invalid release manifest for channel '%s' from %s", channel, cdnURL)
+	}
+
+	keys := make([]string, 0, len(manifest.Images))
+	for k := range manifest.Images {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var images []managedImage
+	for _, key := range keys {
+		meta := manifest.Images[key]
+		img := managedImage{
+			Name:   imageDisplayName(key),
+			Remote: meta.Remote,
+		}
+		if meta.Alias != "" {
+			img.Tags = []string{meta.Alias}
+		}
+		images = append(images, img)
+	}
+	return images, nil
+}
+
 func imageDisplayName(key string) string {
 	switch key {
 	case "frontend":

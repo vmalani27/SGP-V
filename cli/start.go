@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -83,7 +85,9 @@ func PollOrchestratorEndpoint(timeout time.Duration) bool {
 
 // IsDockerDaemonRunning checks if the local Docker daemon is responsive.
 func IsDockerDaemonRunning() bool {
-	cmd := exec.Command("docker", "info")
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", "info")
 	return cmd.Run() == nil
 }
 
@@ -102,8 +106,8 @@ func ToWSLPath(path string) string {
 	return filepath.ToSlash(path)
 }
 
-// CheckWSLDockerReady checks if a WSL2 Linux distribution with systemd and Docker is available.
-func CheckWSLDockerReady() (bool, string) {
+// CheckWSL2Available checks if a WSL2 Linux distribution with systemd is available.
+func CheckWSL2Available() (bool, string) {
 	if runtime.GOOS != "windows" {
 		return false, ""
 	}
@@ -111,39 +115,129 @@ func CheckWSLDockerReady() (bool, string) {
 	if err != nil || !sysd || distro == "" || distro == "native" {
 		return false, ""
 	}
-	// Fast path
-	cmd := exec.Command("wsl.exe", "-d", distro, "docker", "info")
+	return true, distro
+}
+
+// CheckWSLDockerReady checks if a WSL2 Linux distribution with systemd and Docker is available.
+func CheckWSLDockerReady() (bool, string) {
+	ok, distro := CheckWSL2Available()
+	if !ok {
+		return false, ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "wsl.exe", "-d", distro, "docker", "info")
 	if cmd.Run() == nil {
 		return true, distro
 	}
+	return false, distro
+}
 
-	// Warm-up path: trigger docker startup and poll briefly to handle daemon start race condition
-	_ = exec.Command("wsl.exe", "-d", distro, "sudo", "service", "docker", "start").Run()
-	_ = exec.Command("wsl.exe", "-d", distro, "systemctl", "start", "docker").Run()
-
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(1 * time.Second)
-		if exec.Command("wsl.exe", "-d", distro, "docker", "info").Run() == nil {
-			return true, distro
-		}
+// EnsureWSL2Provisioned verifies that Docker CE daemon (dockerd) and Sysbox are installed inside the WSL2 distro.
+// If either component is missing, it automatically provisions the WSL2 environment using root privileges.
+func EnsureWSL2Provisioned(wslDistro string) bool {
+	if wslDistro == "" || wslDistro == "native" {
+		return true
 	}
 
-	return false, ""
+	// Fast check: verify if native dockerd, docker CLI, and sysbox-runc binaries exist inside WSL2
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmdCheck := exec.CommandContext(ctx, "wsl.exe", "-d", wslDistro, "sh", "-c", "[ -x /usr/bin/dockerd ] && [ -x /usr/bin/docker ] && [ -f /usr/bin/sysbox-runc ]")
+	if cmdCheck.Run() == nil {
+		return true
+	}
+
+	fmt.Printf("\n[Bootstrap] Auto-provisioning WSL2 (%s) with Docker CE & Sysbox runtime...\n", wslDistro)
+	fmt.Println("This initial setup may take 1-2 minutes. Please wait...")
+
+	script := `set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf || true
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf || true
+
+apt-get update -y
+apt-get install -y ca-certificates curl gnupg lsb-release jq apt-transport-https rsync kmod
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor --yes --batch -o /etc/apt/keyrings/docker.gpg
+UBUNTU_RELEASE=$(lsb_release -cs 2>/dev/null || echo "jammy")
+if [ "$UBUNTU_RELEASE" != "jammy" ] && [ "$UBUNTU_RELEASE" != "focal" ]; then
+  UBUNTU_RELEASE="jammy"
+fi
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${UBUNTU_RELEASE} stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update -y
+
+if [ ! -x /usr/bin/dockerd ] || [ ! -x /usr/bin/docker ]; then
+  echo "Installing Docker CE Engine & CLI..."
+  apt-mark unhold docker-ce docker-ce-cli containerd.io 2>/dev/null || true
+  apt-get install --reinstall -y docker-ce=5:27.5.1-1~ubuntu.22.04~jammy docker-ce-cli=5:27.5.1-1~ubuntu.22.04~jammy containerd.io=1.7.29-1~ubuntu.22.04~jammy docker-buildx-plugin docker-compose-plugin || apt-get install --reinstall -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  apt-mark hold docker-ce docker-ce-cli containerd.io || true
+fi
+
+if [ ! -f /usr/bin/sysbox-runc ]; then
+  echo "Installing Sysbox CE runtime..."
+  SYSBOX_VERSION="0.7.0"
+  SYSBOX_URL="https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_amd64.deb"
+  curl -fsSL -o /tmp/sysbox-ce.deb "$SYSBOX_URL"
+  systemctl stop docker docker.socket 2>/dev/null || service docker stop 2>/dev/null || true
+  apt-get install -y /tmp/sysbox-ce.deb
+  rm -f /tmp/sysbox-ce.deb
+  mkdir -p /etc/docker
+  cat <<'EOF' > /etc/docker/daemon.json
+{
+  "runtimes": {
+    "sysbox-runc": {
+      "path": "/usr/bin/sysbox-runc"
+    }
+  }
+}
+EOF
+fi
+
+systemctl daemon-reload 2>/dev/null || true
+systemctl enable --now sysbox 2>/dev/null || service sysbox start 2>/dev/null || true
+systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
+`
+
+	cleanScript := strings.ReplaceAll(script, "\r\n", "\n")
+	cmd := exec.Command("wsl.exe", "-d", wslDistro, "-u", "root", "bash")
+	cmd.Stdin = strings.NewReader(cleanScript)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("Warning: WSL2 auto-bootstrap encountered an issue: %v\n", err)
+		return false
+	}
+
+	fmt.Println("WSL2 environment auto-provisioned successfully!")
+	return true
 }
 
 // EnsureDockerReady ensures that the target Docker engine (host or WSL2) is active and ready to process commands.
 func EnsureDockerReady(wslDistro string) bool {
 	if _, _, err := RunDockerCmd(wslDistro, "info"); err == nil {
+		if wslDistro != "" && wslDistro != "native" {
+			EnsureWSL2Provisioned(wslDistro)
+		}
 		return true
 	}
 
 	if wslDistro != "" && wslDistro != "native" {
-		_ = exec.Command("wsl.exe", "-d", wslDistro, "sudo", "service", "docker", "start").Run()
-		_ = exec.Command("wsl.exe", "-d", wslDistro, "systemctl", "start", "docker").Run()
+		EnsureWSL2Provisioned(wslDistro)
+
+		ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = exec.CommandContext(ctx1, "wsl.exe", "-d", wslDistro, "-u", "root", "service", "docker", "start").Run()
+		cancel1()
+
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = exec.CommandContext(ctx2, "wsl.exe", "-d", wslDistro, "-u", "root", "systemctl", "start", "docker").Run()
+		cancel2()
 	}
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(1 * time.Second)
 		if _, _, err := RunDockerCmd(wslDistro, "info"); err == nil {
@@ -205,6 +299,70 @@ func cleanStaleContainers(wslDistro string) {
 	_, _, _ = RunDockerCmd(wslDistro, args...)
 }
 
+// EnsureImagePresent checks if a Docker image is cached locally. If missing, it pulls the image.
+// If silent is true, output is suppressed so background pre-warming does not interfere with the user's terminal.
+func EnsureImagePresent(wslDistro string, imageName string, silent bool, tags ...string) {
+	_, _, inspectErr := RunDockerCmd(wslDistro, "image", "inspect", imageName)
+	if inspectErr != nil {
+		if !silent {
+			fmt.Printf("\n  -> Pre-fetching image (%s)...\n", imageName)
+		}
+		var cmd *exec.Cmd
+		if wslDistro != "" && wslDistro != "native" {
+			cmd = exec.Command("wsl.exe", "-d", wslDistro, "docker", "pull", imageName)
+		} else {
+			cmd = exec.Command("docker", "pull", imageName)
+		}
+		if !silent {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
+		_ = cmd.Run()
+	}
+
+	for _, tag := range tags {
+		if tag == "" {
+			continue
+		}
+		_, _, tagErr := RunDockerCmd(wslDistro, "image", "inspect", tag)
+		if tagErr != nil {
+			if !silent {
+				fmt.Printf("  -> Tagging %s as %s...\n", imageName, tag)
+			}
+			_, _, _ = RunDockerCmd(wslDistro, "image", "tag", imageName, tag)
+		}
+	}
+}
+
+// categorizeImages splits managed images into core application stack images vs course lab environment images.
+func categorizeImages(channel string) (stack []managedImage, lab []managedImage, err error) {
+	all, err := GetManagedImages(channel)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, img := range all {
+		if len(img.Tags) > 0 {
+			lab = append(lab, img)
+		} else {
+			stack = append(stack, img)
+		}
+	}
+	return stack, lab, nil
+}
+
+// PreloadImagesParallel pulls and tags images concurrently using goroutines.
+func PreloadImagesParallel(wslDistro string, images []managedImage, silent bool) {
+	var wg sync.WaitGroup
+	for _, img := range images {
+		wg.Add(1)
+		go func(m managedImage) {
+			defer wg.Done()
+			EnsureImagePresent(wslDistro, m.Remote, silent, m.Tags...)
+		}(img)
+	}
+	wg.Wait()
+}
+
 // StartNativeStack manages the container stack natively without docker-compose.
 func StartNativeStack(wslDistro string) bool {
 	modeName := "Docker Desktop / Local Mode"
@@ -258,6 +416,31 @@ func StartNativeStack(wslDistro string) bool {
 	chanName := selectedChannel()
 	cdnURL := GetContentCDNURL()
 
+	gitImage := reg + "/labops-git-server:latest"
+	syncImage := reg + "/labops-content-sync:" + chanName
+	orchImage := reg + "/labops-orchestrator:" + chanName
+	feImage := reg + "/labops-frontend:" + chanName
+	proxyImage := reg + "/labops-proxy:" + chanName
+
+	stackImages, labImages, mErr := categorizeImages(chanName)
+	if mErr != nil {
+		// If CDN manifest cannot be fetched (e.g. offline or no manifest published), resolve channel defaults
+		all := labOpsImages(chanName)
+		for _, img := range all {
+			if len(img.Tags) > 0 {
+				labImages = append(labImages, img)
+			} else {
+				stackImages = append(stackImages, img)
+			}
+		}
+	}
+
+	// [Phase 1] Pre-fetch core control-plane stack images concurrently for ultra-fast startup
+	PreloadImagesParallel(wslDistro, stackImages, false)
+
+	// [Phase 2] Pre-warm course lab environment images in background so onboarding is instant
+	go PreloadImagesParallel(wslDistro, labImages, true)
+
 	// [1/4] Preparing workspace network
 	fmt.Print("[1/4] Preparing workspace network... ")
 	_, _, _ = RunDockerCmd(wslDistro, "network", "create", "labops-net")
@@ -277,7 +460,7 @@ func StartNativeStack(wslDistro string) bool {
 	fmt.Print("[2/4] Starting core services... ")
 
 	// Git Server
-	gitImage := reg + "/labops-git-server:latest"
+	gitImage = reg + "/labops-git-server:latest"
 	gitCmd := []string{
 		"run", "-d",
 		"--name", "labops-git-server",
@@ -312,7 +495,7 @@ func StartNativeStack(wslDistro string) bool {
 	}
 
 	// Content Sync
-	syncImage := reg + "/labops-content-sync:" + chanName
+	syncImage = reg + "/labops-content-sync:" + chanName
 	syncCmd := []string{
 		"run", "-d",
 		"--name", "labops-content-sync",
@@ -333,7 +516,7 @@ func StartNativeStack(wslDistro string) bool {
 	}
 
 	// Orchestrator
-	orchImage := reg + "/labops-orchestrator:" + chanName
+	orchImage = reg + "/labops-orchestrator:" + chanName
 	orchCmd := []string{
 		"run", "-d",
 		"--name", "labops-orchestrator",
@@ -363,7 +546,7 @@ func StartNativeStack(wslDistro string) bool {
 	fmt.Print("[3/4] Initializing gateway and web UI... ")
 
 	// Frontend
-	feImage := reg + "/labops-frontend:" + chanName
+	feImage = reg + "/labops-frontend:" + chanName
 	feCmd := []string{
 		"run", "-d",
 		"--name", "labops-frontend",
@@ -387,7 +570,7 @@ func StartNativeStack(wslDistro string) bool {
 	}
 
 	// Proxy
-	proxyImage := reg + "/labops-proxy:" + chanName
+	proxyImage = reg + "/labops-proxy:" + chanName
 	proxyCmd := []string{
 		"run", "-d",
 		"--name", "labops-proxy",
@@ -436,8 +619,8 @@ func StartWSL2Mode(distro string) bool {
 // StartDockerMode boots LabOps using the local Docker Desktop / Docker Engine.
 func StartDockerMode() bool {
 	if !CheckDependency("docker") {
-		if wslReady, distro := CheckWSLDockerReady(); wslReady {
-			fmt.Printf("Host 'docker' CLI not found, but detected running inside WSL2 (%s).\n", distro)
+		if wslAvailable, distro := CheckWSL2Available(); wslAvailable {
+			fmt.Printf("Host 'docker' CLI not found, but detected WSL2 (%s).\n", distro)
 			fmt.Println("Switching to Native WSL2 Mode...")
 			return StartWSL2Mode(distro)
 		}
@@ -447,8 +630,8 @@ func StartDockerMode() bool {
 	}
 
 	if !IsDockerDaemonRunning() {
-		if wslReady, distro := CheckWSLDockerReady(); wslReady {
-			fmt.Printf("Docker daemon not running on Windows host, but detected running in WSL2 (%s).\n", distro)
+		if wslAvailable, distro := CheckWSL2Available(); wslAvailable {
+			fmt.Printf("Docker daemon not running on Windows host, but detected WSL2 (%s).\n", distro)
 			fmt.Println("Switching to Native WSL2 Mode...")
 			return StartWSL2Mode(distro)
 		}
@@ -473,7 +656,7 @@ func RunStart() bool {
 		}()
 	}
 
-	wslReady, wslDistro := CheckWSLDockerReady()
+	wslAvailable, wslDistro := CheckWSL2Available()
 
 	// Check for explicit CLI flags in arguments
 	for _, arg := range os.Args[2:] {
@@ -494,16 +677,16 @@ func RunStart() bool {
 			return StartDockerMode()
 		}
 		if lower == "--wsl" || lower == "-w" {
-			if wslReady {
+			if wslAvailable {
 				return StartWSL2Mode(wslDistro)
 			}
-			fmt.Println("Error: WSL2 with Docker is not ready.")
+			fmt.Println("Error: WSL2 with systemd is not ready.")
 			return false
 		}
 	}
 
 	// Default directly to native runtime without prompting
-	if wslReady {
+	if wslAvailable {
 		return StartWSL2Mode(wslDistro)
 	}
 

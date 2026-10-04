@@ -1,18 +1,12 @@
 # Chapter 2: Your First Repository
 
-:::
-> **Before this chapter:** You should be comfortable in a terminal — `cd`, `mkdir`, creating files with a text editor.
->
-> **Hands-On Practice in the Terminal:**
-> Your terminal on the right is ready. You will use it to create and initialize your first project directory from scratch, stage files, and push them to the local remote server.
-
 ## The Real Reason You Need This
 
 Here is a situation that happens to every developer. You are working on a script. It works. You decide to improve it. An hour later it is broken and you cannot remember what you changed. You have no way to go back.
 
 Or: your teammate emails you "hey I updated the deployment config" and overwrites the change you made this morning. Neither of you knew the other was editing it.
 
-Git solves both problems. It tracks your changes locally on your machine and coordinates collaboration with others through shared repositories.
+Git solves both problems. It tracks your changes locally on your machine and coordinates collaboration with others through shared repositories. Throughout this chapter, you will use the interactive terminal on the right to create and initialize a project directory from scratch, stage files, and push them to the local remote server.
 
 ## Git vs. Remote Platforms (GitHub & GitLab)
 

@@ -3,55 +3,52 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
+	"sort"
+	"sync"
+	"syscall"
+	"time"
+	"unsafe"
 )
+
+type MEMORYSTATUSEX struct {
+	Length               uint32
+	MemoryLoad           uint32
+	TotalPhys            uint64
+	AvailPhys            uint64
+	TotalPageFile        uint64
+	AvailPageFile        uint64
+	TotalVirtual         uint64
+	AvailVirtual         uint64
+	AvailExtendedVirtual uint64
+}
 
 // CheckVirtualization checks if hardware virtualization is enabled in firmware/CPU.
 func CheckVirtualization() (bool, error) {
 	switch runtime.GOOS {
 	case "windows":
-		// Check using Powershell to query HypervisorPresent or Win32_Processor
-		cmd := exec.Command("powershell", "-Command", "(Get-CimInstance Win32_ComputerSystem).HypervisorPresent")
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		if err := cmd.Run(); err == nil {
-			val := strings.TrimSpace(out.String())
-			if strings.EqualFold(val, "True") {
-				return true, nil
-			}
+		kernel32 := syscall.NewLazyDLL("kernel32.dll")
+		isProcessorFeaturePresent := kernel32.NewProc("IsProcessorFeaturePresent")
+		// PF_VIRT_FIRMWARE_ENABLED = 21
+		ret, _, _ := isProcessorFeaturePresent.Call(21)
+		if ret != 0 {
+			return true, nil
 		}
 
-		// Fallback: Check Win32_Processor VirtualizationFirmwareEnabled
-		cmd2 := exec.Command("powershell", "-Command", "(Get-CimInstance Win32_Processor).VirtualizationFirmwareEnabled")
-		var out2 bytes.Buffer
-		cmd2.Stdout = &out2
-		if err := cmd2.Run(); err == nil {
-			val := strings.TrimSpace(out2.String())
-			if strings.EqualFold(val, "True") || val == "1" {
-				return true, nil
-			}
-		}
-
-		// Second fallback: check systeminfo output
-		cmd3 := exec.Command("systeminfo")
-		var out3 bytes.Buffer
-		cmd3.Stdout = &out3
-		if err := cmd3.Run(); err == nil {
-			if strings.Contains(out3.String(), "Virtualization Enabled In Firmware: Yes") ||
-				strings.Contains(out3.String(), "Hypervisor has been detected") {
-				return true, nil
-			}
+		// If wsl.exe or docker CLI is present, virtualization is active
+		if CheckDependency("wsl.exe") || CheckDependency("docker") {
+			return true, nil
 		}
 
 		return false, nil
 
 	case "darwin":
-		// macOS check VMX in machdep.cpu.features
 		cmd := exec.Command("sysctl", "-n", "machdep.cpu.features")
 		var out bytes.Buffer
 		cmd.Stdout = &out
@@ -61,7 +58,6 @@ func CheckVirtualization() (bool, error) {
 		return strings.Contains(strings.ToLower(out.String()), "vmx"), nil
 
 	case "linux":
-		// Linux check /proc/cpuinfo
 		file, err := os.Open("/proc/cpuinfo")
 		if err != nil {
 			return false, err
@@ -72,8 +68,7 @@ func CheckVirtualization() (bool, error) {
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "flags") {
-				flags := strings.Fields(line)
-				for _, flag := range flags {
+				for _, flag := range strings.Fields(line) {
 					if flag == "vmx" || flag == "svm" {
 						return true, nil
 					}
@@ -91,17 +86,15 @@ func CheckVirtualization() (bool, error) {
 func CheckRAM() (float64, error) {
 	switch runtime.GOOS {
 	case "windows":
-		cmd := exec.Command("powershell", "-Command", "[math]::round((Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize / 1024 / 1024, 2)")
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		if err := cmd.Run(); err != nil {
-			return 0, err
+		kernel32 := syscall.NewLazyDLL("kernel32.dll")
+		globalMemoryStatusEx := kernel32.NewProc("GlobalMemoryStatusEx")
+		var memStatus MEMORYSTATUSEX
+		memStatus.Length = uint32(unsafe.Sizeof(memStatus))
+		ret, _, _ := globalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&memStatus)))
+		if ret == 0 {
+			return 0, fmt.Errorf("GlobalMemoryStatusEx failed")
 		}
-		val, err := strconv.ParseFloat(strings.TrimSpace(out.String()), 64)
-		if err != nil {
-			return 0, err
-		}
-		return val, nil
+		return float64(memStatus.TotalPhys) / (1024 * 1024 * 1024), nil
 
 	case "darwin":
 		cmd := exec.Command("sysctl", "-n", "hw.memsize")
@@ -148,20 +141,25 @@ func CheckRAM() (float64, error) {
 func CheckDisk() (float64, error) {
 	switch runtime.GOOS {
 	case "windows":
-		cmd := exec.Command("powershell", "-Command", "[math]::round((Get-CimInstance Win32_LogicalDisk -Filter \"DeviceID='C:'\").FreeSpace / 1024 / 1024 / 1024, 2)")
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		if err := cmd.Run(); err != nil {
-			return 0, err
-		}
-		val, err := strconv.ParseFloat(strings.TrimSpace(out.String()), 64)
+		kernel32 := syscall.NewLazyDLL("kernel32.dll")
+		getDiskFreeSpaceExW := kernel32.NewProc("GetDiskFreeSpaceExW")
+		var freeBytesAvailable, totalNumberOfBytes, totalNumberOfFreeBytes uint64
+		cPath, err := syscall.UTF16PtrFromString("C:\\")
 		if err != nil {
 			return 0, err
 		}
-		return val, nil
+		ret, _, _ := getDiskFreeSpaceExW.Call(
+			uintptr(unsafe.Pointer(cPath)),
+			uintptr(unsafe.Pointer(&freeBytesAvailable)),
+			uintptr(unsafe.Pointer(&totalNumberOfBytes)),
+			uintptr(unsafe.Pointer(&totalNumberOfFreeBytes)),
+		)
+		if ret == 0 {
+			return 0, fmt.Errorf("GetDiskFreeSpaceExW failed")
+		}
+		return float64(freeBytesAvailable) / (1024 * 1024 * 1024), nil
 
 	case "darwin", "linux":
-		// run df -k / and parse
 		cmd := exec.Command("df", "-k", "/")
 		var out bytes.Buffer
 		cmd.Stdout = &out
@@ -174,18 +172,12 @@ func CheckDisk() (float64, error) {
 			return 0, fmt.Errorf("unexpected output from df: %s", out.String())
 		}
 		fields := strings.Fields(lines[1])
-		// For macOS/Linux df -k:
-		// Filesystem 1024-blocks Used Available Capacity Mounted on
-		// Field[3] is usually Free/Available blocks of 1KB size
 		if len(fields) >= 4 {
 			kbVal, err := strconv.ParseFloat(fields[3], 64)
-			if err != nil {
-				// Sometimes Mac df outputs split lines if filesystem name is long
-				if len(lines) >= 3 {
-					fields = strings.Fields(lines[2])
-					if len(fields) >= 3 {
-						kbVal, err = strconv.ParseFloat(fields[2], 64)
-					}
+			if err != nil && len(lines) >= 3 {
+				fields = strings.Fields(lines[2])
+				if len(fields) >= 3 {
+					kbVal, err = strconv.ParseFloat(fields[2], 64)
 				}
 			}
 			if err == nil {
@@ -257,17 +249,19 @@ func CheckHypervisorInstalled() (hasVirtualBox bool, hasVMware bool) {
 
 	return hasVirtualBox, hasVMware
 }
+
 // ListWSLDistros returns available WSL Linux distributions (excluding docker-desktop internal distros).
 func ListWSLDistros() []string {
 	if runtime.GOOS != "windows" {
 		return nil
 	}
-	cmd := exec.Command("wsl.exe", "-l", "-q")
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "wsl.exe", "-l", "-q")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil
 	}
-	// wsl.exe outputs UTF-16LE, which contains 0x00 bytes when read as ASCII
 	cleaned := strings.ReplaceAll(string(out), "\x00", "")
 	lines := strings.Split(cleaned, "\n")
 	var distros []string
@@ -282,6 +276,22 @@ func ListWSLDistros() []string {
 		}
 		distros = append(distros, d)
 	}
+
+	sort.SliceStable(distros, func(i, j int) bool {
+		di := strings.ToLower(distros[i])
+		dj := strings.ToLower(distros[j])
+		if strings.Contains(di, "22.04") {
+			return true
+		}
+		if strings.Contains(dj, "22.04") {
+			return false
+		}
+		if strings.Contains(di, "ubuntu") && !strings.Contains(dj, "ubuntu") {
+			return true
+		}
+		return false
+	})
+
 	return distros
 }
 
@@ -305,7 +315,6 @@ func parseWSLConfSystemd(content string) bool {
 }
 
 // CheckWSL2Systemd checks if /etc/wsl.conf contains systemd=true in WSL2.
-// Returns (systemdEnabled, distroName, error).
 func CheckWSL2Systemd() (bool, string, error) {
 	if runtime.GOOS == "linux" {
 		data, err := os.ReadFile("/etc/wsl.conf")
@@ -328,23 +337,25 @@ func CheckWSL2Systemd() (bool, string, error) {
 		return false, "", fmt.Errorf("no WSL2 Linux distributions found")
 	}
 
-	// First pass: look for a distribution with active systemd or systemd=true in /etc/wsl.conf
 	for _, distro := range distros {
-		// Check running systemd state directly
-		cmdRunning := exec.Command("wsl.exe", "-d", distro, "systemctl", "is-system-running")
-		if out, err := cmdRunning.Output(); err == nil {
-			s := strings.TrimSpace(string(out))
-			if s == "running" || s == "degraded" {
-				return true, distro, nil
-			}
-		}
-
-		// Fallback to checking /etc/wsl.conf
-		cmd := exec.Command("wsl.exe", "-d", distro, "cat", "/etc/wsl.conf")
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		cmd := exec.CommandContext(ctx, "wsl.exe", "-d", distro, "cat", "/etc/wsl.conf")
 		var out bytes.Buffer
 		cmd.Stdout = &out
-		if err := cmd.Run(); err == nil {
-			if parseWSLConfSystemd(out.String()) {
+		_ = cmd.Run()
+		cancel()
+
+		if parseWSLConfSystemd(out.String()) {
+			return true, distro, nil
+		}
+
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 4*time.Second)
+		cmd2 := exec.CommandContext(ctx2, "wsl.exe", "-d", distro, "systemctl", "is-system-running")
+		out2, err2 := cmd2.Output()
+		cancel2()
+		if err2 == nil {
+			s := strings.TrimSpace(string(out2))
+			if s == "running" || s == "degraded" {
 				return true, distro, nil
 			}
 		}
@@ -357,7 +368,6 @@ func CheckWSL2Systemd() (bool, string, error) {
 func CheckPort80Availability() (bool, int) {
 	port := 80
 	if !CheckPortAvailable(port) {
-		// fallback to 8080
 		port = 8080
 		if !CheckPortAvailable(port) {
 			return false, 0
@@ -366,19 +376,62 @@ func CheckPort80Availability() (bool, int) {
 	return true, port
 }
 
-// RunDoctor runs all hardware and software diagnostics in a clean, student-friendly format.
+// RunDoctor runs all hardware and software diagnostics concurrently in a clean, student-friendly format.
 func RunDoctor() bool {
 	fmt.Println("LabOps System Check")
 	fmt.Println("------------------------------------")
+
+	var wg sync.WaitGroup
+
+	var virt bool
+	var ram, disk float64
+	var sysd bool
+	var distro string
+	var wslReady bool
+	var dockerHostRunning bool
+	var isHealthy bool
+
+	wg.Add(6)
+
+	go func() {
+		defer wg.Done()
+		virt, _ = CheckVirtualization()
+	}()
+
+	go func() {
+		defer wg.Done()
+		ram, _ = CheckRAM()
+	}()
+
+	go func() {
+		defer wg.Done()
+		disk, _ = CheckDisk()
+	}()
+
+	go func() {
+		defer wg.Done()
+		sysd, distro, _ = CheckWSL2Systemd()
+		if sysd && distro != "" {
+			wslReady, _ = CheckWSLDockerReady()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		dockerHostRunning = IsDockerDaemonRunning()
+	}()
+
+	go func() {
+		defer wg.Done()
+		isHealthy = IsAlreadyHealthy()
+	}()
+
+	wg.Wait()
 
 	allPassed := true
 	var failureHints []string
 
 	// 1. System requirements (Virtualization + RAM + Disk)
-	virt, _ := CheckVirtualization()
-	ram, _ := CheckRAM()
-	disk, _ := CheckDisk()
-
 	sysOk := true
 	var sysDetail string
 	if !virt {
@@ -416,13 +469,12 @@ func RunDoctor() bool {
 
 	switch runtime.GOOS {
 	case "windows":
-		sysd, distro, _ := CheckWSL2Systemd()
 		if distro != "" {
 			envDetail = fmt.Sprintf("WSL2 (%s)", distro)
 			if !sysd {
 				envOk = false
 				envDetail = fmt.Sprintf("WSL2 (%s - systemd not enabled)", distro)
-				failureHints = append(failureHints, fmt.Sprintf("Enable systemd in WSL2: add '[boot]\\nsystemd=true' to /etc/wsl.conf in %s and run 'wsl --shutdown'.", distro))
+				failureHints = append(failureHints, fmt.Sprintf("Enable systemd in WSL2: add '[boot] systemd=true' to /etc/wsl.conf in %s and run 'wsl --shutdown'.", distro))
 			}
 		} else {
 			envOk = false
@@ -446,10 +498,10 @@ func RunDoctor() bool {
 	var engineDetail string
 
 	if runtime.GOOS == "windows" {
-		if wslReady, _ := CheckWSLDockerReady(); wslReady {
+		if wslReady || sysd {
 			engineOk = true
 			engineDetail = "Ready"
-		} else if IsDockerDaemonRunning() {
+		} else if dockerHostRunning {
 			engineOk = true
 			engineDetail = "Ready"
 		} else {
@@ -462,7 +514,7 @@ func RunDoctor() bool {
 			}
 		}
 	} else {
-		if IsDockerDaemonRunning() {
+		if dockerHostRunning {
 			engineOk = true
 			engineDetail = "Ready"
 		} else {
@@ -482,8 +534,7 @@ func RunDoctor() bool {
 	portOk := false
 	var portDetail string
 
-	// If LabOps is already running, port 3000 is occupied by us, which is valid and expected
-	if IsAlreadyHealthy() {
+	if isHealthy {
 		portOk = true
 		portDetail = "Available (LabOps is active)"
 	} else {
@@ -511,7 +562,6 @@ func RunDoctor() bool {
 		return true
 	}
 
-	// If any check failed, print friendly troubleshooting suggestions
 	fmt.Println("Action Needed:")
 	for _, hint := range failureHints {
 		fmt.Printf("  • %s\n", hint)

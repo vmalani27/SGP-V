@@ -1,22 +1,12 @@
 # Chapter 3: What Goes Into a Commit
 
-:::
-> **Before this chapter:** You should know the three Git areas — working directory, staging area, and repository — and be comfortable with `git add` and `git commit`.
-
-> **Hands-On Practice in the Terminal:**
-> Your terminal on the right comes with a pre-configured repository in `~/practice`, already initialized and connected to the remote `origin`. Enter it to follow along with the commands in this chapter:
-> ```bash
-> cd ~/practice
-> git status
-> ```
-
 ## The Problem With `git add .`
 
 It is a Friday afternoon. You fix a critical authentication bug in `auth.py`. While you are in there, you also notice the button color in `styles.css` is wrong and fix that too. Then you add some debug logging to `api.py` that you meant to remove.
 
 If you run `git add .` and commit everything, your history has one commit that says "fix auth bug" — but it also contains the CSS change and the debug logging. Three months later, when someone needs to understand why the auth behavior changed, they pull up that commit and find a pile of unrelated changes.
 
-A commit contains exactly what you staged — not everything you changed.
+A commit contains exactly what you staged — not everything you changed. To practice building atomic commits, you will use the pre-configured repository in the `~/practice` folder in your terminal, which already has modifications waiting across `auth.py`, `styles.css`, and `api.py`.
 
 ## Staging as a Precision Tool
 
