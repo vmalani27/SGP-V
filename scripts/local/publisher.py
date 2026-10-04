@@ -105,6 +105,15 @@ def publish(content_dir: Path, out_dir: Path, bucket: str, endpoint_url: str) ->
     version = gen_res.stdout.strip()
     print(f"[publisher] Content version generated: {version}")
 
+    # Generate release manifests for dev and stable channels
+    for ch in ["dev", "stable"]:
+        subprocess.run(
+            [sys.executable, "scripts/generate_release_manifest.py", ch, ch, str(out_dir)],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
     # Upload artifacts to Floci
     print(f"[publisher] Uploading artifacts to Floci (s3://{bucket})...")
     subprocess.run(
@@ -119,6 +128,19 @@ def publish(content_dir: Path, out_dir: Path, bucket: str, endpoint_url: str) ->
         check=True,
         stdout=subprocess.DEVNULL,
     )
+    if (out_dir / "releases").exists():
+        subprocess.run(
+            [
+                "aws", "s3", "cp",
+                str(out_dir / "releases"),
+                f"s3://{bucket}/releases/",
+                "--recursive",
+                "--cache-control", "public, max-age=60",
+                "--endpoint-url", endpoint_url,
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
     subprocess.run(
         [
             "aws", "s3", "cp",

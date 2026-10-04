@@ -181,14 +181,14 @@ export default function SlideReader({
     return getModuleDemoSpec(moduleId, courseId, chapterId);
   }, [moduleId, courseId, chapterId]);
 
-  // Clean up demo container on unmount
+  // Clean up demo container ONLY when navigating away to a different chapter
+  const prevChapterIdRef = useRef<string | null>(null);
   useEffect(() => {
-    return () => {
-      if (chapterDemoSpec.id) {
-        api.demos.destroy(chapterDemoSpec.id).catch(() => {});
-      }
-    };
-  }, [chapterDemoSpec.id]);
+    if (prevChapterIdRef.current && prevChapterIdRef.current !== chapterId && chapterDemoSpec.id) {
+      api.demos.destroy(chapterDemoSpec.id).catch(() => {});
+    }
+    prevChapterIdRef.current = chapterId;
+  }, [chapterId, chapterDemoSpec.id]);
 
   // Terminal blocks remain backward-compatible while module metadata owns demos.
   const cleanedMarkdown = useMemo(() => {

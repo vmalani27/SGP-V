@@ -1,6 +1,6 @@
 # Chapter 3: Configuring Containers
 
-## Your Teammate Can't Reach Your Container. Why?
+## The Unreachable server? 
 
 You've been running a web service locally all morning. It works fine in your browser. You tell your teammate to hit `http://YOUR_IP:9090` so they can review the UI before you push it.
 
@@ -58,8 +58,6 @@ FEATURE_DARK_MODE=false
 ```bash
 docker run --rm --env-file .env alpine printenv LOG_LEVEL
 ```
-
-> **Warning:** Never commit `.env` files to git. They contain credentials. Add `.env` to your `.gitignore`. Use a `.env.sample` with placeholder values to show teammates what variables are needed without exposing real values.
 
 ### Verifying what got injected
 

@@ -68,6 +68,7 @@
 
       <nav class="flex items-center gap-6 text-sm">
         <a href="#features" class="text-slate-400 hover:text-white transition">Features</a>
+        <a href="#cli-ref" onclick="openCliRef()" class="text-slate-400 hover:text-white transition">CLI Reference</a>
         <!-- <a href="#curriculum" class="text-slate-400 hover:text-white transition">Curriculum</a> -->
         <a href="#download" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition shadow-sm">
           Get Started
@@ -339,24 +340,196 @@
           </div>
         </div>
 
+        <!-- CLI Reference Toggle Button -->
+        <div id="cli-ref" class="pt-4">
+          <button 
+            id="toggle-cli-ref-btn"
+            type="button" 
+            onclick="toggleCliRef()"
+            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 font-mono text-xs font-medium transition cursor-pointer select-none"
+          >
+            <span>&gt;_</span>
+            <span id="cli-ref-btn-label">CLI Command Reference</span>
+            <svg id="cli-ref-chevron" class="w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Expandable CLI Reference Container -->
+        <div id="cli-ref-panel" class="hidden text-left space-y-6 pt-4 max-w-3xl mx-auto transition-all duration-300">
+          
+          <!-- Windows WSL2 Note -->
+          <div id="wsl-note" class="px-3.5 py-2.5 rounded-lg border border-borderDim bg-white/[0.02] text-xs font-mono text-slate-400 flex items-center justify-between gap-3 flex-wrap">
+            <span>Windows note: LabOps relies on virtualization, so make sure you have WSL2 installed.</span>
+            <a 
+              href="https://learn.microsoft.com/en-us/windows/wsl/" 
+              target="_blank" 
+              rel="noreferrer" 
+              class="text-blue-400 hover:text-white transition underline underline-offset-4 shrink-0"
+            >
+              WSL2 setup &rarr;
+            </a>
+          </div>
+
+          <!-- CLI Subcommands Table -->
+          <div class="rounded-xl border border-borderDim bg-[#0c0d12] overflow-hidden shadow-2xl">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="border-b border-borderDim bg-white/[0.03] text-slate-400 font-mono">
+                    <th class="py-3 px-4 font-semibold sm:w-48">Command</th>
+                    <th class="py-3 px-4 font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-borderDim text-slate-300">
+                  <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-3 px-4 font-mono font-semibold text-emerald-400 whitespace-nowrap">
+                      labops doctor
+                    </td>
+                    <td class="py-3 px-4 leading-relaxed text-slate-300">
+                      Checks if your computer is ready to run LabOps.
+                    </td>
+                  </tr>
+
+                  <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-3 px-4 font-mono font-semibold text-blue-400 whitespace-nowrap">
+                      labops start
+                    </td>
+                    <td class="py-3 px-4 leading-relaxed text-slate-300">
+                      Starts your learning workspace and opens it in your browser.
+                    </td>
+                  </tr>
+
+                  <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-3 px-4 font-mono font-semibold text-slate-200 whitespace-nowrap">
+                      labops stop
+                    </td>
+                    <td class="py-3 px-4 leading-relaxed text-slate-300">
+                      Stops your workspace and frees up system resources.
+                    </td>
+                  </tr>
+
+                  <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-3 px-4 font-mono font-semibold text-slate-200 whitespace-nowrap">
+                      labops restart
+                    </td>
+                    <td class="py-3 px-4 leading-relaxed text-slate-300">
+                      Restarts all workspace services if something gets stuck.
+                    </td>
+                  </tr>
+
+                  <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-3 px-4 font-mono font-semibold text-slate-200 whitespace-nowrap">
+                      labops status
+                    </td>
+                    <td class="py-3 px-4 leading-relaxed text-slate-300">
+                      Checks if your workspace is currently running.
+                    </td>
+                  </tr>
+
+                  <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-3 px-4 font-mono font-semibold text-purple-400 whitespace-nowrap">
+                      labops update
+                    </td>
+                    <td class="py-3 px-4 leading-relaxed text-slate-300">
+                      Downloads the latest courses and lab materials.
+                    </td>
+                  </tr>
+
+                  <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-3 px-4 font-mono font-semibold text-slate-200 whitespace-nowrap">
+                      labops logs
+                    </td>
+                    <td class="py-3 px-4 leading-relaxed text-slate-300">
+                      Shows troubleshooting logs if something goes wrong.
+                    </td>
+                  </tr>
+
+                  <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-3 px-4 font-mono font-semibold text-slate-200 whitespace-nowrap">
+                      labops version
+                    </td>
+                    <td class="py-3 px-4 leading-relaxed text-slate-300">
+                      Shows the installed version of LabOps.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Quick Workflow Tips -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left font-mono text-xs">
+            <div class="p-3 rounded-lg border border-borderDim bg-[#090a0f]">
+              <span class="text-slate-500 block text-[10px]">STEP 1</span>
+              <span class="text-emerald-400 font-semibold">labops doctor</span>
+              <p class="text-slate-400 text-[11px] mt-1 font-sans">Verify virtualization &amp; requirements.</p>
+            </div>
+            <div class="p-3 rounded-lg border border-borderDim bg-[#090a0f]">
+              <span class="text-slate-500 block text-[10px]">STEP 2</span>
+              <span class="text-blue-400 font-semibold">labops start</span>
+              <p class="text-slate-400 text-[11px] mt-1 font-sans">Launches environment in browser.</p>
+            </div>
+            <div class="p-3 rounded-lg border border-borderDim bg-[#090a0f]">
+              <span class="text-slate-500 block text-[10px]">STEP 3</span>
+              <span class="text-purple-400 font-semibold">labops stop</span>
+              <p class="text-slate-400 text-[11px] mt-1 font-sans">Cleanly halt when session ends.</p>
+            </div>
+          </div>
+
+        </div>
+
         <script>
           function switchPlatform(os) {
             const winTab = document.getElementById('tab-windows');
             const linTab = document.getElementById('tab-linux');
             const winPanel = document.getElementById('panel-windows');
             const linPanel = document.getElementById('panel-linux');
+            const wslNote = document.getElementById('wsl-note');
 
             if (os === 'windows') {
               winTab.className = 'flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition bg-blue-600 text-white shadow-sm';
               linTab.className = 'flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition text-slate-400 hover:text-white';
               winPanel.classList.remove('hidden');
               linPanel.classList.add('hidden');
+              if (wslNote) wslNote.classList.remove('hidden');
             } else {
               linTab.className = 'flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition bg-blue-600 text-white shadow-sm';
               winTab.className = 'flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition text-slate-400 hover:text-white';
               linPanel.classList.remove('hidden');
               winPanel.classList.add('hidden');
+              if (wslNote) wslNote.classList.add('hidden');
             }
+          }
+
+          function toggleCliRef() {
+            const panel = document.getElementById('cli-ref-panel');
+            const chevron = document.getElementById('cli-ref-chevron');
+            const label = document.getElementById('cli-ref-btn-label');
+            const isHidden = panel.classList.contains('hidden');
+
+            if (isHidden) {
+              panel.classList.remove('hidden');
+              chevron.classList.add('rotate-180');
+              label.innerText = 'Hide CLI Command Reference';
+            } else {
+              panel.classList.add('hidden');
+              chevron.classList.remove('rotate-180');
+              label.innerText = 'CLI Command Reference';
+            }
+          }
+
+          function openCliRef() {
+            const panel = document.getElementById('cli-ref-panel');
+            const chevron = document.getElementById('cli-ref-chevron');
+            const label = document.getElementById('cli-ref-btn-label');
+            panel.classList.remove('hidden');
+            chevron.classList.add('rotate-180');
+            label.innerText = 'Hide CLI Command Reference';
+            setTimeout(() => {
+              panel.scrollIntoView({ behavior: 'smooth' });
+            }, 50);
           }
 
           function copyCmd(elementId, btn) {

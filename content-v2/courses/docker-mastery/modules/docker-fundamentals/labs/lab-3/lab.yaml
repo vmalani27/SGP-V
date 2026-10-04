@@ -111,21 +111,45 @@ tasks:
     error_message: >-
       config-test is missing APP_ENV=staging, LOG_LEVEL=debug, or did not print 'staging' to stdout.
 
-  - id: expose-vs-publish
-    summary: Understand the difference between EXPOSE and -p.
+  - id: override-cmd-test
+    summary: Override the default container command and verify with docker inspect.
     prompt: >-
-      A colleague added `EXPOSE 8080` to their Dockerfile and says their container's
-      port is now published. Is that correct?
-    type: multiple_choice
-    options:
-      - "No — EXPOSE is documentation only. The -p flag at docker run time is what actually publishes the port to the host."
-      - "Yes — EXPOSE automatically publishes the port to the host network."
-      - "Yes — EXPOSE publishes the port but only to other containers on the same network."
-      - "No — you must use PUBLISH instead of EXPOSE in the Dockerfile."
+      Launch a background container named `custom-cmd` using `alpine:latest` that overrides
+      the container startup execution to run `sleep 300`.
+      
+      Verify that the container is running and confirm its configured command using `docker inspect`.
+    type: terminal_action
     validation:
-      expected_answer: "No — EXPOSE is documentation only. The -p flag at docker run time is what actually publishes the port to the host."
+      command: |-
+        python3 -c "
+        import subprocess, json, sys
+
+        r = subprocess.run(['docker', 'inspect', 'custom-cmd'], capture_output=True)
+        if r.returncode != 0:
+            print('Container custom-cmd not found.')
+            sys.exit(0)
+
+        data = json.loads(r.stdout.decode('utf-8'))[0]
+        if not data['State']['Running']:
+            print('Container custom-cmd is not running.')
+            sys.exit(0)
+
+        entrypoint = data['Config'].get('Entrypoint') or []
+        cmd = data['Config'].get('Cmd') or []
+        
+        full_exec = ' '.join(entrypoint + cmd).strip()
+        
+        # Validates whether run via Cmd (e.g. alpine sleep 300), Entrypoint (--entrypoint sleep alpine 300),
+        # or custom shell override (e.g. sh -c 'sleep 300')
+        if 'sleep' in full_exec and '300' in full_exec:
+            print('CMD_OVERRIDE_OK')
+        else:
+            print(f'Configured execution does not run sleep 300: {full_exec}')
+        "
+      match_type: exact
+      expected_output: CMD_OVERRIDE_OK
     error_message: >-
-      EXPOSE is documentation. Without -p at docker run time, the port is not reachable from outside the container.
+      Container `custom-cmd` must be running with a startup command configured to run `sleep 300`. Inspect your container's configuration.
 
 completion:
   required_tasks: all

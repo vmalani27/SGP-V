@@ -35,7 +35,7 @@ docker run -d --name web-service alpine:latest sleep 300
 ```
 
 - `-d`: Runs detached in the background.
-- `--name web-service`: Assigns a friendly
+- `--name web-service`: Assigns a name which can be used to reference the container
 
 Stop the container:
 ```bash
@@ -54,7 +54,7 @@ docker rm web-service
 ```
 *(Note: A container must be stopped before it can be removed.)*
 
-However, if you use the -f flag with rm, it forces docker to terminates the running container's main process and then removes:
+However, if you use the -f flag with rm, it forces docker to terminates the running container's main process and then removes it, without having to use docker stop first:
 
 ```bash
 docker rm -f web-service
@@ -82,18 +82,18 @@ When inspecting the output of `docker ps -a`, pay attention to the `STATUS` colu
 | **`Exited (1) 2 minutes ago`** | The process exited due to an application error or uncaught exception. |
 | **`Exited (137) 2 minutes ago`** | The process was forcefully killed (`SIGKILL`), often because of an Out-Of-Memory (OOM) event or `docker kill`. |
 
-## 3. The 3-Step Crash Triage Routine
+## 3. The Container Crash Inspection Routine
 
 When a container stops unexpectedly, do not blindly delete or restart it. Follow this 3-step investigation routine:
 
-### Step 1: Check the Exit State (`docker ps -a`)
+### Step 1: Check the Exit State
 Verify whether the container exists and note its exit code:
 
 ```bash
 docker ps -a --filter "name=web-service"
 ```
 
-If it exited with a non-zero code, something failed during execution.
+If it exited with a non-zero code, something must have failed during execution.
 
 ### Step 2: Read the Output Logs (`docker logs`)
 Docker captures `stdout` and `stderr` emitted by the container's main process:
@@ -118,14 +118,14 @@ docker inspect web-service
 Look for the `.State` block in the output:
 - **`Status`**: `running`, `exited`, etc.
 - **`ExitCode`**: The exact numerical return code.
-- **`OOMKilled`**: `true` if the container exceeded its memory limit and was killed by the kernel.
+- **`OOMKilled`**: `true` points to if the kernel killed the container due to high memory usage
 - **`FinishedAt`**: Timestamp when the process died.
 
 
 
 ## 4. Container Hygiene & Cleanup
 
-Every stopped container retains its writable filesystem layer on your host disk. If you run dozens of test containers daily without removing them, disk usage accumulates quickly.
+Every stopped container retains its filesystem layer on your host disk. If you run dozens of test containers daily without removing them, disk usage accumulates quickly.
 
 Clean up a specific stopped container:
 
@@ -145,7 +145,7 @@ docker container prune -f
 
 1. **Containers are processes**: When the main process exits, the container stops.
 2. **`docker ps` vs `docker ps -a`**: If a container isn't running, `docker ps` hides it. Always check `docker ps -a`.
-3. **The Triage Loop**:
+3. **The Inspection Loop**:
    - `docker ps -a` $\rightarrow$ Did it exit? What code?
    - `docker logs` $\rightarrow$ What did it output before dying?
    - `docker inspect` $\rightarrow$ Did it get OOM killed or misconfigured?

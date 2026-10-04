@@ -20,7 +20,7 @@ ALLOWED_SECRETS = {
     if s.strip()
 }
 ALLOWED_SECRETS.update({ORCHESTRATOR_SECRET, "local-dev-super-secret", "vansh-is-smart"})
-MAX_CONCURRENT_LABS = int(os.getenv("MAX_CONCURRENT_LABS", "1"))
+MAX_CONCURRENT_LABS = int(os.getenv("MAX_CONCURRENT_LABS", "5"))
 
 
 # Container runtime mode:

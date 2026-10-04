@@ -93,7 +93,7 @@ tasks:
       ~/exit-code.txt should contain 127. Use: docker inspect payment-api --format '{{.State.ExitCode}}'
 
   - id: remove-failed-container
-    summary: Remove the failed container and verify its lifecycle state.
+    summary: Remove the failed container.
     prompt: >-
       `payment-api` has already exited and you have finished inspecting it.
 

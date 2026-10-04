@@ -14,7 +14,7 @@ Your job is to diagnose it, fix it, and then practice injecting environment vari
 2. Identify why remote access fails (the binding is the clue)
 3. Re-deploy the container correctly so it is reachable from any interface
 4. Launch a second container with two environment variables injected and verify they made it in
-5. Answer why `EXPOSE` in a Dockerfile is not the same as `-p`
+5. Override the default container execution and inspect its runtime configuration
 
 ---
 
@@ -38,6 +38,12 @@ docker run --rm -e APP_ENV=staging -e LOG_LEVEL=debug alpine printenv APP_ENV
 ### Verify injected variables
 ```bash
 docker inspect <name> --format '{{json .Config.Env}}'
+```
+
+### Override command or entrypoint & inspect
+```bash
+docker run -d <image> <command...>
+docker inspect <name> --format '{{.Config.Cmd}}'
 ```
 
 ---
