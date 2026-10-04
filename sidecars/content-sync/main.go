@@ -50,10 +50,15 @@ type Syncer struct {
 	lastETag   string
 }
 
+var defaultCDNURL = ""
+
 func NewSyncer() *Syncer {
 	cdnURL := strings.TrimRight(os.Getenv("CDN_URL"), "/")
 	if cdnURL == "" {
 		cdnURL = strings.TrimRight(os.Getenv("CONTENT_PUBLIC_BASE_URL"), "/")
+	}
+	if cdnURL == "" {
+		cdnURL = strings.TrimRight(defaultCDNURL, "/")
 	}
 
 	contentDir := os.Getenv("CONTENT_DIR")
