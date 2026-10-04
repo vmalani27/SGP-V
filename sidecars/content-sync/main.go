@@ -52,6 +52,9 @@ type Syncer struct {
 
 func NewSyncer() *Syncer {
 	cdnURL := strings.TrimRight(os.Getenv("CDN_URL"), "/")
+	if cdnURL == "" {
+		cdnURL = strings.TrimRight(os.Getenv("CONTENT_PUBLIC_BASE_URL"), "/")
+	}
 
 	contentDir := os.Getenv("CONTENT_DIR")
 	if contentDir == "" {
@@ -86,10 +89,18 @@ func (s *Syncer) readLocalVersion() string {
 }
 
 func (s *Syncer) checkAndSync() error {
+	if s.cdnURL == "" {
+		log.Printf("[content-sync] No CDN URL configured (CDN_URL is empty); skipping remote sync")
+		return nil
+	}
+
 	var etag string
 	channel := os.Getenv("LABOPS_CHANNEL")
 	if channel == "" {
-		channel = "stable"
+		channel = os.Getenv("CHANNEL")
+	}
+	if channel == "" {
+		channel = "dev"
 	}
 
 	targetURL := fmt.Sprintf("%s/releases/%s.json", s.cdnURL, channel)
