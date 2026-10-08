@@ -9,13 +9,13 @@ tags:
   - fundamentals
 environment: git-fundamentals
 summary: >
-  Practice splitting a file that has three unrelated changes into separate
-  atomic commits using interactive staging.
+  Practice selectively staging modifications within a single file to build
+  clean, atomic commits using interactive staging.
 
 objectives:
   - Use git add -p to stage individual hunks within a file
   - Verify staged content with git diff --staged before committing
-  - Produce three separate commits from changes in a single file
+  - Produce separate atomic commits from distinct changes in a single file
   - Push atomic commits to the remote tracking branch
 
 setup:
@@ -38,38 +38,24 @@ completion:
 
 tasks:
   - id: inspect-changes
-    summary: Examine line-level changes in orders.py
-    prompt: |-
-      `orders.py` in `/home/student/order-service` has three unrelated changes:
+    summary: Explore the changes in orders.py
+    prompt: >-
+      You are reviewing the active work in `/home/student/order-service`. Look around the repository and examine the modifications made to `orders.py`.
 
-      1. A validation bug fix
-      2. A variable rename refactor
-      3. A receipt formatting enhancement
-
-      Before committing anything, examine the full difference of changes made.
-    type: terminal_action
-    hints:
-      - "Use Git's diff inspection tool to view the uncommitted modifications."
-      - "Lines starting with '-' were removed, while lines starting with '+' were added."
-    solution:
-      command: "cd /home/student/order-service && git diff orders.py"
+      Which of the following accurately describes the uncommitted modifications in `orders.py`?
+    type: multiple_choice
+    options:
+      - "Changes touch three separate functions (`validate_order`, `calculate_discount`, and `format_receipt`) with independent purposes."
+      - "Changes only modify `validate_order` and its call sites in `calculate_discount` to pass updated arguments."
+      - "Changes introduce new debug logging to `log_audit_trail` while refactoring exception handling in `validate_order`."
+      - "Changes update string formatting and type annotations across all four functions without modifying runtime logic."
     validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys, os
-        os.chdir('/home/student/order-service')
-        result = subprocess.run(['git', 'diff', 'orders.py'], capture_output=True, text=True)
-        out = result.stdout
-        if 'quantity <= 0' in out and 'discount_amount' in out and 'USD' in out:
-            print('RESULT_OK')
-        else:
-            print('RESULT_FAIL')
-            sys.exit(1)
-        "
-      match_type: exact
-      expected_output: RESULT_OK
+      expected_answer: "Changes touch three separate functions (`validate_order`, `calculate_discount`, and `format_receipt`) with independent purposes."
+    hints:
+      - "Inspect the unstaged diff in orders.py to see which functions were edited and what changed."
+      - "Review which functions contain added or removed lines versus those that remain untouched."
     error_message: >-
-      Make sure you are in /home/student/order-service and inspect the uncommitted changes in orders.py before staging.
+      Inspect the diff in orders.py. Notice that the modifications touch validate_order, calculate_discount, and format_receipt, while log_audit_trail is unchanged.
 
   - id: stage-first-hunk
     summary: Stage only the quantity validation fix hunk

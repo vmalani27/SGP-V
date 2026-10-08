@@ -1,6 +1,5 @@
 # Chapter 8: Bringing Work Together
 
-:::
 > **Before this chapter:** You should be comfortable creating, switching, and committing on branches (`git branch`, `git switch`) from Chapter 7.
 
 ## The Situation

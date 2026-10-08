@@ -1,6 +1,5 @@
 # Chapter 11: Reading the Project's Story
 
-:::
 ## In this chapter, you will
 
 - Navigate commit history efficiently

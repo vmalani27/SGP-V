@@ -1,6 +1,5 @@
 # Chapter 12: Your Daily Git Routine
 
-:::
 ## In this chapter, you will
 
 - See how all the concepts connect in a real workflow

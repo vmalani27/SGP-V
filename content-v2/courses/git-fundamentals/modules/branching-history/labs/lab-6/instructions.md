@@ -1,35 +1,28 @@
-# Lab 6: Merging and Resolving Conflicts
+# Lab 6: Undoing Pushed Mistakes
 
 ## What You're Doing and Why
 
-Merging combines the work from one branch into another. When two branches change different parts of the codebase, Git can merge them automatically. When they change the same lines, Git cannot decide which version is correct and asks you to resolve the conflict manually. Conflict resolution is a daily skill for any developer working on a team.
+Accidentally committing and pushing sensitive data (such as API keys, passwords, or environment files) is one of the most common and critical security incidents in software development. 
 
-## Background
-
-When a conflict occurs, Git pauses the merge and marks the conflicting sections in the file with conflict markers. The section between `<<<<<<<` and `=======` is the content from your current branch. The section between `=======` and `>>>>>>>` is the content from the branch being merged. Your job is to edit the file to produce the correct result, remove the conflict markers, stage the resolved file, and complete the merge with a commit.
+In this lab, you will respond to a real incident: someone committed a `.env` file containing production database credentials and pushed it to the remote repository. You will learn why simply deleting the file in a new commit fails to secure the system, how to rewind local history using `git reset`, how to prevent future leaks using `.gitignore`, and how to overwrite the remote history using `git push --force`.
 
 ## Command Reference
 
-### `git merge <branch>`
+### `git reset --hard HEAD~1`
 
-Merges the specified branch into the currently active branch.
+Moves the current branch pointer backward by one commit (`HEAD~1`), updating both the staging area and working directory to match that previous commit. Any changes introduced in the bad commit are detached from the active branch history.
 
-### `git status`
+### `git push --force origin main`
 
-During a merge conflict, shows which files have conflicts that need to be resolved.
-
-### `git merge --abort`
-
-Cancels a merge in progress and returns the repository to the state before the merge started.
+Overwrites the remote tracking branch `main` on `origin` with your local `main` branch. This is required when local and remote histories have diverged because you rewound local commits.
 
 ## Scenario
 
-Two branches have each modified the same line in a file. Merge one branch into the other, resolve the conflict by combining both changes, and complete the merge.
+You are inspecting `/home/student/api-service`. Recent commits show that database credentials were leaked and pushed to the remote Git server. Your mission is to diagnose the security risk, rewind the branch to the clean commit before the secret, configure `.gitignore` to prevent future leaks, and force-push the cleaned history to the remote repository.
 
 ## Objective
 
-Produce a merge conflict deliberately, resolve it correctly, and complete the merge. The final file should contain the intended result from both branches.
-
-## Reflection
-
-A conflict is not an error. It is Git telling you that it cannot make a decision that requires human judgment. Professional developers encounter conflicts regularly. The important skill is reading the conflict markers carefully and producing a result that is logically correct, not just syntactically valid.
+1. Diagnose why deleting a sensitive file in a subsequent commit does not remove it from Git history.
+2. Rewind the local branch to the clean initial commit using `git reset`.
+3. Add `.env` to `.gitignore` and commit it.
+4. Overwrite remote history using `git push --force`.

@@ -8,9 +8,8 @@ tags:
   - fundamentals
 environment: git-fundamentals
 summary: >
-  You have just fixed three unrelated things in one sitting. Stage them
-  as separate, atomic commits, get rid of dev logging changes, and push clean code
-  to the repository
+  Practice reviewing uncommitted modifications across multiple files, organizing
+  them into separate atomic commits, and discarding throwaway changes.
 
 objectives:
   - Stage individual files to create atomic commits
@@ -40,36 +39,24 @@ completion:
 
 tasks:
   - id: survey-the-damage
-    summary: Inspect modified working tree files
+    summary: Explore the workspace
     prompt: >-
-      You sit down Monday morning and find three files modified in `~/webapp`:
-      auth.py, styles.css, and api.py. Before staging anything, inspect the
-      working tree and examine the changes across each file to understand what was modified.
+      You just sat down at your workstation and found unfinished work left behind in `/home/student/webapp`. Look around the repository and examine the changes across each file before deciding how to proceed.
 
-      Work inside /home/student/webapp.
-    type: terminal_action
-    hints:
-      - "Inspect the current status of your working tree files."
-      - "Examine the uncommitted line changes to see what each modification contains."
-      - "Inspect files individually or together to understand their diffs."
-    solution:
-      command: "cd /home/student/webapp && git status && git diff"
+      Looking at the changes across this project, what would happen if someone staged and committed everything right now under a commit titled "Fix login"?
+    type: multiple_choice
+    options:
+      - "Temporary debug logs and CSS changes would be saved together in the same commit as the login fix."
+      - "Git would only commit `auth.py` and automatically ignore the changes in `api.py` and `styles.css`."
+      - "Git would reject the commit because Python code and CSS styles cannot be saved in the same commit."
+      - "Git would erase the changes in `api.py` and `styles.css` because they do not relate to the login fix."
     validation:
-      command: |-
-        python3 -c "
-        import subprocess, sys, os
-        os.chdir('/home/student/webapp')
-        result = subprocess.run(['git', 'status'], capture_output=True, text=True)
-        if 'modified' in result.stdout and 'auth.py' in result.stdout:
-            print('RESULT_OK')
-        else:
-            print('RESULT_FAIL')
-            sys.exit(1)
-        "
-      match_type: exact
-      expected_output: RESULT_OK
+      expected_answer: "Temporary debug logs and CSS changes would be saved together in the same commit as the login fix."
+    hints:
+      - "Check the diff of each changed file in the repository."
+      - "Think about what each change does and whether they all belong in one commit."
     error_message: >-
-      Make sure you are in /home/student/webapp and that the working tree contains the expected modified files before proceeding.
+      Check the diffs across all modified files. api.py has temporary debug logs and styles.css has visual changes. Making one big commit mixes all these unrelated changes together.
 
   - id: commit-auth-fix
     summary: Commit the authentication fix

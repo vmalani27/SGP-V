@@ -1,6 +1,5 @@
 # Chapter 9: Sharing Your Work
 
-:::
 ## In this chapter, you will
 
 - Understand what remotes are and how they work
