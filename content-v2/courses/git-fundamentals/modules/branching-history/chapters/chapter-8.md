@@ -1,91 +1,112 @@
 # Chapter 8: Bringing Work Together
 
-> **Before this chapter:** You should be comfortable creating, switching, and committing on branches (`git branch`, `git switch`) from Chapter 7.
+## The Merge Model
 
-## The Situation
+Merging combines the histories of separate branches. When changes touch different files or separate sections of the same file, Git reconciles them automatically. When independent branches modify the exact same lines, Git pauses and delegates the decision to the developer.
 
-You and a teammate both branch off `main` on Monday morning to work on different tasks. You add a request timeout in `config.py`. Your teammate modifies the database connection pool in the same section of `config.py` and merges their branch into `main` on Tuesday afternoon.
+### Merge Base and Graph Traversal
 
-When you finish your work and try to merge your branch into `main`, Git encounters conflicting modifications to the exact same lines. It cannot guess whether your timeout should replace the pool configuration, come after it, or be discarded.
+When merging a target branch (`feature/config`) into your active branch (`main`), Git analyzes three key points in the commit graph:
 
-Merging is the mechanism for combining the histories of separate branches. When changes touch different files or different lines, Git merges them automatically. When changes overlap, Git pauses and hands control to you.
-
-## How Git Decides: Merge Base and Graph Traversal
-
-When you run `git merge feature/timeout` from `main`, Git identifies three commits in the graph:
-
-```
-        C --- D  (feature/timeout)
+```text
+        C --- D  (feature/config)
        /
 A --- B          (merge base)
        \
         E        (main, HEAD)
 ```
 
-1. **The merge base (`B`)**: The most recent ancestor commit shared by both branches.
-2. **Current branch tip (`E`)**: Where `main` currently points.
-3. **Target branch tip (`D`)**: The latest commit on `feature/timeout`.
+1. **The merge base (`B`)**: The most recent common ancestor shared by both branches.
+2. **The current branch tip (`E`)**: The latest commit on your active branch (`main`).
+3. **The incoming branch tip (`D`)**: The latest commit on the branch being integrated.
 
 Git compares the changes introduced between `B` and `E` against the changes introduced between `B` and `D`.
 
-## Fast-Forward Merges
+### Fast-Forward vs. Three-Way Merge
 
-If `main` has not moved since you created the feature branch, no divergent work exists:
+- **Fast-Forward Merge**: If the active branch has not advanced since diverging (commit `E` does not exist; `main` is still at `B`), Git simply moves the `main` pointer forward to `D`. No new commit is generated.
+- **Three-Way Merge**: If both branches contain independent commits since diverging (`E` and `D` both exist), Git applies the combined diffs and generates a new **merge commit**. A merge commit has two parent commits: `E` and `D`.
 
-```
-Before merge:
-main:     A --- B
-                 \
-feature:          C --- D (HEAD -> feature/timeout)
+---
 
-Command:
-git switch main
-git merge feature/timeout
+## Terminal Experiment: Merges and Conflict Resolution
 
-After merge:
-main:     A --- B --- C --- D (HEAD -> main, feature/timeout)
-```
+Switch to your terminal to observe how Git executes both merge modes in your practice repository.
 
-Because `B` was both the merge base and the tip of `main`, Git does not need to reconcile two histories. It performs a **fast-forward**: it advances the `main` pointer directly to commit `D`. No new commit is created, and the commit history remains linear.
+### Step 1: Execute a fast-forward merge
 
-If your team policy requires an explicit merge commit even for non-divergent branches, you can enforce it with:
+Navigate to `~/practice` and verify a clean working tree:
 
 ```bash
-git merge --no-ff feature/timeout
+cd ~/practice
+git restore .
+git status
 ```
 
-## Three-Way Merges
+Create a feature branch and add a default port setting to `api.py`:
 
-When both branches have new commits since diverging, a simple pointer move is impossible:
-
-```
-Before merge:
-main:     A --- B --- E (HEAD -> main)
-                 \
-feature:          C --- D
-
-Command:
-git merge feature/timeout
-
-After merge:
-main:     A --- B --- E ------- M (HEAD -> main)
-                 \             /
-feature:          C --- D ----
+```bash
+git switch -c feature/config
+echo "PORT = 8080" >> api.py
+git commit -am "Add default port configuration"
 ```
 
-Git reads the snapshot at merge base `B`, applies the non-overlapping diffs from both `E` and `D`, and creates a new **merge commit (`M`)**. Merge commit `M` has two parents: `E` and `D`.
+Switch back to `main` and integrate the change:
 
-If there are no overlapping changes, Git opens your editor to write a commit message (or uses a default like `Merge branch 'feature/timeout'`), and completes the merge automatically.
-
-## Resolving Merge Conflicts
-
-When both branches alter the exact same lines in a file, Git halts the merge process and reports the conflict:
-
+```bash
+git switch main
+git merge feature/config
 ```
-Auto-merging config.py
-CONFLICT (content): Merge conflict in config.py
+
+Output:
+```text
+Updating a681b65..ff5c693
+Fast-forward
+ api.py | 1 +
+ 1 file changed, 1 insertion(+)
+```
+
+Because `main` remained stationary at the merge base, Git fast-forwarded `main` directly to the feature commit. Clean up the merged branch:
+
+```bash
+git branch -d feature/config
+```
+
+### Step 2: Create divergent commits to trigger a conflict
+
+Now introduce conflicting changes to the same line from two separate branches.
+
+First, update the port setting directly on `main`:
+
+```bash
+echo "PORT = 9000" >> api.py
+git commit -am "Update production port to 9000"
+```
+
+Next, create a new branch from the previous commit (`HEAD~1`) simulating a teammate working in parallel:
+
+```bash
+git checkout -b feature/port-override HEAD~1
+echo "PORT = 3000" >> api.py
+git commit -am "Update staging port to 3000"
+```
+
+Now return to `main` and attempt to merge the divergent branch:
+
+```bash
+git checkout main
+git merge feature/port-override
+```
+
+Git detects the collision and halts:
+
+```text
+Auto-merging api.py
+CONFLICT (content): Merge conflict in api.py
 Automatic merge failed; fix conflicts and then commit the result.
 ```
+
+### Step 3: Inspect the conflicted state
 
 Check the repository status:
 
@@ -93,80 +114,120 @@ Check the repository status:
 git status
 ```
 
-```
+Output:
+```text
+You have unmerged paths.
+  (fix conflicts and run "git commit")
+  (use "git merge --abort" to abort the merge)
+
 Unmerged paths:
   (use "git add <file>..." to mark resolution)
-	both modified:   config.py
+	both modified:   api.py
 ```
 
-### The Conflict Markers
+Inspect the conflicting file:
 
-Open `config.py` in your editor. Git marks the collision with conflict markers:
+```bash
+cat api.py
+```
 
-```python
-def configure_app():
+At the bottom of `api.py`, Git inserted conflict markers:
+
+```text
 <<<<<<< HEAD
-    # Your current branch (main)
-    db_pool_size = 20
-    db_timeout = 30
+PORT = 9000
+||||||| ff5c693
 =======
-    # The incoming branch (feature/timeout)
-    request_timeout = 5.0
->>>>>>> feature/timeout
-    return True
+PORT = 3000
+>>>>>>> feature/port-override
 ```
 
-The syntax follows a fixed structure:
-- `<<<<<<< HEAD`: Marks the start of the lines present on your current branch (`main`).
-- `=======`: The separator between the two conflicting versions.
-- `>>>>>>> feature/timeout`: Marks the end of the incoming branch's changes.
+### Understanding Conflict Markers
 
-### Resolution Steps
+- `<<<<<<< HEAD`: Marks the start of the changes from your current branch (`main`).
+- `||||||| <hash>`: Displays the original content from the common ancestor merge base (shown when `merge.conflictStyle` is set to `diff3`).
+- `=======`: Separates the current branch's lines from the incoming branch's lines.
+- `>>>>>>> feature/port-override`: Marks the end of the incoming branch's changes.
 
-1. **Edit the file**: Remove the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) and combine the logic so both required settings are retained:
-   ```python
-   def configure_app():
-       db_pool_size = 20
-       db_timeout = 30
-       request_timeout = 5.0
-       return True
-   ```
-2. **Stage the resolved file**:
-   ```bash
-   git add config.py
-   ```
-   Staging the file informs Git that the conflict on that path is resolved.
-3. **Complete the merge**:
-   ```bash
-   git commit
-   ```
-   Git automatically generates a commit message identifying the merged branch and conflicts resolved. Save and close the editor.
+### Step 4: Resolve the conflict and finalize the merge
 
-### Aborting a Merge
+To resolve the conflict:
+1. Edit `api.py` to remove all marker lines (`<<<<<<<`, `|||||||`, `=======`, `>>>>>>>`).
+2. Keep the desired final setting. For example, keep `PORT = 9000`.
 
-If you run into an unexpected conflict or need to verify the code before continuing, return the repository to the state prior to running `git merge`:
+Update `api.py` with the resolved content:
+
+```bash
+sed -i '/<<<<<<</,/>>>>>>>/c\PORT = 9000' api.py
+cat api.py
+```
+
+Stage the resolved file to notify Git that the collision has been handled:
+
+```bash
+git add api.py
+```
+
+Check status to verify that the file moved to staged changes:
+
+```bash
+git status
+```
+
+Complete the merge commit:
+
+```bash
+git commit -m "Merge branch feature/port-override with resolved port configuration"
+```
+
+Inspect the resulting commit graph:
+
+```bash
+git log --oneline --graph -n 4
+```
+
+Notice the graph topology: the new commit unites both parent branches into a single timeline. Clean up the feature branch:
+
+```bash
+git branch -d feature/port-override
+```
+
+---
+
+## Aborting a Merge
+
+If a merge encounters complex conflicts and you need to discard the in-progress merge state without saving changes, run:
 
 ```bash
 git merge --abort
 ```
 
-This clears all conflict markers and restores your working directory to the commit where `HEAD` was before the merge was attempted.
+Git removes all conflict markers and restores both the working tree and index to the exact state of `HEAD` before `git merge` was executed.
 
-## How Teams Use This
+---
 
-**Pull Request Merge Strategies.** When merging branches on GitHub, GitLab, or Bitbucket, teams configure one of three merge strategies:
-- **Create a merge commit (`git merge --no-ff`)**: Retains all commits from the feature branch plus an explicit merge commit tying the two lines together.
-- **Squash and merge**: Condenses all commits on the feature branch into a single commit on `main`. Keeps `main` history clean while discarding intermediate checkpoint commits.
-- **Rebase and merge**: Replays feature branch commits on top of `main`, preserving individual commits with linear history.
+## Production Team Workflows
 
-**Short-Lived Branches.** The longer a branch diverges from `main`, the larger the volume of conflicting code accumulated across the team. Merging branches within 1–2 days and regularly pulling updates from `main` into your feature branch keeps conflicts small and localized to recent edits.
+### Pull Request Merge Strategies
 
-**CI Validation on Merge Branches.** Modern CI platforms do not just test your feature branch tip; they create a temporary merge commit between your branch and `main` (`refs/pull/<id>/merge`) and run tests against the synthesized result. This detects semantic conflicts (where Git merges code without syntax errors, but the combined logic breaks tests) before the PR is approved.
+When merging branches on shared platforms (GitHub, GitLab, Bitbucket), teams configure one of three primary merge strategies:
+
+- **Create a merge commit (`git merge --no-ff`)**: Preserves all individual feature commits plus an explicit merge commit documenting the integration point.
+- **Squash and merge**: Condenses all commits from the feature branch into a single commit on `main`. Keeps `main`'s history linear while removing intermediate checkpoint commits.
+- **Rebase and merge**: Replays feature branch commits sequentially on top of the latest `main`, creating a linear commit history without a separate merge commit.
+
+### Branch Lifetime and Semantic Conflicts
+
+Keep feature branches small and short-lived. Long-running branches accumulate divergence against `main`, increasing the probability and scope of merge collisions.
+
+Automated CI systems create temporary merge commits between incoming branches and `main` (`refs/pull/<id>/merge`) to run test suites. This catches **semantic conflicts**—cases where Git merges files without syntax errors, but the combined logic breaks application tests—before the PR is merged.
+
+---
 
 ## Key Takeaways
 
-- Fast-forward merges move the branch pointer directly forward when history has not diverged.
-- Three-way merges create a merge commit with two parents when both branches have unique commits.
-- Conflicts occur when separate branches change the same lines of a file; Git marks the collision with `<<<<<<<`, `=======`, and `>>>>>>>`.
-- Resolve conflicts by editing the file, deleting the markers, staging with `git add`, and running `git commit`.
-- `git merge --abort` cancels a merge in progress and restores the repository state before the merge began.
+- **Merge base:** The common ancestor commit Git uses to evaluate three-way file diffs.
+- **Fast-forward merge:** Advances the branch pointer directly forward when the base branch has not diverged.
+- **Three-way merge:** Generates a merge commit with two parents when both branches contain independent commits.
+- **Conflict resolution:** Delete conflict markers, retain the intended code, stage with `git add`, and finalize with `git commit`.
+- **Merge cancellation:** `git merge --abort` clears an in-progress merge and restores the repository state prior to the merge command.

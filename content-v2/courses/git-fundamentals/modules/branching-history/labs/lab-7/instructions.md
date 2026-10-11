@@ -1,4 +1,4 @@
-# Lab 5: Branches
+# Lab 7: Branches
 
 ## What You're Doing and Why
 

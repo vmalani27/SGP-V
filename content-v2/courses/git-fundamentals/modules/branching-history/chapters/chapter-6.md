@@ -1,21 +1,15 @@
-# Chapter 6: Undoing Pushed Mistakes
+# Chapter 6: Undoing Mistakes
 
-## The Situation: How It Actually Happens
+## How Secrets Get Committed
 
-A developer finishes writing updates to the application code. Before merging, a programmer or QA tester pulls down the changes to test them locally.
-
-To test the application against a local database, they create a `.env` file containing database credentials. What they don't realize is that this repository doesn't have a `.gitignore` set up yet.
-
-Once testing succeeds, the programmer prepares to commit their work. Instead of running `git status` to see what is about to be staged, they run a quick blanket command:
+A developer creates a `.env` file with local database credentials to test new changes. Without a `.gitignore` configured, a blanket `git add .` accidentally stages the file, sealing sensitive secrets directly into a commit:
 
 ```bash
 git add .
 git commit -m "Update application logic and test configs"
 ```
 
-Just like that, the `.env` file containing sensitive credentials was staged alongside the code and sealed into a commit.
-
-Throughout this chapter, you will use the pre-configured repository in the `~/practice` folder in your terminal to see firsthand why deleting files doesn't fix a leaked secret, and how to safely rewind history when this happens.
+Simply deleting the file in a new commit does not remove it from Git history. Let's recreate this in your terminal to see why, and learn how to safely clean it up.
 
 ## Recreating the Scenario in Your Terminal
 
@@ -138,9 +132,7 @@ git push --force origin main
 
 With `--force`, the remote server updates its branch pointer to match your local commit, removing the bad commit from the branch's timeline.
 
-> **Team Warning: Force-Pushing on Shared Branches**  
-> Force-pushing rewrites remote history. If teammates have already pulled the bad commit, their local branches will diverge, causing errors next time they pull.  
-> In team settings, repositories often have branch protection rules that block direct force-pushing to `main`. When working on personal feature branches, `--force-with-lease` is the safer alternative because it prevents overwriting remote work if someone else added commits while you were working.
+Force-pushing rewrites remote history. On shared branches like `main`, this disrupts teammates who have already pulled. On personal feature branches, use `--force-with-lease` instead to avoid accidentally overwriting someone else's work.
 
 ## Summary Checklist for Incident Remediation
 

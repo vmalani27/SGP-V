@@ -1,4 +1,4 @@
-# Lab 6: Undoing Pushed Mistakes
+# Lab 6: Undoing Mistakes
 
 ## What You're Doing and Why
 
@@ -18,11 +18,10 @@ Overwrites the remote tracking branch `main` on `origin` with your local `main` 
 
 ## Scenario
 
-You are inspecting `/home/student/api-service`. Recent commits show that database credentials were leaked and pushed to the remote Git server. Your mission is to diagnose the security risk, rewind the branch to the clean commit before the secret, configure `.gitignore` to prevent future leaks, and force-push the cleaned history to the remote repository.
+You are inspecting `/home/student/api-service`. Recent commits show that database credentials were leaked and pushed to the remote Git server. Your mission is to diagnose the security risk, rewind the branch to the clean commit before the secret, configure `.gitignore` to prevent future leaks, and synchronize the cleaned history with the remote repository.
 
 ## Objective
 
-1. Diagnose why deleting a sensitive file in a subsequent commit does not remove it from Git history.
-2. Rewind the local branch to the clean initial commit using `git reset`.
-3. Add `.env` to `.gitignore` and commit it.
-4. Overwrite remote history using `git push --force`.
+1. Explain why deleting a secret does not remove it from Git history.
+2. Rewind local history and prevent `.env` from being tracked.
+3. Update the remote branch after rewriting history.

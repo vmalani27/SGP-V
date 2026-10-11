@@ -1,5 +1,5 @@
 id: lab-6
-title: "Undoing Pushed Mistakes"
+title: "Undoing Mistakes"
 difficulty: intermediate
 estimated_time: 20
 xp: 75
@@ -9,16 +9,14 @@ tags:
   - security
   - fundamentals
 environment: git-fundamentals
-summary: >
-  Respond to an accidental secret commit pushed to a remote repository, rewind
-  local history using git reset, properly configure gitignore, and safely
-  overwrite the remote branch.
+summary: >-
+  Recover from an accidental secret commit, protect sensitive files, and
+  synchronize the cleaned history with the remote repository.
 
 objectives:
-  - Inspect repository history to understand the risk of committed secrets
-  - Rewind the local branch using git reset to eliminate the bad commit
-  - Protect sensitive files from re-staging using .gitignore
-  - Force-push the sanitized history to the remote repository
+  - Explain why deleting a secret does not remove it from Git history
+  - Rewind local history and prevent `.env` from being tracked
+  - Update the remote branch after rewriting history
 
 setup:
   - command: >
@@ -44,11 +42,10 @@ completion:
 
 tasks:
   - id: examine-pushed-secret
-    summary: Explore the repository history
+    summary: Examine the pushed secret
     prompt: >-
-      You just took over maintenance of `/home/student/api-service`. Look around the repository and examine recent commits in the project.
-
-      If you simply delete `.env` and commit the deletion in a new commit, why does that fail to secure the leaked credentials?
+      Inspect the repository history in /home/student/api-service. Why doesn't deleting `.env` in a new commit
+      remove the credentials from earlier commits?
     type: multiple_choice
     options:
       - "The secret remains permanently accessible in the previous commit's history and remote logs."
@@ -57,24 +54,17 @@ tasks:
       - "Deleting the file triggers a detached HEAD state that prevents any new commits from being pushed."
     validation:
       expected_answer: "The secret remains permanently accessible in the previous commit's history and remote logs."
-    hints:
-      - "Think about how Git commits store history."
-      - "Consider whether older snapshots disappear when a new commit is made."
-    error_message: >-
-      Remember that commits are immutable. Even if a file is removed in a later commit, earlier commits still store the complete file contents.
 
   - id: rewind-local-commit
-    summary: Rewind the local branch to the clean commit
+    summary: Rewind local history
     prompt: >-
-      To remove the leaked credential commit from your local branch timeline, rewind your branch by one commit using `git reset`.
-
-      Ensure your working tree matches the clean state before the secret was introduced. After this step, `git log --oneline` should show only the initial commit, and `.env` should no longer exist in the working directory.
+      Remove the latest commit from the local branch history, leaving only the
+      initial setup commit.
     type: terminal_action
     hints:
-      - "Use `git reset --hard HEAD~1` inside `/home/student/api-service`."
-      - "Check with `git log --oneline` and `git status` after resetting."
+      - "Consider how moving the current branch pointer affects commit history."
     solution:
-      command: "cd /home/student/api-service && git reset --hard HEAD~1"
+      command: "cd /home/student/api-service && git reset HEAD~1"
     validation:
       command: |-
         python3 -c "
@@ -84,19 +74,10 @@ tasks:
             print('RESULT_FAIL: Directory does not exist.')
             sys.exit(0)
 
-        # Check .env is gone from working tree
-        if os.path.exists(os.path.join(cwd, '.env')):
-            print('RESULT_FAIL: .env still exists in working directory. Use --hard reset.')
-            sys.exit(0)
-
-        # Check git log length is 1
+        # Check git log length is 1 and points to initial setup
         log = subprocess.run(['git', 'log', '--oneline'], capture_output=True, text=True, cwd=cwd).stdout.strip().splitlines()
-        if len(log) != 1:
-            print(f'RESULT_FAIL: Expected 1 commit in log, found {len(log)}.')
-            sys.exit(0)
-
-        if 'Initial API service setup' not in log[0]:
-            print('RESULT_FAIL: HEAD commit is not the initial clean commit.')
+        if len(log) != 1 or 'Initial API service setup' not in log[0]:
+            print('RESULT_FAIL: The local branch history does not match the required state.')
             sys.exit(0)
 
         print('REWIND_OK')
@@ -104,19 +85,13 @@ tasks:
       match_type: exact
       expected_output: REWIND_OK
     error_message: >-
-      Run `git reset --hard HEAD~1` inside `/home/student/api-service`. Confirm that only the initial commit remains in history and `.env` is removed.
+      The local branch history does not match the required state.
 
   - id: configure-gitignore
-    summary: Add .gitignore and commit it
+    summary: Configure .gitignore
     prompt: >-
-      Before updating the remote repository, ensure that `.env` files cannot be accidentally committed again.
-
-      Create a `.gitignore` file containing `.env`, then stage and commit it with a clear commit message (such as `"Add .gitignore to exclude secrets"`).
+      Add `.env` to `.gitignore` and commit the change.
     type: terminal_action
-    hints:
-      - "Create `.gitignore` containing `.env`."
-      - "Stage `.gitignore` with `git add .gitignore`."
-      - "Commit it with `git commit -m 'Add .gitignore to exclude secrets'`."
     solution:
       command: "cd /home/student/api-service && echo '.env' > .gitignore && git add .gitignore && git commit -m 'Add .gitignore to exclude secrets'"
     validation:
@@ -133,10 +108,16 @@ tasks:
         with open(gi_path) as f:
             content = f.read()
         if '.env' not in content:
-            print('RESULT_FAIL: .gitignore does not contain .env.')
+            print('RESULT_FAIL: .gitignore does not ignore .env.')
             sys.exit(0)
 
-        # Check git status clean
+        # Check .env is not tracked
+        tracked = subprocess.run(['git', 'ls-files', '.env'], capture_output=True, text=True, cwd=cwd).stdout.strip()
+        if tracked:
+            print('RESULT_FAIL: .env is still tracked by Git.')
+            sys.exit(0)
+
+        # Check git status clean (ignored .env won't show in porcelain status)
         status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, cwd=cwd).stdout.strip()
         if status:
             print('RESULT_FAIL: Working tree has uncommitted changes.')
@@ -159,18 +140,13 @@ tasks:
       match_type: exact
       expected_output: GITIGNORE_OK
     error_message: >-
-      Add `.env` to `.gitignore`, stage it, and commit it so your local history contains two clean commits.
+      The ignore rule or commit state is incorrect. Check your repository status.
 
   - id: force-push-remote
-    summary: Force-push your cleaned history to the remote repository
+    summary: Update the remote
     prompt: >-
-      Your local `main` branch now contains two clean commits with no sensitive credentials. However, the remote repository still retains the bad commit, so a regular `git push` will be rejected.
-
-      Force-push your local `main` branch to `origin` using `git push --force` to overwrite the remote timeline.
+      Update `origin/main` to match your cleaned local history.
     type: terminal_action
-    hints:
-      - "Run `git push --force origin main` inside `/home/student/api-service`."
-      - "Verify that remote main matches your local HEAD."
     solution:
       command: "cd /home/student/api-service && git push --force origin main"
     validation:
@@ -185,7 +161,7 @@ tasks:
         remote_sha = remote_out[0] if remote_out else ''
 
         if not head or remote_sha != head:
-            print('RESULT_FAIL: Remote main does not match local HEAD. Run git push --force.')
+            print('RESULT_FAIL: Remote main does not match local HEAD. The remote branch must be updated to match local history.')
             sys.exit(0)
 
         # Verify remote tracking branch or log does not have the secret commit message
@@ -199,4 +175,4 @@ tasks:
       match_type: exact
       expected_output: FORCE_PUSH_OK
     error_message: >-
-      Run `git push --force origin main` inside `/home/student/api-service`. Make sure the remote repository branch matches your local HEAD.
+      The remote branch does not match your local history.

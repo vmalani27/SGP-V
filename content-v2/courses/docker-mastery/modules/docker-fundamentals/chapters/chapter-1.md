@@ -56,8 +56,6 @@ docker run --rm alpine:latest ls /
 
 The process list shows only the container's own processes, the hostname is separate from the host, and the filesystem is the minimal Alpine image rather than the host's directory tree.
 
-:::
-
 ### How Containers Stay Under Control: Cgroups
 
 Cgroups (control groups) limit how much of a resource a container can use. Without cgroups, a single container could consume all available CPU or memory and starve other processes on the host.
@@ -100,8 +98,6 @@ docker images alpine
 ```
 
 Both containers run independently and are removed after they exit. The Alpine image remains unchanged because containers use a separate writable layer.
-
-:::
 
 ## Docker Architecture
 

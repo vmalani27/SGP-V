@@ -1,378 +1,183 @@
-# Chapter 4: Ephemeral Storage, Signals & Cleanup
+# Chapter 4: Process Lifecycle, Signals & Resilience
 
-:::
----
+## Process Lifecycle and Signals
 
-> **Note — Prerequisites:** What you need to know before reading this chapter
->
-> - **Container lifecycle (Chapter 2):** `docker ps -a`, `docker inspect`, `docker logs` — you'll use these throughout
-> - **Linux process signals — specifically SIGTERM and SIGKILL:** what they are, how processes receive them, and the crucial difference (SIGTERM can be caught and handled; SIGKILL cannot) — covered in Linux Fundamentals chapter 3
-> - **PID 1 in a process tree:** why PID 1 is special and why containers care about it — also Linux Fundamentals chapter 3
-> - **What a filesystem is:** files, directories, write operations — basic Linux literacy
+When Docker starts a container, the entrypoint command runs inside an isolated PID namespace as **PID 1**.
 
----
+In Linux, the kernel communicates lifecycle events to processes using signals. Docker primarily relies on two termination signals delivered directly to PID 1:
 
-## 3 AM: Your CI Pipeline Just Killed the Build Server
+| Signal | Number | Catchable? | Delivery Mechanism |
+| :--- | :---: | :---: | :--- |
+| **`SIGTERM`** | 15 | **Yes** | Sent by `docker stop`. Requests a graceful shutdown so the application can finish in-flight requests, flush buffers, and close connections. |
+| **`SIGKILL`** | 9 | **No** | Sent by `docker kill` or after the `docker stop` timeout. Instructs the kernel to terminate the process immediately; no application code can run. |
 
-The alert fires at 3 AM. Your GitHub Actions self-hosted runner — a Linux VM running Docker — is rejecting new builds:
+`docker stop <container>` sends `SIGTERM` to PID 1 and starts a grace period timer (default: 10 seconds). If the process terminates within that window, the container exits cleanly. If the process does not terminate before the timer expires, Docker issues `SIGKILL` to force termination. You can adjust the grace period using the `-t` flag (for example, `docker stop -t 30 <container>`).
 
-```
-Error response from daemon: write /var/lib/docker/overlay2/...: no space left on device
-```
+In contrast, `docker kill <container>` bypasses the grace period and sends `SIGKILL` immediately.
 
-The disk is full. Every build for the last two weeks has been pulling images, running containers, and leaving them behind. Nobody ever cleaned up. The disk filled silently until it didn't.
+## Shell Form vs. Exec Form
 
-This is the most common Docker ops problem on CI infrastructure, and it's entirely preventable once you understand what's accumulating and why.
+In a Dockerfile, `CMD` and `ENTRYPOINT` can be written in two distinct syntaxes:
 
-Here's what's on that disk:
+* **Exec form (preferred):**
+  ```dockerfile
+  CMD ["python", "server.py"]
+  ```
+  Docker executes `python server.py` directly without a wrapper. Python runs as **PID 1** inside the container.
 
-- **Stopped containers** — every `docker run` that finished but wasn't `docker rm`'d left its writable layer behind
-- **Dangling images** — every `docker build` that rebuilt an image left the previous version's layers orphaned
-- **Unused networks** — Docker creates network objects that outlive the containers that used them
+* **Shell form and wrapper scripts:**
+  ```dockerfile
+  CMD ["/bin/sh", "entrypoint.sh"]
+  ```
+  The shell runs as **PID 1**, and Python runs as a child process under the shell.
 
-One command clears all of it:
+The distinction matters during shutdown: standard Linux shells do not forward received signals like `SIGTERM` to child processes by default. If the process at PID 1 does not forward or handle the signal, the application never learns that a shutdown was requested.
 
-```bash
-docker system prune -f
-```
+> [!NOTE]
+> In minimal images like Alpine Linux, BusyBox `/bin/sh` includes an internal optimization that automatically invokes `exec` on simple single commands passed via `sh -c "command"`. However, shell scripts (`entrypoint.sh`), multi-command chains, and shells like `bash` or Debian/Ubuntu's `dash` do not do this—they keep the shell at PID 1, isolating child processes from OS signals.
 
-But to understand *why* this accumulates, you need to understand how container storage actually works.
-
----
-
-## How Container Storage Works: The Writable Layer
-
-Every container image is a stack of **read-only layers**. When you start a container, Docker (using the `overlay2` storage driver on Linux) adds one more layer on top — the writable layer — that belongs only to this container:
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  Container Writable Layer (read/write — ephemeral)       │  ← files your container creates/modifies
-├──────────────────────────────────────────────────────────┤
-│  Image Layer 3: Application code (read-only)             │
-├──────────────────────────────────────────────────────────┤
-│  Image Layer 2: Runtime dependencies (read-only)         │
-├──────────────────────────────────────────────────────────┤
-│  Image Layer 1: Base OS (read-only)                      │
-└──────────────────────────────────────────────────────────┘
-```
-
-When a container writes or modifies a file that came from a read-only image layer, Docker uses **Copy-on-Write (CoW)**:
-
-1. The file is copied from the read-only image layer up into the writable layer
-2. The copy is modified
-3. The read-only original is untouched
-
-Ten containers running from the same image share the same read-only layers. Each has its own isolated writable layer. This is why Docker images are storage-efficient — the layers are shared.
-
-### Watching changes in real time: `docker diff`
-
-You can see exactly what a container has written to its writable layer:
+If an entrypoint script is necessary to prepare configuration before launching the application, use the shell builtin `exec`:
 
 ```bash
-docker run -d --name writer alpine:latest sleep 300
-
-# Write a file inside the container
-docker exec writer sh -c 'echo "hello" > /tmp/testfile.txt && mkdir /tmp/newdir'
-
-# See what changed
-docker diff writer
-```
-
-Output:
-```
-C /tmp
-A /tmp/testfile.txt
-A /tmp/newdir
-```
-
-| Symbol | Meaning |
-|:-------|:--------|
-| `A` | Added — new file or directory |
-| `C` | Changed — existing file or directory modified |
-| `D` | Deleted — file from the image was removed |
-
-### The critical implication: writable layers are ephemeral
-
-When you `docker rm` a container, **its writable layer is deleted with it.** All those files the container wrote — gone. This is intentional design. Containers are meant to be stateless and replaceable.
-
-```bash
-docker rm writer
-# The file /tmp/testfile.txt no longer exists anywhere
-```
-
-This is why you never run a production database inside a container without a volume. When the container is replaced (crash, upgrade, rebalance), the data goes with it.
-
-> **Note:** CI containers are always fresh for exactly this reason. Every CI build starts from a clean writable layer. No state from the previous build bleeds in. This reproducibility is one of the main reasons CI pipelines run in containers.
-
-> **Note:** Databases need volumes for exactly this reason. A volume is a directory that lives outside the container's writable layer and survives `docker rm`. We cover volumes in the next module.
-
----
-
-## Signals: How Docker Stops Containers
-
-When you tell Docker to stop a container, what happens to the process running inside it? This is not academic — getting it wrong corrupts databases, drops in-flight HTTP requests, and leaves log files half-written.
-
-### `docker stop`: graceful shutdown via SIGTERM
-
-```bash
-docker stop <name>
-```
-
-What Docker actually does:
-1. Sends **SIGTERM** (signal 15) to **PID 1** inside the container
-2. PID 1 receives it and has the opportunity to: flush buffers, close database connections, finish in-flight requests, write a clean shutdown log line
-3. Docker waits up to **10 seconds** (the grace period)
-4. If the process exits within the grace period → clean shutdown, exit code `0`
-5. If the process does **not** exit within the grace period → Docker sends SIGKILL
-
-The grace period can be extended: `docker stop -t 30 <name>` gives 30 seconds. A PostgreSQL container doing a checkpoint needs this; a stateless HTTP server probably doesn't.
-
-### `docker kill`: immediate death via SIGKILL
-
-```bash
-docker kill <name>
-```
-
-Docker sends **SIGKILL** (signal 9) immediately to the kernel. The kernel terminates the process instantly — no notification to the application, no chance to clean up. Exit code: **137** (128 + 9).
-
-SIGKILL cannot be caught, blocked, or ignored. It is the operating system forcibly reclaiming the process. A database receiving SIGKILL may have unflushed write-ahead log entries, resulting in data corruption or needing a recovery run on restart.
-
-### How to tell which happened: exit codes
-
-```bash
-docker inspect <name> --format '{{.State.ExitCode}}'
-```
-
-- `0` = clean exit (process exited on its own or after SIGTERM)
-- `137` = killed by SIGKILL (either `docker kill`, or `docker stop` timeout expired)
-- `143` = killed by SIGTERM and the process propagated it (less common)
-- any non-zero = application-level failure
-
----
-
-## Why PID 1 Matters
-
-Inside a container, the process you start becomes PID 1. On Linux, PID 1 has a special responsibility: it must handle signals and reap zombie child processes.
-
-If your container runs a shell script as PID 1 and that script starts your application as a child process, the shell may not forward SIGTERM to the child. The application never receives the shutdown signal. The shell sits there until Docker's grace period expires and sends SIGKILL. Your application gets SIGKILL every time — no graceful shutdown, ever.
-
-The fix: use `exec` in your entrypoint script so the application *becomes* PID 1:
-
-```bash
-# Bad — shell is PID 1, app is a child, SIGTERM not forwarded
 #!/bin/sh
-python app.py
+echo "Preparing configuration..."
+exec python server.py
+```
 
-# Good — exec replaces the shell, python IS PID 1, receives SIGTERM directly
+`exec` replaces the shell process with the target application, allowing it to inherit PID 1 and receive signals directly.
+
+## Terminal Experiment: Observing Signal Delivery
+
+A practice directory is pre-configured at `~/process-demo`. It contains a Python application with a registered `SIGTERM` handler, a startup wrapper script, and two Dockerfiles:
+
+* `Dockerfile.shell`: runs a shell wrapper script (`CMD ["/bin/sh", "entrypoint.sh"]`)
+* `Dockerfile.exec`: starts the application via exec form (`CMD ["python", "server.py"]`)
+
+### 1. Inspect the Demo Files
+
+```bash
+cd ~/process-demo
+cat server.py
+cat entrypoint.sh
+```
+
+`server.py` installs a signal handler for `SIGTERM`:
+
+```python
+def on_term(signum, frame):
+    print("Caught SIGTERM! Performing graceful shutdown...", flush=True)
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, on_term)
+```
+
+`entrypoint.sh` starts Python without `exec`:
+
+```sh
 #!/bin/sh
-exec python app.py
+python server.py
 ```
 
-Or use the JSON array form in your Dockerfile's `ENTRYPOINT` / `CMD` — this also avoids the shell wrapper:
-
-```dockerfile
-# Bad — runs via shell: /bin/sh -c "python app.py"
-CMD python app.py
-
-# Good — runs directly, python is PID 1
-CMD ["python", "app.py"]
-```
-
----
-
-## Lab: Catch a Signal and Do a Graceful Shutdown
-
-> **Lab:** Your task: verify your container handles SIGTERM gracefully before pushing to production.
->
-> A container that ignores SIGTERM will always be force-killed after the grace period. That's 10 seconds of unnecessary wait on every deployment or restart, plus the risk of data corruption for stateful services.
->
-> In this lab you'll observe the difference between a container that handles SIGTERM and one that ignores it, then measure the shutdown time.
->
-> **Part 1 — The container that ignores SIGTERM (the bad case):**
->
-> ```bash
-> # This shell script doesn't handle signals — sleep keeps running
-> docker run -d --name bad-shutdown alpine:latest sh -c 'echo "started"; sleep 300'
-> ```
->
-> Time how long `docker stop` takes:
->
-> ```bash
-> time docker stop bad-shutdown
-> ```
->
-> It should take about **10 seconds** — that's the full grace period expiring before Docker gives up and sends SIGKILL. Check the exit code:
->
-> ```bash
-> docker inspect bad-shutdown --format '{{.State.ExitCode}}'
-> # 137 = killed by SIGKILL
-> ```
->
-> Cleanup:
->
-> ```bash
-> docker rm bad-shutdown
-> ```
->
-> **Part 2 — The container that handles SIGTERM (the good case):**
->
-> The `sh` built-in `trap` command catches signals. `exec` makes the shell *become* PID 1 properly:
->
-> ```bash
-> docker run -d --name good-shutdown alpine:latest sh -c '
->   trap "echo SIGTERM received, shutting down cleanly; exit 0" TERM
->   echo "started, waiting for signals"
->   while true; do sleep 1; done
-> '
-> ```
->
-> Verify it started:
->
-> ```bash
-> docker logs good-shutdown
-> ```
->
-> Now stop it and time it:
->
-> ```bash
-> time docker stop good-shutdown
-> ```
->
-> It should stop in **under 1 second** — the trap fired, the process exited cleanly before the grace period. Check the exit code:
->
-> ```bash
-> docker inspect good-shutdown --format '{{.State.ExitCode}}'
-> # 0 = clean exit
-> ```
->
-> And read the shutdown message from the logs:
->
-> ```bash
-> docker logs good-shutdown
-> # "SIGTERM received, shutting down cleanly"
-> ```
->
-> Cleanup:
->
-> ```bash
-> docker rm good-shutdown
-> ```
->
-> **What this means in production:** a 10-second shutdown vs a sub-second shutdown on every rolling deployment, restart, or scale-down event. For a service with 20 instances rolling-updated, that's 200 seconds vs 20 seconds minimum downtime window — and that's before accounting for data integrity.
-
----
-
-## Disk Hygiene: Keeping CI Runners Clean
-
-Back to that 3 AM disk-full alert. Here's how to understand what's on disk and how to clean it:
-
-### See what Docker is using
+### 2. Build Both Images
 
 ```bash
-docker system df
+docker build -t app-shell -f Dockerfile.shell .
+docker build -t app-exec -f Dockerfile.exec .
 ```
 
-Output:
-```
-TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
-Images          23        5         8.2GB     6.1GB (74%)
-Containers      47        2         1.4GB     1.3GB (99%)
-Local Volumes   8         3         2.1GB     0B (0%)
-Build Cache     0         0         0B        0B
-```
+### 3. Run and Compare Process Trees
 
-This tells you: 74% of image storage is reclaimable (not used by any running container), and 99% of container storage is reclaimable (stopped containers that haven't been removed).
-
-### Cleaning up
+Start both containers in the background:
 
 ```bash
-# Remove all stopped containers + dangling images + unused networks
-docker system prune -f
-
-# Same, but also remove unused images (not just dangling)
-docker system prune -af
-
-# Remove only stopped containers
-docker container prune -f
-
-# Remove only dangling images (untagged layers from old builds)
-docker image prune -f
-
-# Remove all unused images (nothing running uses them)
-docker image prune -af
+docker run -d --name c-shell app-shell
+docker run -d --name c-exec app-exec
 ```
 
-> **Warning:** `-af` on image prune will remove images you pulled but aren't currently running. If you pull images manually and want to keep them even when no container is using them, use `-f` (dangling only) instead. On a CI runner, `-af` is usually fine — the next build will re-pull what it needs.
-
-### The preventive approach: `--rm` for ephemeral containers
-
-If you know a container's output is all you need and you don't need to inspect it afterwards, `--rm` removes it automatically when it exits:
+Inspect the processes running inside each container:
 
 ```bash
-docker run --rm alpine:latest echo "do something and clean up"
-# Container is gone as soon as it exits — no docker rm needed
+docker top c-shell
+docker top c-exec
 ```
 
-CI pipelines use `--rm` on most steps. The disk problem only happens when `--rm` is omitted or when long-running services are left as stopped containers after development.
+Observe which command occupies PID 1 in each container.
 
-### Scheduling cleanup on CI runners
+### 4. Stop Both Containers and Compare Timing
 
-The real fix for the 3 AM scenario: a cron job on each runner:
+Measure the shutdown duration for each container:
 
 ```bash
-# /etc/cron.d/docker-cleanup
-# Runs at 3am daily, cleans up containers and dangling images
-0 3 * * * root docker system prune -f >> /var/log/docker-cleanup.log 2>&1
+time docker stop c-shell
+time docker stop c-exec
 ```
 
----
-
-## Restart Policies
-
-For long-running services (web servers, background workers), you want Docker to restart containers automatically if they crash without requiring manual intervention:
+### 5. Inspect Exit Codes and Output
 
 ```bash
-docker run -d --name api --restart unless-stopped -p 8080:80 nginx:alpine
+docker inspect c-shell --format 'ExitCode: {{.State.ExitCode}}'
+docker logs c-shell
+
+docker inspect c-exec --format 'ExitCode: {{.State.ExitCode}}'
+docker logs c-exec
 ```
 
-| Policy | Behaviour | Use case |
-|:-------|:----------|:---------|
-| `no` | Never restart (default) | One-off jobs, migrations |
-| `on-failure[:N]` | Restart only on non-zero exit; optionally limit to N retries | Workers that might encounter transient errors |
-| `unless-stopped` | Always restart unless manually stopped with `docker stop`; survives daemon restart | Production web services, APIs |
-| `always` | Always restart, even after manual stop, after daemon restart | Critical system daemons |
+**What the evidence shows:**
+
+* `c-shell` took approximately 10 seconds to stop, printed no shutdown log, and returned exit code `137`. The shell did not forward `SIGTERM` to Python, forcing Docker to issue a `SIGKILL` once the 10-second grace period expired.
+* `c-exec` stopped in milliseconds, logged its shutdown message, and returned exit code `0`. Python ran directly as PID 1, received `SIGTERM`, executed its cleanup handler, and exited cleanly.
+
+Clean up the test containers:
 
 ```bash
-# Inspect what restart policy a container has
-docker inspect api --format '{{.HostConfig.RestartPolicy.Name}}'
+docker rm c-shell c-exec
 ```
 
-> **Tip:** `--restart unless-stopped` is the Kubernetes `restartPolicy: Always` equivalent for single-node Docker setups. In Kubernetes, the kubelet does this automatically for every pod — there's no equivalent of Docker's `no` policy in a Deployment.
+## Diagnosing Exit Codes
 
----
+When a container stops, its exit status reflects how its primary process terminated:
 
-## Connecting to Production and CI/CD
+| Exit Code | Classification | Meaning |
+| :---: | :--- | :--- |
+| **`0`** | Clean Exit | The application completed its task or handled a shutdown signal cleanly. |
+| **`1 – 126`** | Application Error | The process exited due to an unhandled exception, syntax error, or general application failure. |
+| **`137`** | Killed by `SIGKILL` (`128 + 9`) | The process was terminated immediately by `SIGKILL`. This occurs after a `docker stop` timeout, an explicit `docker kill`, or an Out-Of-Memory (OOM) kill by the host kernel. |
+| **`143`** | Terminated by `SIGTERM` (`128 + 15`) | The process terminated upon receiving `SIGTERM` without overriding the exit code. |
 
-The three topics in this chapter connect directly to how production infrastructure is designed:
+To inspect an exited container's status:
 
-**Ephemeral storage + volumes:**
-- Every 12-factor application is designed to write nothing to its local filesystem during runtime. Logs go to stdout (captured by Docker), state goes to an external database or object storage. CI pipelines depend on containers being stateless — that's what makes them reproducible.
-- When you need persistence (databases, upload directories, caches), volumes are the answer — that's the next module.
+```bash
+docker inspect <container-name> --format 'Status: {{.State.Status}}, ExitCode: {{.State.ExitCode}}'
+```
 
-**SIGTERM handling:**
-- Kubernetes's rolling deployments, Kubernetes HPA scale-downs, and ECS task replacements all work by sending SIGTERM to containers, waiting `terminationGracePeriodSeconds`, then sending SIGKILL. An application that doesn't handle SIGTERM gets killed dirty on every deploy. This is one of the most common causes of request drops during Kubernetes rolling updates.
+> [!NOTE]
+> Exit code `137` indicates that the process received `SIGKILL`; it does not indicate why the signal was sent. Check `docker inspect <container-name> --format '{{.State.OOMKilled}}'` to verify whether the host kernel terminated the container due to memory limits.
 
-**Disk hygiene:**
-- Every CI provider (GitHub Actions, GitLab CI, CircleCI self-hosted) warns about disk space in their runner docs. The advice is always the same: `docker system prune` in your pipeline or on a schedule. Knowing *why* it fills up lets you make better decisions about what to prune and when.
+## Restart Policies and Cleanup
 
----
+By default, Docker does not restart containers when they exit. Use the `--restart` flag to configure automated recovery:
+
+| Restart Policy | Behavior | Typical Use Case |
+| :--- | :--- | :--- |
+| **`no`** (Default) | Never restarts the container. | One-off commands, batch jobs, database migrations. |
+| **`on-failure[:max]`** | Restarts only if the container exits with a non-zero code. | Services prone to transient startup failures. |
+| **`unless-stopped`** | Restarts on failure or daemon reboot, unless explicitly stopped. | Standard web services and background workers. |
+| **`always`** | Always restarts, even if manually stopped before a daemon reboot. | Critical host-level background services. |
+
+Example:
+
+```bash
+docker run -d --name web-api --restart unless-stopped -p 8080:80 nginx:alpine
+```
+
+For one-off containers that should not linger after their task completes, use `--rm` to delete them automatically upon exit:
+
+```bash
+docker run --rm alpine:latest echo "Task complete"
+```
 
 ## Key Takeaways
 
-- Container storage is a thin writable layer on top of read-only image layers; when the container is removed, the writable layer is gone — data written inside a container is ephemeral by design
-- `docker diff` shows exactly what a container has written, modified, or deleted in its writable layer
-- `docker stop` sends SIGTERM and waits (graceful); `docker kill` sends SIGKILL immediately (forceful); exit code `137` means SIGKILL
-- Applications must handle SIGTERM and exit cleanly — otherwise every shutdown is a SIGKILL, every deploy drops requests or corrupts state
-- Use the JSON array form (`CMD ["app"]` not `CMD app`) or `exec` in shell entrypoints so your app is PID 1 and receives signals directly
-- `docker system df` shows disk usage; `docker system prune -f` clears stopped containers + dangling images; schedule this on CI runners
-- `--restart unless-stopped` makes a container resilient to crashes without requiring manual intervention
+- **Signal Delivery:** `docker stop` sends `SIGTERM` to PID 1 and waits for a grace period before issuing `SIGKILL`; `docker kill` sends `SIGKILL` immediately.
+- **Exec-Form Syntax:** Use the exec form (`CMD ["executable", "param"]`) or `exec` in shell entrypoints so the application runs as PID 1 and receives OS signals directly.
+- **Interpreting Exit Codes:** Exit code `0` indicates clean completion; `137` indicates termination via `SIGKILL` (grace-period timeout, explicit kill, or OOM event); `143` indicates standard termination via `SIGTERM`.

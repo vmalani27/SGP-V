@@ -7,7 +7,7 @@ tags:
   - branches
   - merge
 environment: git-fundamentals
-summary: >
+summary: >-
   Integrate feature branches into main by performing a fast-forward merge,
   handling a divergent merge conflict, and manually resolving conflicting lines.
 
@@ -45,21 +45,12 @@ tasks:
   - id: fast-forward-merge
     summary: Fast-forward merge feature/logging into main
     prompt: >-
-      You have a branch `feature/logging` that introduced logging changes before
-      other work started on `main`. Inspect the branches and merge `feature/logging`
-      into `main`.
-
-      Because `main` had not diverged when `feature/logging` was created, Git can
-      simply advance the branch pointer forward without generating a merge commit.
-
-      Work inside `/home/student/service-repo`. Make sure you are on `main`,
-      execute the merge, and then delete the `feature/logging` branch with
-      `git branch -d`.
+      In `/home/student/service-repo`, integrate `feature/logging` into `main` using
+      a fast-forward merge, then delete the obsolete feature branch.
     type: terminal_action
     hints:
-      - "Run `git checkout main` or `git switch main` to make sure you are on main"
-      - "Run `git merge feature/logging` to merge the branch"
-      - "Delete the merged branch with `git branch -d feature/logging`"
+      - "Ensure your active branch is main before initiating the merge."
+      - "Clean up the merged branch reference once main has advanced."
     solution:
       command: "cd /home/student/service-repo && git checkout main && git merge feature/logging && git branch -d feature/logging"
     validation:
@@ -91,24 +82,16 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Ensure you switch to `main`, run `git merge feature/logging`, and delete
-      `feature/logging` with `git branch -d feature/logging`.
+      The logging changes are not merged into `main`, or the feature branch has not been deleted.
 
   - id: trigger-merge-conflict
-    summary: Attempt to merge feature/timeout to trigger a conflict
+    summary: Initiate a merge with conflicting changes
     prompt: >-
-      Now you want to integrate `feature/timeout` into `main`. However, both
-      `main` and `feature/timeout` altered the same lines in `app.py`.
-
-      Run `git merge feature/timeout` from the `main` branch. Git will halt the
-      automatic merge and notify you of a merge conflict in `app.py`.
-
-      Leave the repository in the conflicted state so you can inspect it.
+      From the `main` branch, begin merging `feature/timeout`. Leave the repository
+      in the conflicted state so you can inspect the conflicting changes.
     type: terminal_action
     hints:
-      - "Ensure you are on branch `main`"
-      - "Run `git merge feature/timeout`"
-      - "Do not commit or abort yet — observe the conflict message"
+      - "Merge the timeout branch into main and let Git flag the collision."
     solution:
       command: "cd /home/student/service-repo && git merge feature/timeout"
     validation:
@@ -132,11 +115,10 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Run `git merge feature/timeout` while on `main`. Git should report a
-      merge conflict in `app.py`. Do not resolve or abort it yet.
+      The repository is not in an active merge conflict state for `app.py`.
 
   - id: identify-conflict-marker
-    summary: Identify which section represents the current branch in conflict markers
+    summary: Identify the current branch conflict marker
     prompt: >-
       When a conflict occurs in Git, conflict markers are written directly into
       the file around the conflicting lines.
@@ -152,26 +134,18 @@ tasks:
     validation:
       expected_answer: "<<<<<<< HEAD"
     hints:
-      - "The marker starts with seven less-than symbols pointing to your current branch"
+      - "Review the marker syntax that opens the conflict section for the active branch."
 
   - id: resolve-and-commit
-    summary: Manually resolve the conflict in app.py and complete the merge
+    summary: Resolve the merge conflict and commit
     prompt: >-
-      Open `app.py` in `/home/student/service-repo`.
-
-      Resolve the conflict by:
-      1. Keeping the `timeout = 30` setting from `feature/timeout`
-      2. Keeping the `workers = 4` setting from `main`
-      3. Removing all conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>> feature/timeout`)
-
-      Once resolved:
-      - Run `git add app.py` to mark the conflict as resolved
-      - Run `git commit` (or `git commit -m "Merge branch 'feature/timeout'"`) to record the merge commit
+      Resolve the conflict in `app.py` by combining both changes: keep `timeout = 30`
+      from `feature/timeout` and `workers = 4` from `main`. Remove all conflict
+      markers and complete the merge commit.
     type: terminal_action
     hints:
-      - "Edit app.py to remove the <<<<<<<, =======, and >>>>>>> lines"
-      - "Ensure both `timeout = 30` and `workers = 4` are present in app.py"
-      - "Run `git add app.py` then `git commit`"
+      - "Ensure all conflict markers are removed and both configuration values are present."
+      - "Stage the resolved file and finalize the merge commit."
     solution:
       command: "cd /home/student/service-repo && printf 'def init_service():\\n    print(\"Starting service v1.0\")\\n    timeout = 30\\n    workers = 4\\n    return True\\n' > app.py && git add app.py && git commit -m \"Merge branch 'feature/timeout'\""
     validation:
@@ -211,17 +185,16 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Ensure `app.py` has conflict markers removed, contains `timeout = 30` and
-      `workers = 4`, is staged with `git add app.py`, and committed with `git commit`.
+      The conflict in `app.py` is unresolved, markers remain, or the merge commit was not finalized.
 
   - id: cleanup-branch
-    summary: Delete the feature/timeout branch
+    summary: Delete the merged feature branch
     prompt: >-
-      Now that `feature/timeout` has been successfully merged into `main`, delete
-      the branch using `git branch -d feature/timeout`.
+      Now that `feature/timeout` is merged into `main`, delete the completed
+      feature branch to keep the repository clean.
     type: terminal_action
     hints:
-      - "Run `git branch -d feature/timeout`"
+      - "Remove the local branch reference for feature/timeout."
     solution:
       command: "cd /home/student/service-repo && git branch -d feature/timeout"
     validation:
@@ -240,4 +213,4 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Run `git branch -d feature/timeout` to remove the merged branch.
+      Branch `feature/timeout` still exists. Ensure it is deleted from local references.
