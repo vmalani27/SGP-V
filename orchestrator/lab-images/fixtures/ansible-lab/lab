@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# ──────────────────────────────────────────────────────────────
+# LabOps Ansible Lab Automation CLI (Red Hat 'lab' emulation)
+# Supports:
+#   lab start data-review
+#   lab grade data-review
+#   lab finish data-review
+# ──────────────────────────────────────────────────────────────
+set -e
+
+ACTION="$1"
+EXERCISE="$2"
+
+FIXTURES_DIR="/opt/lab-fixtures/ansible-lab"
+STUDENT_HOME="${HOME:-/home/student}"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+pass() {
+    echo -e " [ ${GREEN}PASS${NC} ] $1"
+}
+
+fail() {
+    echo -e " [ ${RED}FAIL${NC} ] $1"
+    FAILURES=$((FAILURES + 1))
+}
+
+info() {
+    echo -e "${BLUE}>>>${NC} $1"
+}
+
+usage() {
+    echo "Usage: lab {start|grade|finish} <exercise-name>"
+    echo "Example: lab start data-review"
+    exit 1
+}
+
+if [ -z "$ACTION" ] || [ -z "$EXERCISE" ]; then
+    usage
+fi
+
+case "$ACTION" in
+    start)
+        case "$EXERCISE" in
+            data-review)
+                info "Preparing environment for exercise 'data-review'..."
+                LAB_DIR="${STUDENT_HOME}/data-review"
+                mkdir -p "${LAB_DIR}/files"
+                mkdir -p "${LAB_DIR}/vars"
+
+                cp -f "${FIXTURES_DIR}/ansible.cfg" "${LAB_DIR}/ansible.cfg" 2>/dev/null || true
+                cp -f "${FIXTURES_DIR}/inventory" "${LAB_DIR}/inventory" 2>/dev/null || true
+                cp -rf "${FIXTURES_DIR}/files/"* "${LAB_DIR}/files/" 2>/dev/null || true
+
+                chown -R student:student "${LAB_DIR}" 2>/dev/null || true
+                chmod -R u+rwX "${LAB_DIR}" 2>/dev/null || true
+
+                echo ""
+                echo -e "${GREEN}Exercise 'data-review' started successfully!${NC}"
+                echo "Working directory prepared at: ${LAB_DIR}"
+                echo "Switch to the directory to begin: cd ~/data-review"
+                ;;
+            *)
+                echo -e "${RED}Unknown exercise '${EXERCISE}'.${NC}"
+                exit 1
+                ;;
+        esac
+        ;;
+
+    grade)
+        case "$EXERCISE" in
+            data-review)
+                echo "=========================================================="
+                echo " Grading exercise: data-review"
+                echo "=========================================================="
+                FAILURES=0
+
+                LAB_DIR="${PWD}"
+                if [ ! -f "${LAB_DIR}/playbook.yml" ] && [ -f "${STUDENT_HOME}/data-review/playbook.yml" ]; then
+                    LAB_DIR="${STUDENT_HOME}/data-review"
+                fi
+
+                # 1. Check playbook exists
+                if [ -f "${LAB_DIR}/playbook.yml" ]; then
+                    pass "playbook.yml exists"
+                else
+                    fail "playbook.yml not found in ${LAB_DIR}"
+                fi
+
+                # 2. Check secret.yml is encrypted with Ansible Vault
+                SECRET_FILE="${LAB_DIR}/vars/secret.yml"
+                if [ -f "${SECRET_FILE}" ]; then
+                    if grep -q "\$ANSIBLE_VAULT;" "${SECRET_FILE}"; then
+                        pass "vars/secret.yml is encrypted with Ansible Vault"
+                        # Test decrypting with password 'redhat'
+                        SECRET_CONTENT=$(echo "redhat" | ansible-vault view "${SECRET_FILE}" --vault-password-file /dev/stdin 2>/dev/null || true)
+                        if echo "${SECRET_CONTENT}" | grep -q "web_pass:\s*redhat"; then
+                            pass "vars/secret.yml contains valid 'web_pass: redhat'"
+                        else
+                            fail "vars/secret.yml does not contain 'web_pass: redhat' (or password is not 'redhat')"
+                        fi
+                    else
+                        fail "vars/secret.yml is not encrypted with Ansible Vault"
+                    fi
+                else
+                    fail "vars/secret.yml does not exist"
+                fi
+
+                # Check serverb status (either local or via ssh)
+                TARGET="serverb.lab.example.com"
+                SSH_CMD="ssh -o StrictHostKeyChecking=no -o BatchMode=yes student@${TARGET}"
+
+                # 3. Check packages
+                if ${SSH_CMD} "rpm -q httpd mod_ssl firewalld" >/dev/null 2>&1; then
+                    pass "Packages httpd, mod_ssl, and firewalld are installed on ${TARGET}"
+                else
+                    fail "Required packages (httpd, mod_ssl, firewalld) are not installed on ${TARGET}"
+                fi
+
+                # 4. Check httpd.conf
+                if ${SSH_CMD} "stat -c '%U:%G %a' /etc/httpd/conf/httpd.conf" 2>/dev/null | grep -q "root:root 644"; then
+                    pass "/etc/httpd/conf/httpd.conf has correct ownership (root:root) and permissions (0644)"
+                else
+                    fail "/etc/httpd/conf/httpd.conf has incorrect ownership or permissions"
+                fi
+
+                # 5. Check secrets directory
+                if ${SSH_CMD} "stat -c '%U:%G %a' /etc/httpd/secrets" 2>/dev/null | grep -q "apache:apache 500"; then
+                    pass "/etc/httpd/secrets directory exists with apache:apache and permissions 0500"
+                else
+                    fail "/etc/httpd/secrets directory missing or has incorrect permissions (expected apache:apache 0500)"
+                fi
+
+                # 6. Check htpasswd file
+                if ${SSH_CMD} "stat -c '%U:%G %a' /etc/httpd/secrets/htpasswd" 2>/dev/null | grep -q "apache:apache 400"; then
+                    pass "/etc/httpd/secrets/htpasswd exists with apache:apache and permissions 0400"
+                else
+                    fail "/etc/httpd/secrets/htpasswd missing or has incorrect permissions (expected apache:apache 0400)"
+                fi
+
+                # 7. Check .htaccess
+                if ${SSH_CMD} "stat -c '%U:%G %a' /var/www/html/.htaccess" 2>/dev/null | grep -q "apache:apache 400"; then
+                    pass "/var/www/html/.htaccess exists with apache:apache and permissions 0400"
+                else
+                    fail "/var/www/html/.htaccess missing or has incorrect permissions (expected apache:apache 0400)"
+                fi
+
+                # 8. Check index.html dynamic facts message
+                INDEX_CONTENT=$(${SSH_CMD} "cat /var/www/html/index.html" 2>/dev/null || true)
+                if echo "${INDEX_CONTENT}" | grep -qE "serverb.*has been customized by Ansible\."; then
+                    pass "index.html contains expected dynamic host and IP content"
+                else
+                    fail "index.html missing or does not match 'HOSTNAME (IPADDRESS) has been customized by Ansible.'"
+                fi
+
+                # 9. Check services
+                if ${SSH_CMD} "systemctl is-active firewalld" >/dev/null 2>&1; then
+                    pass "firewalld service is active and running"
+                else
+                    fail "firewalld service is not active"
+                fi
+
+                if ${SSH_CMD} "systemctl is-active httpd" >/dev/null 2>&1; then
+                    pass "httpd service is active and running"
+                else
+                    fail "httpd service is not active"
+                fi
+
+                # 10. Check HTTPS access and Basic Auth response
+                CURL_OUT=$(curl -k -s -w "\n%{http_code}" -u guest:redhat https://serverb.lab.example.com || true)
+                HTTP_CODE=$(echo "${CURL_OUT}" | tail -n 1)
+                RESP_BODY=$(echo "${CURL_OUT}" | sed '$d')
+
+                if [ "${HTTP_CODE}" = "200" ]; then
+                    pass "Basic Authentication over HTTPS returned HTTP 200"
+                else
+                    fail "Basic Authentication over HTTPS failed (HTTP status: ${HTTP_CODE})"
+                fi
+
+                echo "=========================================================="
+                if [ $FAILURES -eq 0 ]; then
+                    echo -e "${GREEN}Overall Result: PASS - Congratulations! Exercise completed successfully.${NC}"
+                    exit 0
+                else
+                    echo -e "${RED}Overall Result: FAIL - ${FAILURES} test(s) failed. Review the errors above.${NC}"
+                    exit 1
+                fi
+                ;;
+            *)
+                echo -e "${RED}Unknown exercise '${EXERCISE}'.${NC}"
+                exit 1
+                ;;
+        esac
+        ;;
+
+    finish)
+        case "$EXERCISE" in
+            data-review)
+                info "Cleaning up exercise 'data-review'..."
+                TARGET="serverb.lab.example.com"
+                SSH_CMD="ssh -o StrictHostKeyChecking=no -o BatchMode=yes student@${TARGET}"
+                ${SSH_CMD} "sudo systemctl stop httpd; sudo rm -rf /etc/httpd/secrets /var/www/html/*" 2>/dev/null || true
+                rm -rf "${STUDENT_HOME}/data-review" 2>/dev/null || true
+                echo -e "${GREEN}Exercise 'data-review' cleanup complete.${NC}"
+                ;;
+            *)
+                echo -e "${RED}Unknown exercise '${EXERCISE}'.${NC}"
+                exit 1
+                ;;
+        esac
+        ;;
+
+    *)
+        usage
+        ;;
+esac

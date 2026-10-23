@@ -1,0 +1,2 @@
+base_image: "labops-ansible:latest"
+pre_pull: []

@@ -12,6 +12,12 @@
       "title": "Docker Mastery",
       "description": "Containers, multi-stage builds, Docker Compose, and production-ready deployments.",
       "level": "beginner"
+    },
+    {
+      "id": "ansible-automation",
+      "title": "Red Hat Enterprise Linux Automation with Ansible",
+      "description": "Master Ansible Playbooks, variables, secrets management with Ansible Vault, and system automation.",
+      "level": "intermediate"
     }
   ]
 }

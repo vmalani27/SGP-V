@@ -1,0 +1,97 @@
+id: lab-1
+title: Managing Variables and Facts
+difficulty: intermediate
+estimated_time: 25
+tags:
+  - ansible
+  - automation
+  - vault
+  - facts
+environment: ansible-automation
+summary: >-
+  Write and run an Ansible Playbook that uses variables, secrets, and facts to configure
+  and verify basic authentication on an Apache HTTP Server.
+
+objectives:
+  - Prepare the lab workspace using the lab CLI
+  - Author a playbook defining variables for web, firewall, and secret paths
+  - Deploy Apache HTTP Server with basic authentication and custom dynamic facts
+  - Encrypt sensitive authentication credentials using Ansible Vault
+  - Verify access using Ansible's URI module and the automated grading script
+
+setup:
+  - command: >-
+      lab start data-review
+
+tasks:
+  - id: start-lab-environment
+    summary: Prepare the lab environment
+    prompt: >-
+      Initialize the working environment by running `lab start data-review`.
+    type: terminal_action
+    solution:
+      command: lab start data-review
+    validation:
+      command: test -d ~/data-review/files && test -f ~/data-review/files/httpd.conf && echo READY
+      match_type: exact
+      expected_output: "READY"
+    error_message: >-
+      The lab environment at `~/data-review` is not initialized. Run `lab start data-review`.
+
+  - id: create-vault-secret
+    summary: Create encrypted secret variable file
+    prompt: >-
+      In `~/data-review/vars/secret.yml`, create a Vault-encrypted file containing
+      `web_pass: redhat` encrypted with password `redhat`.
+    type: terminal_action
+    solution:
+      command: >-
+        echo "web_pass: redhat" > ~/data-review/vars/secret.yml &&
+        ansible-vault encrypt ~/data-review/vars/secret.yml --vault-password-file <(echo "redhat")
+    validation:
+      command: >-
+        test -f ~/data-review/vars/secret.yml &&
+        echo "redhat" | ansible-vault view ~/data-review/vars/secret.yml --vault-password-file /dev/stdin 2>/dev/null | grep -q "web_pass: redhat" &&
+        echo VALID
+      match_type: exact
+      expected_output: "VALID"
+    error_message: >-
+      `vars/secret.yml` must be encrypted with Ansible Vault (password `redhat`) and contain `web_pass: redhat`.
+
+  - id: author-playbook
+    summary: Create and execute the playbook
+    prompt: >-
+      In `~/data-review/playbook.yml`, write the two-play Ansible Playbook according to the
+      specifications and execute it with `--ask-vault-pass` or a vault password file.
+    type: terminal_action
+    solution:
+      command: >-
+        cd ~/data-review &&
+        ansible-playbook --vault-password-file <(echo "redhat") playbook.yml
+    validation:
+      command: >-
+        test -f ~/data-review/playbook.yml &&
+        ansible-playbook --syntax-check ~/data-review/playbook.yml >/dev/null 2>&1 &&
+        echo SYNTAX_OK
+      match_type: exact
+      expected_output: "SYNTAX_OK"
+    error_message: >-
+      `~/data-review/playbook.yml` is missing or has Ansible YAML syntax errors.
+
+  - id: grade-exercise
+    summary: Run automated lab grading
+    prompt: >-
+      Confirm all tasks and services on `serverb.lab.example.com` are properly configured
+      by running `lab grade data-review`.
+    type: terminal_action
+    solution:
+      command: lab grade data-review
+    validation:
+      command: lab grade data-review >/dev/null 2>&1 && echo SUCCESS
+      match_type: exact
+      expected_output: "SUCCESS"
+    error_message: >-
+      Lab grading reported failures. Review `lab grade data-review` output and ensure all tasks completed.
+
+completion:
+  required_tasks: all

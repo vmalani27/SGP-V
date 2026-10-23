@@ -38,6 +38,10 @@ call :build_and_push "labops-docker-build:latest" "labops-docker-build:%TAG%" "D
 if errorlevel 1 goto :failed
 call :build_and_push "labops-git-fundamentals:latest" "labops-git-fundamentals:%TAG%" "Dockerfile.git-fundamentals"
 if errorlevel 1 goto :failed
+call :build_and_push "labops-ansible:latest" "labops-ansible:%TAG%" "Dockerfile.ansible"
+if errorlevel 1 goto :failed
+call :build_and_push "labops-ansible-node:latest" "labops-ansible-node:%TAG%" "Dockerfile.ansible-node"
+if errorlevel 1 goto :failed
 
 echo All images built and pushed successfully.
 set "RESULT=0"

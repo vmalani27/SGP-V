@@ -16,17 +16,55 @@ logger = logging.getLogger(__name__)
 
 
 IMAGE_ALIASES = {
+    # Module identifiers
+    "docker-fundamentals": "labops-docker-fundamentals:latest",
+    "building-images": "labops-docker-build:latest",
+    "container-networking": "labops-docker:latest",
+    "persistent-storage": "labops-docker:latest",
+    "git-basics": "labops-git-fundamentals:latest",
+    "branching-history": "labops-git-fundamentals:latest",
+    "remote-collaboration": "labops-git-fundamentals:latest",
+    "complete-workflow": "labops-git-fundamentals:latest",
+    "variables-and-facts": "labops-ansible:latest",
+    # Environment identifiers
     "docker-build": "labops-docker-build:latest",
     "docker": "labops-docker:latest",
     "ubuntu": "labops-ubuntu:latest",
     "linux-basic": "labops-ubuntu:latest",
     "docker-basic": "labops-docker:latest",
-    "docker-fundamentals": "labops-docker-fundamentals:latest",
     "git": "labops-git-fundamentals:latest",
     "git-basic": "labops-git-fundamentals:latest",
     "git-fundamentals": "labops-git-fundamentals:latest",
     "labops-git-fundamentals": "labops-git-fundamentals:latest",
+    "ansible": "labops-ansible:latest",
+    "ansible-automation": "labops-ansible:latest",
+    "ansible-workstation": "labops-ansible:latest",
 }
+
+
+def resolve_image(
+    image: str | None = None,
+    module_id: str | None = None,
+    course_id: str | None = None,
+) -> str:
+    """Resolve the target container image using explicit image, module ID, course ID, or alias."""
+    clean_img = (image or "").strip()
+    if clean_img:
+        return IMAGE_ALIASES.get(clean_img, clean_img)
+
+    clean_mod = (module_id or "").strip()
+    if clean_mod and clean_mod in IMAGE_ALIASES:
+        return IMAGE_ALIASES[clean_mod]
+
+    clean_course = (course_id or "").strip().lower()
+    if "git" in clean_course:
+        return IMAGE_ALIASES["git-fundamentals"]
+    if "docker" in clean_course:
+        return IMAGE_ALIASES["docker-fundamentals"]
+    if "ansible" in clean_course:
+        return IMAGE_ALIASES["ansible-automation"]
+
+    return IMAGE_ALIASES.get("docker-fundamentals", "labops-docker-fundamentals:latest")
 
 
 def get_canonical_ecr_ref(normalized_image: str) -> str | None:
@@ -38,6 +76,7 @@ def get_canonical_ecr_ref(normalized_image: str) -> str | None:
         "labops-docker-fundamentals:latest": f"{registry}/labops-docker-fundamentals:{tag}",
         "labops-docker-build:latest": f"{registry}/labops-docker-build:{tag}",
         "labops-git-fundamentals:latest": f"{registry}/labops-git-fundamentals:{tag}",
+        "labops-ansible:latest": f"{registry}/labops-ansible:{tag}",
     }
     return mapping.get(normalized_image)
 

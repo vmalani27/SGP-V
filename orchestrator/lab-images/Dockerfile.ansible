@@ -1,0 +1,96 @@
+# ──────────────────────────────────────────────────────────────
+# labops-ansible — Ansible Automation Lab Image
+# ──────────────────────────────────────────────────────────────
+# Enterprise Linux 9 with systemd (PID 1), ansible-core, openssh-server,
+# python3, firewalld, and httpd pre-cached.
+#
+# Emulates both the workstation control node and managed target
+# (serverb.lab.example.com) with seamless SSH key authentication.
+#
+# Build:
+#   docker build -t labops-ansible:latest -f Dockerfile.ansible .
+# ──────────────────────────────────────────────────────────────
+
+ARG BASE_IMAGE=rockylinux:9
+FROM ${BASE_IMAGE}
+
+ENV container=docker
+ENV LANG=en_US.UTF-8
+
+# Install epel-release and core packages
+RUN dnf install -y epel-release && \
+    dnf install -y \
+        systemd \
+        systemd-sysv \
+        sudo \
+        openssh-server \
+        openssh-clients \
+        python3 \
+        python3-pip \
+        python3-requests \
+        ansible-core \
+        curl \
+        wget \
+        git \
+        vim \
+        nano \
+        less \
+        iproute \
+        procps-ng \
+        diffutils \
+        which \
+        httpd \
+        mod_ssl \
+        firewalld \
+    && dnf clean all
+
+# Disable unnecessary systemd services inside container
+RUN (cd /lib/systemd/system/sysinit.target.wants/ || true; for i in *; do [ $i == systemd-tmpfiles-setup.service ] || rm -f $i; done); \
+    rm -f /lib/systemd/system/multi-user.target.wants/systemd-remount-fs.service; \
+    rm -f /lib/systemd/system/multi-user.target.wants/sys-fs-fuse-connections.mount; \
+    systemctl set-default multi-user.target
+
+# Generate SSH host keys & enable sshd
+RUN ssh-keygen -A && \
+    systemctl enable sshd
+
+# Create student user (UID 1000) with passwordless sudo
+RUN id -u student >/dev/null 2>&1 || ( \
+    useradd -m -s /bin/bash -u 1000 student \
+    && echo "student:student" | chpasswd \
+    && usermod -aG wheel student \
+    && echo "student ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/student \
+    && echo "%wheel ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/student \
+)
+
+# Setup SSH keypair for student and authorize it
+RUN mkdir -p /home/student/.ssh && \
+    ssh-keygen -t rsa -N "" -f /home/student/.ssh/id_rsa && \
+    cat /home/student/.ssh/id_rsa.pub > /home/student/.ssh/authorized_keys && \
+    chmod 700 /home/student/.ssh && \
+    chmod 600 /home/student/.ssh/id_rsa /home/student/.ssh/authorized_keys && \
+    echo -e "Host *\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n    LogLevel ERROR" > /home/student/.ssh/config && \
+    chmod 600 /home/student/.ssh/config && \
+    chown -R student:student /home/student/.ssh
+
+# Configure /etc/hosts alias so serverb.lab.example.com resolves to 127.0.0.1
+RUN echo "127.0.0.1 serverb.lab.example.com serverb workstation" >> /etc/hosts.ansible && \
+    echo 'if ! grep -q "serverb.lab.example.com" /etc/hosts; then cat /etc/hosts.ansible >> /etc/hosts 2>/dev/null || true; fi' >> /home/student/.bashrc
+
+# Copy lab fixtures and CLI tool
+COPY fixtures/ansible-lab /opt/lab-fixtures/ansible-lab
+RUN cp /opt/lab-fixtures/ansible-lab/lab /usr/local/bin/lab && \
+    chmod +x /usr/local/bin/lab && \
+    chmod -R 755 /opt/lab-fixtures/ansible-lab
+
+# Generate a self-signed SSL certificate for mod_ssl if needed
+RUN /usr/libexec/httpd-ssl-gencerts 2>/dev/null || true
+
+# Set shell prompt and working directory
+RUN echo 'export PS1="\[\033[01;32m\]\u@workstation\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "' >> /home/student/.bashrc && \
+    chown student:student /home/student/.bashrc
+
+WORKDIR /home/student
+
+# Boot systemd init
+CMD ["/sbin/init"]

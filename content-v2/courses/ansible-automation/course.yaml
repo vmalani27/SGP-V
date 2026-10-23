@@ -1,0 +1,21 @@
+id: ansible-automation
+title: Red Hat Enterprise Linux Automation with Ansible
+description: Master Ansible Playbooks, variables, secrets management with Ansible Vault, and system automation.
+level: intermediate
+prerequisites:
+  - Basic Linux command-line skills
+  - Text editing with vim or nano
+environment:
+  - Rocky Linux 9 (Enterprise Linux)
+keyTakeaways:
+  - Define and use variables and Ansible facts across plays
+  - Secure sensitive variables and credentials with Ansible Vault
+  - Automate service deployments with Apache HTTP Server and basic authentication
+  - Verify deployments using automated URI modules and validation scripts
+quickLinks:
+  - label: Ansible Documentation
+    href: https://docs.ansible.com/ansible/latest/index.html
+  - label: Red Hat Ansible Automation
+    href: https://www.redhat.com/en/technologies/management/ansible
+modules:
+  - variables-and-facts

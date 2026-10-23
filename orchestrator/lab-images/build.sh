@@ -39,3 +39,8 @@ echo "Building docker build..."
 build_and_push "labops-docker-build:latest" "labops-docker-build:$TAG" "Dockerfile.docker-build"
 echo "Building git fundamentals..."
 build_and_push "labops-git-fundamentals:latest" "labops-git-fundamentals:$TAG" "Dockerfile.git-fundamentals"
+echo "Building ansible..."
+build_and_push "labops-ansible:latest" "labops-ansible:$TAG" "Dockerfile.ansible"
+echo "Building ansible managed node..."
+build_and_push "labops-ansible-node:latest" "labops-ansible-node:$TAG" "Dockerfile.ansible-node"
+

@@ -1,0 +1,49 @@
+services:
+  workstation:
+    image: labops-ansible:latest
+    build:
+      context: ./orchestrator/lab-images
+      dockerfile: Dockerfile.ansible
+    container_name: workstation
+    hostname: workstation.lab.example.com
+    privileged: true
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - shared_ssh:/shared_ssh
+    networks:
+      ansible_net:
+        ipv4_address: 172.25.250.9
+    extra_hosts:
+      - "serverb.lab.example.com:172.25.250.11"
+      - "serverb:172.25.250.11"
+    restart: unless-stopped
+
+  serverb:
+    image: labops-ansible-node:latest
+    build:
+      context: ./orchestrator/lab-images
+      dockerfile: Dockerfile.ansible-node
+    container_name: serverb
+    hostname: serverb.lab.example.com
+    privileged: true
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - shared_ssh:/shared_ssh
+    networks:
+      ansible_net:
+        ipv4_address: 172.25.250.11
+    extra_hosts:
+      - "workstation.lab.example.com:172.25.250.9"
+      - "workstation:172.25.250.9"
+    restart: unless-stopped
+
+networks:
+  ansible_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.25.250.0/24
+
+volumes:
+  shared_ssh:

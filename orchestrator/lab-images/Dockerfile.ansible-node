@@ -1,0 +1,61 @@
+# ──────────────────────────────────────────────────────────────
+# labops-ansible-node — Dedicated Managed Node Image
+# ──────────────────────────────────────────────────────────────
+# Enterprise Linux 9 with systemd (PID 1), openssh-server, python3,
+# firewalld, and httpd pre-cached.
+#
+# Build:
+#   docker build -t labops-ansible-node:latest -f Dockerfile.ansible-node .
+# ──────────────────────────────────────────────────────────────
+
+ARG BASE_IMAGE=rockylinux:9
+FROM ${BASE_IMAGE}
+
+ENV container=docker
+ENV LANG=en_US.UTF-8
+
+RUN dnf install -y epel-release && \
+    dnf install -y \
+        systemd \
+        systemd-sysv \
+        sudo \
+        openssh-server \
+        openssh-clients \
+        python3 \
+        curl \
+        iproute \
+        procps-ng \
+        httpd \
+        mod_ssl \
+        firewalld \
+    && dnf clean all
+
+# Disable problematic systemd services in container
+RUN (cd /lib/systemd/system/sysinit.target.wants/ || true; for i in *; do [ $i == systemd-tmpfiles-setup.service ] || rm -f $i; done); \
+    rm -f /lib/systemd/system/multi-user.target.wants/systemd-remount-fs.service; \
+    rm -f /lib/systemd/system/multi-user.target.wants/sys-fs-fuse-connections.mount; \
+    systemctl set-default multi-user.target
+
+# Host keys & enable sshd
+RUN ssh-keygen -A && systemctl enable sshd
+
+# Create student user with passwordless sudo
+RUN id -u student >/dev/null 2>&1 || ( \
+    useradd -m -s /bin/bash -u 1000 student \
+    && echo "student:student" | chpasswd \
+    && usermod -aG wheel student \
+    && echo "student ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/student \
+    && echo "%wheel ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/student \
+)
+
+# Pre-trust student ssh access
+RUN mkdir -p /home/student/.ssh && \
+    chmod 700 /home/student/.ssh && \
+    touch /home/student/.ssh/authorized_keys && \
+    chmod 600 /home/student/.ssh/authorized_keys && \
+    chown -R student:student /home/student/.ssh
+
+# Pre-generate self-signed cert for mod_ssl
+RUN /usr/libexec/httpd-ssl-gencerts 2>/dev/null || true
+
+CMD ["/sbin/init"]
