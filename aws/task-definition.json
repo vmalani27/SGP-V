@@ -1,0 +1,52 @@
+{
+  "family": "github-kaniko-runner-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "3072",
+  "executionRoleArn": "arn:aws:iam::586177432842:role/labops-role-dev",
+  "taskRoleArn": "arn:aws:iam::586177432842:role/labops-role-dev",
+  "containerDefinitions": [
+    {
+      "name": "runner",
+      "image": "public.ecr.aws/i9t1l0m7/vmalani27/labops-base:runner-2.337.0",
+      "essential": true,
+      "user": "root",
+      "environment": [
+        {
+          "name": "RUNNER_ALLOW_RUNASROOT",
+          "value": "1"
+        },
+        {
+          "name": "GITHUB_REPOSITORY",
+          "value": "vmalani27/SGP-V"
+        },
+        {
+          "name": "RUNNER_LABELS",
+          "value": "self-hosted,aws,fargate,ap-south-1"
+        },
+        {
+          "name": "RUNNER_WORKDIR",
+          "value": "_work"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "GITHUB_PAT",
+          "valueFrom": "arn:aws:ssm:ap-south-1:586177432842:parameter/labops/github_pat"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/labops-runner",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "runner",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

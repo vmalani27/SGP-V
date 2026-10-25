@@ -6,7 +6,7 @@ set -euo pipefail
 
 REGION="us-east-1"
 ECR_REGISTRY="public.ecr.aws/i9t1l0m7"
-IMAGE_NAME="vmalani27/labops-base"
+IMAGE_NAME="labops-runner"
 IMAGE_TAG="runner-2.337.0"
 FULL_IMAGE="${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 

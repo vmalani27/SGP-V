@@ -3,7 +3,7 @@ setlocal
 
 set "Region=us-east-1"
 set "Registry=public.ecr.aws/i9t1l0m7"
-set "ImageName=vmalani27/labops-base"
+set "ImageName=labops-runner"
 set "Tag=runner-2.337.0"
 
 set "ScriptDir=%~dp0"

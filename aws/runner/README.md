@@ -36,7 +36,7 @@ aws\runner\build-and-push.bat
 
 Both scripts authenticate with Amazon ECR Public in `us-east-1` and push:
 
-`public.ecr.aws/i9t1l0m7/vmalani27/labops-base:runner-2.337.0`.
+`public.ecr.aws/i9t1l0m7/labops-runner:runner-2.337.0`.
 
 ---
 
@@ -49,7 +49,7 @@ In your ECS Task Definition, inject the SSM Parameter as an environment variable
   "containerDefinitions": [
     {
       "name": "github-actions-runner",
-      "image": "public.ecr.aws/i9t1l0m7/vmalani27/labops-base:runner-2.337.0",
+      "image": "public.ecr.aws/i9t1l0m7/labops-runner:runner-2.337.0",
       "essential": true,
       "environment": [
         { "name": "GITHUB_REPOSITORY", "value": "vmalani27/SGP-V" },

@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────
 FROM gcr.io/kaniko-project/executor:v1.23.2-debug AS kaniko-src
 
-FROM public.ecr.aws/i9t1l0m7/vmalani27/labops-base:ubuntu-22.04
+FROM public.ecr.aws/i9t1l0m7/labops-ubuntu:latest
 
 ARG RUNNER_VERSION=2.337.0
 ARG RUNNER_SHA256=70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613

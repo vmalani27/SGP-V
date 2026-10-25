@@ -1,0 +1,52 @@
+FROM alpine:latest
+
+ARG RUNNER_VERSION=2.337.0
+ARG RUNNER_SHA256=70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613
+
+# 1. Enable Alpine community repository and install Podman + dependencies
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.20/community" >> /etc/apk/repositories \
+    && apk update && apk add --no-cache \
+    ca-certificates \
+    curl \
+    jq \
+    git \
+    tar \
+    unzip \
+    zip \
+    sudo \
+    bash \
+    icu-libs \
+    libc6-compat \
+    aws-cli \
+    podman \
+    fuse-overlayfs \
+    slirp4netns \
+    shadow
+
+# 2. Create runner user and configure subuids/subgids for rootless Podman storage
+RUN adduser -D -s /bin/bash runner \
+    && echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
+    && touch /etc/subuid /etc/subgid \
+    && usermod --add-subuids 100000-165535 runner \
+    && usermod --add-subgids 100000-165535 runner \
+    && mkdir -p /actions-runner/_work \
+    && chown -R runner:runner /actions-runner
+
+WORKDIR /actions-runner
+USER runner
+
+# 3. Configure user-level Podman storage to use fuse-overlayfs
+RUN mkdir -p /home/runner/.config/containers \
+    && echo -e '[storage]\ndriver = "overlay"\n[storage.options.overlay]\nmount_program = "/usr/bin/fuse-overlayfs"' > /home/runner/.config/containers/storage.conf
+
+# # 4. Download and extract the GitHub Actions Runner binary
+# RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L \
+#     https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
+#     && echo "${RUNNER_SHA256}  actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" | sha256sum -c \
+#     && tar xzf actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
+#     && rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
+
+# COPY --chown=runner:runner entrypoint.sh ./entrypoint.sh
+# RUN chmod +x ./entrypoint.sh
+
+# ENTRYPOINT ["./entrypoint.sh"]
