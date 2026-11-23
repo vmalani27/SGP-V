@@ -7,10 +7,160 @@ tags:
   - history
 environment: git-fundamentals
 
+setup:
+  - command: >-
+      mkdir -p /home/student/workspace/incident-investigation &&
+      cd /home/student/workspace/incident-investigation &&
+      git init -b main &&
+      git config user.name "Alice Smith" &&
+      git config user.email "alice@example.local" &&
+      echo "# Microservice" > README.md &&
+      mkdir -p src &&
+      echo "def get_db(): return 'db_conn'" > src/db.py &&
+      git add . &&
+      git commit -m "Initial microservice structure" &&
+      git config user.name "Bob Jones" &&
+      git config user.email "bob@example.local" &&
+      echo -e "TOKEN_EXPIRY = 3600\nENABLE_DEV_BYPASS = False\ndef authenticate(): pass" > src/auth.py &&
+      git add src/auth.py &&
+      git commit -m "feat: add user authentication handler" &&
+      git config user.name "Charlie Brown" &&
+      git config user.email "charlie@example.local" &&
+      echo "def process_payment(amt): pass" > src/payments.py &&
+      git add src/payments.py &&
+      git commit -m "feat: add payment processing interface" &&
+      git config user.name "Dave Miller" &&
+      git config user.email "dave@example.local" &&
+      echo -e "TOKEN_EXPIRY = 3600\nENABLE_DEV_BYPASS = True\ndef authenticate(): pass" > src/auth.py &&
+      git add src/auth.py &&
+      git commit -m "fix: bypass token check in local testing" &&
+      git config user.name "Alice Smith" &&
+      git config user.email "alice@example.local" &&
+      echo "## Security Policy" >> README.md &&
+      git add README.md &&
+      git commit -m "docs: update security policy guidelines" &&
+      git config user.name "Student" &&
+      git config user.email "student@labops.local" &&
+      chown -R student:student /home/student/workspace/incident-investigation
+
 objectives:
   - Read a repository's history with git log
-  - Compare changes with git diff
-  - Search commits and blame lines
+  - Search commits by content modifications using git log -S
+  - Trace code changes to specific authors with git blame
+  - Inspect specific commit snapshots using git show
+
+tasks:
+  - id: audit-recent-commits
+    title: Audit total commit count
+    prompt: >-
+      Navigate to '~/workspace/incident-investigation'. Use 'git log --oneline' to view the
+      repository timeline. Count the total number of commits and write only the digit to '~/commit-count.txt'.
+    type: terminal_action
+    hints:
+      - "Inspect the compact repository log and save the count of commits to the designated file."
+    solution:
+      command: "cd ~/workspace/incident-investigation && git rev-list --count HEAD > ~/commit-count.txt"
+    validation:
+      command: |-
+        python3 -c "
+        import os, sys
+        p = os.path.expanduser('~/commit-count.txt')
+        if not os.path.isfile(p):
+            print('File missing.')
+            sys.exit(0)
+        val = open(p).read().strip()
+        if val == '5':
+            print('COUNT_OK')
+        else:
+            print(f'Expected 5, got {val}')
+        "
+      match_type: exact
+      expected_output: COUNT_OK
+    error_message: >-
+      The value in ~/commit-count.txt does not match the total number of commits in the repository.
+
+  - id: search-code-change
+    title: Locate the vulnerable commit with pickaxe search
+    prompt: >-
+      A security review discovered that 'ENABLE_DEV_BYPASS = True' was introduced into the project.
+      Use Git's pickaxe search to locate the commit that introduced this string.
+      Write the commit hash (the first 7 characters) to '~/vulnerable-commit.txt'.
+    type: terminal_action
+    hints:
+      - "Use git log with the -S pickaxe flag matching the target code string."
+    solution:
+      command: "cd ~/workspace/incident-investigation && git log -S 'ENABLE_DEV_BYPASS = True' --oneline | head -1 | cut -d' ' -f1 > ~/vulnerable-commit.txt"
+    validation:
+      command: |-
+        python3 -c "
+        import os, subprocess, sys
+        p = os.path.expanduser('~/vulnerable-commit.txt')
+        if not os.path.isfile(p):
+            print('File missing.')
+            sys.exit(0)
+        val = open(p).read().strip()
+        cwd = os.path.expanduser('~/workspace/incident-investigation')
+        r = subprocess.run(['git', 'log', '-S', 'ENABLE_DEV_BYPASS = True', '--oneline'], capture_output=True, text=True, cwd=cwd)
+        lines = r.stdout.strip().splitlines()
+        if not lines:
+            print('No matching commit found.')
+            sys.exit(0)
+        expected_hash = lines[0].split()[0]
+        if val == expected_hash or expected_hash.startswith(val) or val.startswith(expected_hash):
+            print('SEARCH_OK')
+        else:
+            print(f'Expected {expected_hash}, got {val}')
+        "
+      match_type: exact
+      expected_output: SEARCH_OK
+    error_message: >-
+      The commit hash in ~/vulnerable-commit.txt does not match the commit that introduced ENABLE_DEV_BYPASS = True.
+
+  - id: blame-line-author
+    title: Attribute the change with git blame
+    prompt: >-
+      Run 'git blame src/auth.py' in '~/workspace/incident-investigation'. Who was the author credited with adding 'ENABLE_DEV_BYPASS = True'?
+    type: multiple_choice
+    options:
+      - Dave Miller
+      - Alice Smith
+      - Bob Jones
+      - Charlie Brown
+    validation:
+      expected_answer: Dave Miller
+    error_message: >-
+      Check the author name attributed to the line containing 'ENABLE_DEV_BYPASS = True' in 'git blame src/auth.py'.
+    hint: >-
+      Examine the author column on the line introducing the bypass in git blame.
+
+  - id: inspect-commit-diff
+    title: Inspect commit changes with git show
+    prompt: >-
+      Use 'git show' to inspect the diff of the commit found earlier. What file path was modified in that commit?
+      Write the exact relative path to '~/affected-file.txt'.
+    type: terminal_action
+    hints:
+      - "Inspect the commit metadata and diff to identify the modified file path."
+    solution:
+      command: "echo 'src/auth.py' > ~/affected-file.txt"
+    validation:
+      command: |-
+        python3 -c "
+        import os, sys
+        p = os.path.expanduser('~/affected-file.txt')
+        if not os.path.isfile(p):
+            print('File missing.')
+            sys.exit(0)
+        val = open(p).read().strip()
+        if val == 'src/auth.py':
+            print('DIFF_OK')
+        else:
+            print(f'Expected src/auth.py, got {val}')
+        "
+      match_type: exact
+      expected_output: DIFF_OK
+    error_message: >-
+      The file path in ~/affected-file.txt does not match the file modified in the target commit.
 
 completion:
   required_tasks: all

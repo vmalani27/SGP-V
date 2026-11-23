@@ -1,0 +1,75 @@
+name: promote-prod-release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      beta_release_tag:
+        description: 'Specific Beta Release Tag to promote (e.g. beta-30f0cf3). Leave blank to auto-promote active beta release.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: promote-prod-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+  S3_BUCKET_BETA: ${{ vars.S3_BUCKET_BETA || secrets.S3_BUCKET_BETA }}
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+  CDN_URL_BETA: ${{ vars.CDN_URL_BETA }}
+  CDN_URL: ${{ vars.CDN_URL }}
+  CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
+  ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+
+jobs:
+  promote:
+    name: Promote Verified Beta Release to Production (Zero Rebuild)
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
+
+      - name: Execute Promotion Script
+        id: promotion
+        env:
+          BETA_RELEASE_TAG: ${{ github.event.inputs.beta_release_tag }}
+        run: |
+          python scripts/promote_release.py \
+            --beta-bucket "${{ env.S3_BUCKET_BETA }}" \
+            --prod-bucket "${{ env.S3_BUCKET }}" \
+            --beta-cdn-url "${{ env.CDN_URL_BETA }}" \
+            --prod-cdn-url "${{ env.CDN_URL }}" \
+            --registry "${{ env.ECR_PUBLIC_REGISTRY }}" \
+            --prod-dist-id "${{ env.CLOUDFRONT_DIST_ID }}" \
+            ${BETA_RELEASE_TAG:+--release-tag "$BETA_RELEASE_TAG"}
+
+      - name: Log Promotion Summary
+        run: |
+          echo "## 🎉 Production Promotion Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Production has been promoted directly from the verified Beta artifacts without rebuilding." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "* **Production Portal:** ${{ env.CDN_URL }}/" >> $GITHUB_STEP_SUMMARY
+          echo "* **Production Catalog:** ${{ env.CDN_URL }}/catalog.json" >> $GITHUB_STEP_SUMMARY
+          echo "* **Release Manifest:** ${{ env.CDN_URL }}/releases/prod.json" >> $GITHUB_STEP_SUMMARY
+          echo "* **Production Downloads:** ${{ env.CDN_URL }}/downloads/" >> $GITHUB_STEP_SUMMARY

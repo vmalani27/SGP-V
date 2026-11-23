@@ -1,43 +1,35 @@
-# Lab 9: Viewing and Searching History
+# Lab 11: Viewing and Searching History
 
 ## What You're Doing and Why
 
-A commit log is only useful if you can find things in it. When a bug is reported in production, the first question is: what changed recently? When a line of code does not make sense, you want to know who wrote it and why. Git provides tools to search through history, filter by author or date, and trace every change to a specific line of code.
+A commit log is only useful if you can find things in it. When a bug or security incident occurs in production, the first question is: what changed recently, and who introduced it? Git provides tools to search through history by message or content diffs, filter by author or date, and trace every line of code to its originating commit.
+
+## Scenario
+
+A security review discovered that a dangerous configuration bypass (`ENABLE_DEV_BYPASS = True`) was committed to the repository in `~/workspace/incident-investigation`. Your objective is to use Git's investigation tools to trace the history:
+
+1. Count the total commits in the repository using `git log --oneline`.
+2. Pinpoint the exact commit that introduced the bypass using Git's pickaxe search (`git log -S`).
+3. Attribute the modification to its author using `git blame`.
+4. Inspect the exact diff using `git show`.
 
 ## Command Reference
 
 ### `git log --oneline`
-
 Compact one-line-per-commit view of history.
 
-### `git log --author="name"`
-
-Filters commits by author name.
-
-### `git log --since="2 weeks ago"`
-
-Shows commits from the last two weeks.
-
-### `git log -S "search term"`
-
-Searches for commits that added or removed the specified string.
-
-### `git show <hash>`
-
-Shows the full diff of a specific commit.
+### `git log -S "<string>" --oneline`
+Pickaxe search: searches for commits whose diffs added or removed `<string>`.
 
 ### `git blame <file>`
+Displays line-by-line attribution of a file, showing the author, commit hash, and timestamp for each line.
 
-Shows the last commit that modified each line of a file, with the author and date.
+### `git show <hash>`
+Shows the full commit metadata and diff of `<hash>`.
 
-## Scenario
+## Tasks
 
-A file in the repository contains a line that appears incorrect. Use `git blame` to identify which commit introduced it, then use `git show` to read the full context of that commit.
-
-## Objective
-
-Identify a specific commit using `git blame` and examine its full diff using `git show`.
-
-## Reflection
-
-`git blame` helps you recover the context behind a change. The goal when reading blame output is to find the commit message that explains the reasoning behind a specific line of code.
+- [ ] **audit-recent-commits** — Inspect `git log --oneline` and write the total commit count to `~/commit-count.txt`.
+- [ ] **search-code-change** — Locate the commit that added `ENABLE_DEV_BYPASS = True` with `git log -S` and save its short hash to `~/vulnerable-commit.txt`.
+- [ ] **blame-line-author** — Attribute the change using `git blame src/auth.py`.
+- [ ] **inspect-commit-diff** — Inspect the commit with `git show` and record the modified file path to `~/affected-file.txt`.

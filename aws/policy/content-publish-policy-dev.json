@@ -2,7 +2,7 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "ListReleaseBuckets",
+      "Sid": "ListContentBuckets",
       "Effect": "Allow",
       "Action": [
         "s3:ListBucket"
@@ -12,7 +12,7 @@
       ]
     },
     {
-      "Sid": "ManageReleaseObjects",
+      "Sid": "ManageContentObjects",
       "Effect": "Allow",
       "Action": [
         "s3:PutObject",

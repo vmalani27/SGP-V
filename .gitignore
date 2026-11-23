@@ -41,4 +41,7 @@ cli/*.exe
 !orchestrator/lab-images/preloads/*.tar
 *.tar.gz
 aws/runner/run-example.sh
+hacktober fest/
+smoke_results.json
+
 

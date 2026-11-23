@@ -1,17 +1,41 @@
-# Lab 10: A Complete Git Workflow
+# Lab 12: A Complete Git Workflow
 
 ## What You're Doing and Why
 
-Real development does not use Git commands in isolation. It follows a workflow: create a branch for your task, make commits as you work, keep your branch up to date with main, resolve any conflicts, and merge when the work is complete. This lab puts every skill from the previous nine labs together in a single realistic exercise.
+Real development does not use Git commands in isolation. It follows an end-to-end workflow: start from an up-to-date main branch, create a feature branch for your task, make focused commits as you work, keep your branch synchronized with incoming changes from your teammates, merge when work is approved, and publish your work upstream.
+
+In this capstone lab, you will execute a complete daily branch-based development cycle on `~/workspace/workflow-project`.
 
 ## Scenario
 
-A repository contains a simple web application. You have been asked to add a feature. A colleague is working on the same project and has pushed changes to main while you were working. You need to incorporate their changes before merging your own.
+You have joined the development team for `workflow-project`. You are assigned to build an analytics tracking integration on an isolated feature branch (`feature/analytics`). While you are authoring your feature, a colleague merges and publishes release notes (`CHANGELOG.md`) directly to `origin main`.
 
-## Objective
+Your objective is to:
+1. Branch off `main` to `feature/analytics`.
+2. Implement and commit the feature across two focused commits.
+3. Synchronize with the upstream changes published by your teammate.
+4. Merge `feature/analytics` into `main`, publish to `origin`, and clean up the feature branch.
 
-Create a feature branch. Make at least three commits. Simulate a colleague pushing to main by committing directly to main from a second terminal or by modifying main before you merge. Update your feature branch with the latest main using merge or rebase. Resolve any conflicts. Merge the feature branch into main. The final state should contain both your work and the simulated colleague's work with a clean history.
+## Command Reference
 
-## Reflection
+### `git switch -c <branch>`
+Creates and switches to a new branch in one command.
 
-This workflow, or a close variation of it, is used at almost every software company in the world. The names may differ — some teams call branches feature branches, others call them topic branches — but the cycle of branch, commit, sync, merge is universal. Mastering it on the command line means you will be comfortable in any Git-based environment, whether that is GitHub, GitLab, Bitbucket, or a self-hosted server.
+### `git pull origin <branch>`
+Fetches from the remote repository and integrates changes into the current branch.
+
+### `git merge <branch>`
+Merges the named branch into the current checked-out branch.
+
+### `git push origin <branch>`
+Publishes commits to the remote tracking branch.
+
+### `git branch -d <branch>`
+Safely deletes a local branch that has already been merged.
+
+## Tasks
+
+- [ ] **create-feature-branch** — Create and switch to `feature/analytics` in `~/workspace/workflow-project`.
+- [ ] **author-feature-commits** — Author two distinct commits (`src/analytics.js` and `app.js`).
+- [ ] **sync-upstream-main** — Pull upstream changes (`CHANGELOG.md`) into `main` and sync your feature branch.
+- [ ] **merge-and-publish-workflow** — Merge to `main`, push to `origin`, and delete `feature/analytics`.

@@ -1,0 +1,69 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadBetaContentBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::content-beta-586177432842-ap-south-1-an"
+      ]
+    },
+    {
+      "Sid": "ReadBetaContentObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::content-beta-586177432842-ap-south-1-an/*"
+      ]
+    },
+    {
+      "Sid": "ListProdContentBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::content-prod-586177432842-ap-south-1-an"
+      ]
+    },
+    {
+      "Sid": "WriteProdContentObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::content-prod-586177432842-ap-south-1-an/*"
+      ]
+    },
+    {
+      "Sid": "CloudFrontProdInvalidationPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation"
+      ],
+      "Resource": "arn:aws:cloudfront::586177432842:distribution/E1CRT7BJZLLR3D"
+    },
+    {
+      "Sid": "ECRPublicRetagPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ecr-public:GetAuthorizationToken",
+        "sts:GetServiceBearerToken",
+        "ecr-public:BatchCheckLayerAvailability",
+        "ecr-public:DescribeRepositories",
+        "ecr-public:DescribeImages",
+        "ecr-public:BatchGetImage",
+        "ecr-public:PutImage"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

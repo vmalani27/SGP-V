@@ -7,10 +7,186 @@ tags:
   - workflow
 environment: git-fundamentals
 
+setup:
+  - command: >-
+      curl -s -f -u student:password123 http://git-server:3000/api/v1/repos/student/workflow-project >/dev/null || {
+        mkdir -p /var/tmp/seed-workflow && cd /var/tmp/seed-workflow &&
+        git init -b main &&
+        git config user.name "Lead Developer" &&
+        git config user.email "lead@example.local" &&
+        echo "# Workflow Project" > README.md &&
+        echo "console.log('App v1.0.0 initialized');" > app.js &&
+        git add README.md app.js &&
+        git commit -m "feat: initial project baseline" &&
+        git push -u http://student:password123@git-server:3000/student/workflow-project.git main &&
+        cd / && rm -rf /var/tmp/seed-workflow ;
+      }
+  - command: >-
+      rm -rf /home/student/workspace/workflow-project &&
+      git clone http://student:password123@git-server:3000/student/workflow-project.git /home/student/workspace/workflow-project &&
+      chown -R student:student /home/student/workspace/workflow-project
+
 objectives:
-  - Follow a daily branch-based workflow
-  - Combine every skill into one exercise
-  - Keep history clean and reviewable
+  - Follow a daily branch-based development cycle
+  - Author and commit feature changes on an isolated topic branch
+  - Synchronize upstream updates into main
+  - Merge the feature branch into main and push to remote
+
+tasks:
+  - id: create-feature-branch
+    title: Create and switch to a feature branch
+    prompt: >-
+      In '~/workspace/workflow-project', create and switch to a feature branch named 'feature/analytics'
+      to begin isolated development.
+    type: terminal_action
+    hints:
+      - "Create the new feature branch and make it your active working branch."
+    solution:
+      command: "cd ~/workspace/workflow-project && git switch -c feature/analytics"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, os, sys
+        cwd = os.path.expanduser('~/workspace/workflow-project')
+        r = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, text=True, cwd=cwd)
+        if r.stdout.strip() != 'feature/analytics':
+            print('Not on feature/analytics branch.')
+            sys.exit(0)
+        print('BRANCH_OK')
+        "
+      match_type: exact
+      expected_output: BRANCH_OK
+    error_message: >-
+      Active branch is not 'feature/analytics'. Ensure the feature branch is created and checked out.
+
+  - id: author-feature-commits
+    title: Develop feature changes in focused commits
+    prompt: >-
+      On 'feature/analytics', make two distinct commits implementing the analytics feature:
+      1. Create 'src/analytics.js' containing 'function track(e) { return e; }' and commit it with message 'feat: add analytics module'.
+      2. Update 'app.js' by appending 'console.log(\"Analytics tracking active\");' and commit it with message 'feat: initialize tracking on startup'.
+    type: terminal_action
+    hints:
+      - "Author each code modification in separate commits with its corresponding commit message."
+    solution:
+      command: >-
+        cd ~/workspace/workflow-project &&
+        mkdir -p src &&
+        echo "function track(e) { return e; }" > src/analytics.js &&
+        git add src/analytics.js &&
+        git commit -m "feat: add analytics module" &&
+        echo "console.log('Analytics tracking active');" >> app.js &&
+        git add app.js &&
+        git commit -m "feat: initialize tracking on startup"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, os, sys
+        cwd = os.path.expanduser('~/workspace/workflow-project')
+        r_branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, text=True, cwd=cwd)
+        if r_branch.stdout.strip() != 'feature/analytics':
+            print('Not on feature/analytics branch.')
+            sys.exit(0)
+        ahead = subprocess.run(['git', 'log', '--oneline', 'main..feature/analytics'], capture_output=True, text=True, cwd=cwd)
+        commits = [c for c in ahead.stdout.strip().splitlines() if c.strip()]
+        if len(commits) < 2:
+            print(f'Expected at least 2 commits ahead of main, found {len(commits)}.')
+            sys.exit(0)
+        r_file = subprocess.run(['git', 'show', 'HEAD:src/analytics.js'], capture_output=True, cwd=cwd)
+        if r_file.returncode != 0:
+            print('src/analytics.js not found in HEAD.')
+            sys.exit(0)
+        print('COMMITS_OK')
+        "
+      match_type: exact
+      expected_output: COMMITS_OK
+      record:
+        key: "simulate_upstream_release"
+        command: >-
+          git clone http://student:password123@git-server:3000/student/workflow-project.git /tmp/sim-colleague &&
+          cd /tmp/sim-colleague &&
+          git config user.name "Teammate" &&
+          git config user.email "teammate@example.local" &&
+          printf "# Changelog\n- Initial release notes\n" > CHANGELOG.md &&
+          git add CHANGELOG.md &&
+          git commit -m "docs: publish release changelog" &&
+          git push origin main &&
+          cd / && rm -rf /tmp/sim-colleague && echo "UPSTREAM_UPDATED"
+    error_message: >-
+      Two commits ahead of main with src/analytics.js and updated app.js were not detected on feature/analytics.
+
+  - id: sync-upstream-main
+    title: Synchronize upstream updates into your feature branch
+    prompt: >-
+      A teammate has published updates to 'origin main' (adding 'CHANGELOG.md').
+      Switch to 'main', pull the latest changes, then switch back
+      to 'feature/analytics' and merge 'main' into your branch to stay up to date.
+    type: terminal_action
+    hints:
+      - "Incorporate remote updates into main first, then integrate main into your feature branch."
+    solution:
+      command: "cd ~/workspace/workflow-project && git switch main && git pull origin main && git switch feature/analytics && git merge main"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, os, sys
+        cwd = os.path.expanduser('~/workspace/workflow-project')
+        r_branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, text=True, cwd=cwd)
+        if r_branch.stdout.strip() != 'feature/analytics':
+            print('Not on feature/analytics branch.')
+            sys.exit(0)
+        if not os.path.isfile(os.path.join(cwd, 'CHANGELOG.md')):
+            print('CHANGELOG.md from upstream main not present in feature/analytics.')
+            sys.exit(0)
+        print('SYNC_OK')
+        "
+      match_type: exact
+      expected_output: SYNC_OK
+    error_message: >-
+      CHANGELOG.md was not found on feature/analytics. Integrate upstream main into your feature branch.
+
+  - id: merge-and-publish-workflow
+    title: Merge to main, push to origin, and delete feature branch
+    prompt: >-
+      Complete the workflow:
+      1. Switch to 'main'.
+      2. Merge 'feature/analytics' into 'main'.
+      3. Push 'main' to 'origin'.
+      4. Delete the local 'feature/analytics' branch.
+    type: terminal_action
+    hints:
+      - "Integrate the feature branch into main, publish the updated main branch upstream, and delete the feature branch."
+    solution:
+      command: "cd ~/workspace/workflow-project && git switch main && git merge feature/analytics && git push origin main && git branch -d feature/analytics"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, os, sys
+        cwd = os.path.expanduser('~/workspace/workflow-project')
+        r_branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, text=True, cwd=cwd)
+        if r_branch.stdout.strip() != 'main':
+            print('Not on main branch.')
+            sys.exit(0)
+        for f in ['src/analytics.js', 'CHANGELOG.md', 'app.js']:
+            if not os.path.isfile(os.path.join(cwd, f)):
+                print(f'{f} missing on main.')
+                sys.exit(0)
+        branches = subprocess.run(['git', 'branch'], capture_output=True, text=True, cwd=cwd).stdout
+        if 'feature/analytics' in branches:
+            print('feature/analytics branch still exists. Delete with git branch -d.')
+            sys.exit(0)
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=cwd).stdout.strip()
+        remote = subprocess.run(['git', 'ls-remote', 'origin', 'refs/heads/main'], capture_output=True, text=True, cwd=cwd).stdout.split()
+        remote_sha = remote[0] if remote else ''
+        if not head or head != remote_sha:
+            print('Local main has not been pushed to origin main.')
+            sys.exit(0)
+        print('WORKFLOW_COMPLETE')
+        "
+      match_type: exact
+      expected_output: WORKFLOW_COMPLETE
+    error_message: >-
+      Either active branch is not main, required files are missing, feature/analytics was not deleted, or main was not pushed to origin.
 
 completion:
   required_tasks: all

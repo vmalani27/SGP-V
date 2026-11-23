@@ -1,0 +1,80 @@
+name: cleanup-dev-preview
+
+on:
+  delete:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch name or slug to clean up from previews/'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+  CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
+
+jobs:
+  cleanup:
+    name: Purge Ephemeral Branch Preview
+    runs-on: ubuntu-latest
+    environment: dev
+    if: github.event_name == 'workflow_dispatch' || github.event.ref_type == 'branch'
+    steps:
+      - name: Compute Branch Slug
+        id: slug
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_BRANCH="${{ github.event.inputs.branch }}"
+          else
+            RAW_BRANCH="${{ github.event.ref }}"
+          fi
+
+          # Skip protected/mainline branches
+          if [ "$RAW_BRANCH" = "dev" ] || [ "$RAW_BRANCH" = "master" ] || [ "$RAW_BRANCH" = "main" ]; then
+            echo "Skipping protected branch $RAW_BRANCH"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          SLUG=$(echo "${RAW_BRANCH}" | tr '/' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | cut -c1-40)
+          echo "branch=${RAW_BRANCH}" >> $GITHUB_OUTPUT
+          echo "slug=${SLUG}" >> $GITHUB_OUTPUT
+          echo "Branch: ${RAW_BRANCH} -> Slug: ${SLUG}"
+
+      - name: Configure AWS Credentials
+        if: steps.slug.outputs.skip != 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.ECR_AUTH_REGION }}
+
+      - name: Purge S3 Preview Prefix
+        if: steps.slug.outputs.skip != 'true'
+        run: |
+          SLUG="${{ steps.slug.outputs.slug }}"
+          echo "Purging preview prefix at s3://${S3_BUCKET}/previews/${SLUG}/..."
+          aws s3 rm "s3://${S3_BUCKET}/previews/${SLUG}/" --recursive
+
+      - name: Invalidate CloudFront Preview Cache
+        if: steps.slug.outputs.skip != 'true'
+        run: |
+          SLUG="${{ steps.slug.outputs.slug }}"
+          if [ -n "$CLOUDFRONT_DIST_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$CLOUDFRONT_DIST_ID" \
+              --paths "/previews/${SLUG}/*"
+          fi
+
+      - name: Log Cleanup Result
+        if: steps.slug.outputs.skip != 'true'
+        run: |
+          SLUG="${{ steps.slug.outputs.slug }}"
+          BRANCH="${{ steps.slug.outputs.branch }}"
+          echo "### 🧹 Dev Preview Purged" >> $GITHUB_STEP_SUMMARY
+          echo "Ephemeral preview environment for branch \`${BRANCH}\` (\`previews/${SLUG}/\`) has been deleted from S3." >> $GITHUB_STEP_SUMMARY

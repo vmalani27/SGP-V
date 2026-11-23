@@ -1,0 +1,39 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListBetaContentBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::content-beta-586177432842-ap-south-1-an"
+      ]
+    },
+    {
+      "Sid": "ManageBetaContentObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::content-beta-586177432842-ap-south-1-an/*"
+      ]
+    },
+    {
+      "Sid": "CloudFrontBetaInvalidationPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation"
+      ],
+      "Resource": [
+        "arn:aws:cloudfront::586177432842:distribution/E3URBAJHRZD48H",
+        "arn:aws:cloudfront::586177432842:distribution/E1CRT7BJZLLR3D"
+      ]
+    }
+  ]
+}
