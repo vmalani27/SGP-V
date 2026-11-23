@@ -196,7 +196,7 @@ docker image ls
 docker image inspect my-first-image
 ```
 
-`docker image ls` lists images as stored artifacts; `docker image inspect` shows the metadata and configuration Docker recorded for yours. The image is a thing that exists on disk — not the running container you saw a moment ago.
+`docker image ls` lists images as stored artifacts; `docker image inspect` shows the metadata and configuration Docker recorded for yours. The image persists on disk independently of any container launched from it.
 
 ## Where Did `hello.txt` Come From?
 

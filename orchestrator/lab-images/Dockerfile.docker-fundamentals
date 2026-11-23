@@ -40,6 +40,19 @@ COPY preloads/*.tar /var/lib/docker-preload/
 RUN echo "[Unit]\nDescription=Load Docker Preloads\nAfter=docker.service\nRequires=docker.service\n\n[Service]\nType=oneshot\nExecStart=/bin/bash -c 'for f in /var/lib/docker-preload/*.tar; do docker load -i \$f; done'\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/docker-preload.service \
     && systemctl enable docker-preload.service
 
+# Pre-seed process management demo for Chapter 4
+RUN mkdir -p /home/student/process-demo \
+    && printf 'import signal\nimport sys\nimport time\n\ndef on_term(signum, frame):\n    print("Caught SIGTERM! Performing graceful shutdown...", flush=True)\n    sys.exit(0)\n\nsignal.signal(signal.SIGTERM, on_term)\nprint("Server is running. Waiting for signals...", flush=True)\n\nwhile True:\n    time.sleep(0.5)\n' > /home/student/process-demo/server.py \
+    && printf '#!/bin/sh\npython server.py\n' > /home/student/process-demo/entrypoint.sh \
+    && chmod +x /home/student/process-demo/entrypoint.sh \
+    && printf 'FROM python:3.11-alpine\nWORKDIR /app\nCOPY server.py entrypoint.sh ./\nRUN chmod +x entrypoint.sh\nCMD ["/bin/sh", "entrypoint.sh"]\n' > /home/student/process-demo/Dockerfile.shell \
+    && printf 'FROM python:3.11-alpine\nWORKDIR /app\nCOPY server.py .\nCMD ["python", "server.py"]\n' > /home/student/process-demo/Dockerfile.exec \
+    && chown -R student:student /home/student/process-demo
+
+# Ensure student user owns all workspace files and has complete permissions
+RUN chown -R student:student /home/student \
+    && chmod -R u+rwX /home/student
+
 WORKDIR /home/student
 
 # VOLUME for nested docker and containerd storage to prevent overlayfs-on-overlayfs EINVAL errors

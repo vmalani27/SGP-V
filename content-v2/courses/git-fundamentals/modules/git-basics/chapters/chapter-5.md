@@ -46,16 +46,17 @@ git diff --staged
 
 Only `.gitignore` should be staged. The ignore rule does not delete `.env`; it keeps the local file out of normal staging.
 
-Git has 3 states it assigns files inside a working repository
+Git classifies files inside a working repository into three states:
 
 | State | Meaning |
 |---|---|
-| **Untracked** | The file exists, but Git has not recorded it. |
+| **Tracked** | The file has been previously committed or staged in the index. |
+| **Untracked** | The file exists in the working directory, but Git has not recorded it. |
 | **Ignored** | The file is untracked and a rule excludes it from normal status and staging. |
 
 ## Ignore Patterns
 
-`.gitignore` contains patterns, or list of files to ignore, its upto you to write down lists of files or simply define patterns
+Each line in `.gitignore` specifies a literal filename, directory, or wildcard pattern to exclude:
 
 | Pattern | Matches | Example |
 |---|---|---|

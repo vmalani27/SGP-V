@@ -134,7 +134,14 @@ Do not invent requirements or add tasks that are not supported by the lab's lear
 
 The target is concise, technically accurate, outcome-based learning: enough context to understand the task, enough freedom to solve it, and validation that checks the actual result.
 
-## 11. Review and Edit Workflow
+## 11. Chapter & Markdown Formatting Rules
+
+When authoring or editing markdown files (`chapter-*.md` and `instructions.md`):
+- **No Horizontal Rule Separators (`---`)**: Never use `---`, `***`, or `___` horizontal divider lines between sections in chapters or lab instructions. Rely on markdown headings (`##`, `###`) for visual hierarchy.
+- **No AI Cliché Phrasing**: Avoid generic contrastive AI sentence structures such as *"X is not Y—it is Z"* or *"This is not theory—this is practice."* State what a tool or concept does directly and concretely.
+- **Concrete, Runnable Terminal Examples**: Chapter walkthroughs must reference files, directories, and remote URLs that actually exist in the container environment (e.g., `~/practice` and `http://git-server:3000/...`), never placeholder URLs (`https://github.com/your-team/...`) or non-existent paths.
+
+## 12. Review and Edit Workflow
 
 Follow this disciplined process:
 1. **Audit one lab first**: Identify redundant prompts, answer-revealing hints, weak error messages, and validator defects without editing anything.
@@ -142,8 +149,6 @@ Follow this disciplined process:
 3. **Apply the changes**: Edit the lab with the smallest reasonable diff.
 4. **Inspect the diff and run validation tests**: Run `python scripts/validate_content.py content-v2`. Verify that content changes did not alter lab behavior.
 5. **Use the result as the standard for subsequent labs**.
-
----
 
 ### The Fundamental Rule
 **The prompt describes the required state, the chapter teaches the concepts, and the validator checks the result. Those responsibilities should not bleed into each other.**

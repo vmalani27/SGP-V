@@ -125,24 +125,38 @@ const markdownComponents = {
   ),
 };
 
+export function resolveAssetSrc(src?: string, courseId?: string): string {
+  if (!src) return '';
+  if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
+    return src;
+  }
+  if (src.startsWith('/api/local-content/')) {
+    return src;
+  }
+  const clean = src.replace(/^(\.\.?\/)+/, '');
+  if (courseId) {
+    if (clean.startsWith('assets/')) {
+      const assetFile = clean.slice('assets/'.length);
+      return `/api/local-content/courses/${courseId}/assets/${assetFile}`;
+    }
+    if (clean.startsWith(`courses/${courseId}/assets/`)) {
+      const assetFile = clean.slice(`courses/${courseId}/assets/`.length);
+      return `/api/local-content/courses/${courseId}/assets/${assetFile}`;
+    }
+    return `/api/local-content/courses/${courseId}/assets/${clean}`;
+  }
+  return src;
+}
+
 export function getModuleDemoSpec(
   moduleId: string | undefined,
   courseId: string | undefined,
   chapterId: string | undefined,
 ): TerminalDemoSpec {
-  const moduleDefaults: Record<string, { image: string }> = {
-    'docker-fundamentals': { image: 'labops-docker:latest' },
-    'building-images': { image: 'labops-docker-build:latest' },
-    'container-networking': { image: 'labops-docker:latest' },
-  };
-  const fallback = courseId?.includes('git')
-    ? { image: 'labops-git-fundamentals:latest' }
-    : { image: 'labops-docker:latest' };
-  const resolved = moduleDefaults[moduleId ?? ''] ?? fallback;
-
   return {
     id: chapterId ? `chapter-${slugify(chapterId)}` : 'chapter-scratchpad',
-    image: resolved.image,
+    course_id: courseId,
+    module_id: moduleId,
     steps: [],
   };
 }
@@ -234,6 +248,30 @@ export default function SlideReader({
     return 'Complete Chapter →';
   }, [completeLabel, nextItem]);
 
+  const renderedComponents = useMemo(() => ({
+    ...markdownComponents,
+    img: ({ src, alt }: { src?: string; alt?: string }) => {
+      const resolved = resolveAssetSrc(src, courseId);
+      return (
+        <figure className="my-6 flex flex-col items-center">
+          <div className="w-full flex justify-center items-center p-4 md:p-6 rounded-xl bg-[#141822] border border-white/[0.08] shadow-inner overflow-hidden">
+            <img
+              src={resolved}
+              alt={alt || 'Diagram'}
+              className="max-h-[460px] max-w-full w-auto object-contain select-none"
+              loading="lazy"
+            />
+          </div>
+          {alt && (
+            <figcaption className="mt-2 text-center text-xs font-mono text-zinc-400">
+              {alt}
+            </figcaption>
+          )}
+        </figure>
+      );
+    },
+  }), [courseId]);
+
   return (
     <div className="w-full h-full overflow-hidden bg-[#090a0f] relative">
       <div
@@ -251,7 +289,7 @@ export default function SlideReader({
         >
           <div className={`${isTerminalOpen ? 'max-w-[700px]' : 'max-w-[760px] w-full'} space-y-6`}>
             <article className="w-full min-w-0 space-y-4">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={renderedComponents}>
                 {cleanedMarkdown}
               </ReactMarkdown>
             </article>

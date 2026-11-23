@@ -19,7 +19,7 @@ You now know how to:
 - Stash work when you need to pause
 - Search history to find what changed
 
-This chapter puts it all together into the workflow that professional teams use every day. This is not theory — this is exactly what you will do on a real project.
+This chapter puts those operations together into the workflow that engineering teams use every day on production projects.
 
 ## A Day in the Life of a Git User
 

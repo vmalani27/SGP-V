@@ -57,7 +57,12 @@ export default function DemoTerminal({ spec, onClose }: DemoTerminalProps) {
       try {
         const res = await api.demos.ensure(
           spec.id,
-          { image: spec.image, pre_pull: spec.pre_pull },
+          {
+            course_id: spec.course_id,
+            module_id: spec.module_id,
+            image: spec.image,
+            pre_pull: spec.pre_pull,
+          },
           { signal }
         );
         if (!mounted.current) return;

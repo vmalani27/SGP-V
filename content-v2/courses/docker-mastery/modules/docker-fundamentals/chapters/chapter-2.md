@@ -17,7 +17,7 @@ Understanding container lifecycle states and the commands used to triage them is
 
 ## 1. The Container Lifecycle
 
-A container is not a virtual machine — it is an isolated process running on the host kernel. It moves through four primary lifecycle states:
+A container runs as an isolated process directly on the host kernel and moves through four primary lifecycle states:
 
 | State | What it means | What remains |
 |---|---|---|

@@ -6,7 +6,7 @@ It is a Friday afternoon. You fix a critical authentication bug in `auth.py`. Wh
 
 If you run `git add .` and commit everything, your history has one commit that says "fix auth bug" — but it also contains the CSS change and the debug logging. Three months later, when someone needs to understand why the auth behavior changed, they pull up that commit and find a pile of unrelated changes.
 
-A commit contains exactly what you staged — not everything you changed. To practice building atomic commits, you will use the pre-configured repository in the `~/practice` folder in your terminal, which already has modifications waiting across `auth.py`, `styles.css`, and `api.py`.
+Git records only the changes currently in the staging area when you run `git commit`. To practice building atomic commits, use the pre-configured repository in `~/practice`, which already has modifications across `auth.py`, `styles.css`, and `api.py`.
 
 ## Staging as a Precision Tool
 
@@ -33,6 +33,18 @@ git restore api.py
 ```
 
 Three changes made in the same afternoon. Two commits, one discarded.
+
+To verify which files were included in your recent commits without printing the full line-level patch, pass `--name-only` to `git log`:
+
+```bash
+git log --oneline -2 --name-only
+```
+
+Or inspect only the most recent commit (`-1`):
+
+```bash
+git log --oneline -1 --name-only
+```
 
 ## `git status` — Read It Before Every Operation
 
@@ -123,20 +135,21 @@ When your teammates or continuous integration (CI) pipelines inspect the branch,
 ## The Full Picture
 
 ```
-git status              see what is where
-git diff <file>         see unstaged changes in a file
-git diff --staged       see what is staged for the next commit
-git add <file>          stage a specific file
-git restore <file>      discard working directory changes (permanent)
-git restore --staged    move a file back from staging to working directory
-git push                upload committed changes to the remote tracking branch
+git status                      see what is where
+git diff <file>                 see unstaged changes in a file
+git diff --staged               see what is staged for the next commit
+git add <file>                  stage a specific file
+git restore <file>              discard working directory changes (permanent)
+git restore --staged <file>     move a file back from staging to working directory
+git log --oneline --name-only   list commits and the files modified in each
+git push                        upload committed changes to the remote tracking branch
 ```
 
 ## Key Takeaways
 
-- A commit contains what you staged, not everything you changed
-- `git status` shows the state of every file — check it before and after every operation
-- `git diff` shows unstaged changes; `git diff --staged` shows what is about to be committed
-- `git restore <file>` discards working directory changes permanently
-- `git restore --staged <file>` unstages without losing changes
-- `git push` uploads your atomic commits to the remote tracking branch
+- `git commit` records only the changes currently staged in the index.
+- `git status` shows the state of every file — check it before and after staging.
+- `git diff` shows unstaged changes; `git diff --staged` shows what will be included in the next commit.
+- `git restore <file>` discards working directory changes; `git restore --staged <file>` unstages a file while keeping your working tree edits.
+- `git log --oneline -1 --name-only` displays the latest commit summary and the list of files it modified.
+- `git push` uploads your atomic commits to the remote tracking branch.

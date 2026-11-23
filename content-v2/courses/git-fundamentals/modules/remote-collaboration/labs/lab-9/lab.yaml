@@ -1,16 +1,244 @@
 id: lab-9
-title: Viewing and Searching History
+title: "Collaborating with Remotes"
 difficulty: intermediate
-estimated_time: 15
+estimated_time: 20
+xp: 75
 tags:
   - git
-  - history
+  - remotes
+  - collaboration
 environment: git-fundamentals
+summary: >-
+  Clone an existing remote repository, fetch and inspect incoming commits from
+  a teammate, and reconcile diverged branch history without overwriting shared work.
 
 objectives:
-  - Read a repository's history with git log
-  - Compare changes with git diff
-  - Search commits and blame lines
+  - Clone an existing repository from a remote server
+  - Fetch remote updates into origin/main without modifying local main
+  - Inspect incoming commits before integrating them
+  - Reconcile diverged local and remote commits and push to origin/main
+
+setup:
+  - command: >
+      curl -s -X DELETE -u student:password123 http://git-server:3000/api/v1/repos/student/payment-service || true &&
+      rm -rf /home/student/payment-service /tmp/payment-seed /home/student/.labops_teammate_pushed &&
+      mkdir -p /tmp/payment-seed && cd /tmp/payment-seed &&
+      git init -b main &&
+      git config user.name "Teammate" &&
+      git config user.email "teammate@labops.local" &&
+      printf 'def process_payment(amount):\n    if amount <= 0:\n        return False\n    return True\n' > app.py &&
+      printf 'TIMEOUT = 30\n' > config.py &&
+      git add app.py config.py &&
+      git commit -m "Initial payment service" &&
+      git remote add origin http://git-server:3000/student/payment-service.git &&
+      git push -u --force origin main &&
+      rm -rf /tmp/payment-seed
 
 completion:
   required_tasks: all
+
+tasks:
+  - id: clone-remote-repo
+    summary: Clone the remote repository
+    prompt: >-
+      Clone the remote repository from
+      `http://git-server:3000/student/payment-service.git` into
+      `/home/student/payment-service`.
+    type: terminal_action
+    solution:
+      command: "git clone http://git-server:3000/student/payment-service.git /home/student/payment-service"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+
+        cwd = '/home/student/payment-service'
+        expected_url = 'http://git-server:3000/student/payment-service.git'
+
+        if not os.path.isdir(os.path.join(cwd, '.git')):
+            print('RESULT_FAIL: /home/student/payment-service is not a Git repository.')
+            sys.exit(1)
+
+        remote = subprocess.run(
+            ['git', 'remote', 'get-url', 'origin'],
+            capture_output=True, text=True, cwd=cwd
+        )
+        if remote.returncode != 0 or remote.stdout.strip() != expected_url:
+            print('RESULT_FAIL: Remote origin does not match expected URL.')
+            sys.exit(1)
+
+        head = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True, text=True, cwd=cwd
+        )
+        if head.returncode != 0 or not head.stdout.strip():
+            print('RESULT_FAIL: Repository has no commits checked out.')
+            sys.exit(1)
+
+        print('CLONE_OK')
+        "
+      match_type: exact
+      expected_output: CLONE_OK
+      record:
+        key: teammate_push
+        command: |-
+          python3 -c "
+          import subprocess, shutil, os
+          marker = '/home/student/.labops_teammate_pushed'
+          if not os.path.exists(marker):
+              tmp = '/tmp/teammate-work'
+              shutil.rmtree(tmp, ignore_errors=True)
+              subprocess.run(['git', 'clone', 'http://git-server:3000/student/payment-service.git', tmp], check=True)
+              subprocess.run(['git', 'config', 'user.name', 'Teammate'], cwd=tmp, check=True)
+              subprocess.run(['git', 'config', 'user.email', 'teammate@labops.local'], cwd=tmp, check=True)
+              with open(os.path.join(tmp, 'config.py'), 'a') as f:
+                  f.write('RETRY_BACKOFF = 2\n')
+              subprocess.run(['git', 'commit', '-am', 'Add retry backoff configuration'], cwd=tmp, check=True)
+              subprocess.run(['git', 'push', 'origin', 'main'], cwd=tmp, check=True)
+              shutil.rmtree(tmp, ignore_errors=True)
+              open(marker, 'w').write('1\n')
+          "
+    on_complete:
+      - command: |-
+          python3 -c "
+          import subprocess, shutil, os
+          marker = '/home/student/.labops_teammate_pushed'
+          if not os.path.exists(marker):
+              tmp = '/tmp/teammate-work'
+              shutil.rmtree(tmp, ignore_errors=True)
+              subprocess.run(['git', 'clone', 'http://git-server:3000/student/payment-service.git', tmp], check=True)
+              subprocess.run(['git', 'config', 'user.name', 'Teammate'], cwd=tmp, check=True)
+              subprocess.run(['git', 'config', 'user.email', 'teammate@labops.local'], cwd=tmp, check=True)
+              with open(os.path.join(tmp, 'config.py'), 'a') as f:
+                  f.write('RETRY_BACKOFF = 2\n')
+              subprocess.run(['git', 'commit', '-am', 'Add retry backoff configuration'], cwd=tmp, check=True)
+              subprocess.run(['git', 'push', 'origin', 'main'], cwd=tmp, check=True)
+              shutil.rmtree(tmp, ignore_errors=True)
+              open(marker, 'w').write('1\n')
+          "
+        user: student
+    error_message: >-
+      The repository has not been cloned into `/home/student/payment-service` from the expected remote URL.
+
+  - id: fetch-remote-updates
+    summary: Fetch remote changes without modifying local main
+    prompt: >-
+      A teammate just pushed a new commit to the remote repository. In
+      `/home/student/payment-service`, download the latest remote commits to
+      update `origin/main` without merging them into your local `main` branch.
+    type: terminal_action
+    solution:
+      command: "cd /home/student/payment-service && git fetch origin"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, shutil, sys, os
+
+        cwd = '/home/student/payment-service'
+        marker = '/home/student/.labops_teammate_pushed'
+
+        if not os.path.isdir(os.path.join(cwd, '.git')):
+            print('RESULT_FAIL: /home/student/payment-service does not exist.')
+            sys.exit(1)
+
+        if not os.path.exists(marker):
+            tmp = '/tmp/teammate-work'
+            shutil.rmtree(tmp, ignore_errors=True)
+            subprocess.run(['git', 'clone', 'http://git-server:3000/student/payment-service.git', tmp], check=True)
+            subprocess.run(['git', 'config', 'user.name', 'Teammate'], cwd=tmp, check=True)
+            subprocess.run(['git', 'config', 'user.email', 'teammate@labops.local'], cwd=tmp, check=True)
+            with open(os.path.join(tmp, 'config.py'), 'a') as f:
+                f.write('RETRY_BACKOFF = 2\n')
+            subprocess.run(['git', 'commit', '-am', 'Add retry backoff configuration'], cwd=tmp, check=True)
+            subprocess.run(['git', 'push', 'origin', 'main'], cwd=tmp, check=True)
+            shutil.rmtree(tmp, ignore_errors=True)
+            open(marker, 'w').write('1\n')
+
+        origin_log = subprocess.run(
+            ['git', 'log', '--oneline', 'origin/main'],
+            capture_output=True, text=True, cwd=cwd
+        ).stdout
+        if 'Add retry backoff configuration' not in origin_log:
+            print('RESULT_FAIL: origin/main has not been updated with the remote commit.')
+            sys.exit(1)
+
+        local_log = subprocess.run(
+            ['git', 'log', '--oneline', 'main'],
+            capture_output=True, text=True, cwd=cwd
+        ).stdout
+        if 'Add retry backoff configuration' in local_log:
+            print('RESULT_FAIL: The remote commit was already merged into local main.')
+            sys.exit(1)
+
+        print('FETCH_OK')
+        "
+      match_type: exact
+      expected_output: FETCH_OK
+    error_message: >-
+      `origin/main` has not been updated with the remote commit, or the commit was already merged into local `main`.
+
+  - id: inspect-fetched-commits
+    summary: Identify the incoming remote change
+    prompt: >-
+      Inspect the commit on `origin/main` in `/home/student/payment-service`
+      that has not yet been merged into your local `main` branch. Which setting
+      was added in that commit?
+    type: multiple_choice
+    options:
+      - "RETRY_BACKOFF = 2 in config.py"
+      - "MAX_CONNECTIONS = 100 in app.py"
+      - "PAYMENT_TIMEOUT = 60 in config.py"
+      - "CURRENCY_DEFAULT = 'USD' in app.py"
+    validation:
+      expected_answer: "RETRY_BACKOFF = 2 in config.py"
+
+  - id: reconcile-and-push
+    summary: Commit locally, integrate remote changes, and push
+    prompt: >-
+      In `/home/student/payment-service`, add `currency = "USD"` to `app.py`
+      and commit the change on `main`. Then integrate the remote commit from
+      `origin/main` and push the combined history to `origin/main` without
+      overwriting your teammate's commit.
+    type: terminal_action
+    solution:
+      command: "cd /home/student/payment-service && echo 'currency = \"USD\"' >> app.py && git add app.py && git commit -m 'Add default USD currency' && git pull origin main --no-edit && git push origin main"
+    validation:
+      command: |-
+        python3 -c "
+        import subprocess, sys, os
+
+        cwd = '/home/student/payment-service'
+
+        status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, cwd=cwd).stdout.strip()
+        if status:
+            print('RESULT_FAIL: Working tree has uncommitted changes.')
+            sys.exit(1)
+
+        if os.path.exists(os.path.join(cwd, '.git', 'MERGE_HEAD')):
+            print('RESULT_FAIL: Merge is still in progress.')
+            sys.exit(1)
+
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=cwd).stdout.strip()
+        remote_out = subprocess.run(['git', 'ls-remote', 'origin', 'refs/heads/main'], capture_output=True, text=True, cwd=cwd).stdout.split()
+        remote_sha = remote_out[0] if remote_out else ''
+
+        if not head or head != remote_sha:
+            print('RESULT_FAIL: origin/main does not match local HEAD.')
+            sys.exit(1)
+
+        config_content = subprocess.run(['git', 'show', 'HEAD:config.py'], capture_output=True, text=True, cwd=cwd).stdout
+        if 'RETRY_BACKOFF = 2' not in config_content:
+            print('RESULT_FAIL: Teammate commit (RETRY_BACKOFF = 2 in config.py) is missing from HEAD.')
+            sys.exit(1)
+
+        app_content = subprocess.run(['git', 'show', 'HEAD:app.py'], capture_output=True, text=True, cwd=cwd).stdout
+        if 'currency' not in app_content or 'USD' not in app_content:
+            print('RESULT_FAIL: currency = \"USD\" was not committed to app.py.')
+            sys.exit(1)
+
+        print('SYNC_OK')
+        "
+      match_type: exact
+      expected_output: SYNC_OK
+    error_message: >-
+      `origin/main` does not contain both your local `app.py` change and your teammate's `config.py` commit, or the working tree is not clean.

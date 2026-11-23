@@ -6,8 +6,9 @@ tags:
   - git
   - fundamentals
 environment: git-fundamentals
-summary: >
-  Dive into how Git configurations are set and establish your developer identity across the system before making your first commit.
+summary: >-
+  Configure your global Git author identity and default branch name, then
+  initialize a repository to verify the configuration.
 
 objectives:
   - Set your global Git username
@@ -15,15 +16,21 @@ objectives:
   - Change default branch name to 'main'
   - Create a test repo to confirm settings
 
+setup:
+  - command: >-
+      git config --system init.defaultBranch master &&
+      (git config --file /home/student/.gitconfig --unset-all user.name || true) &&
+      (git config --file /home/student/.gitconfig --unset-all user.email || true) &&
+      (git config --file /home/student/.gitconfig --unset-all init.defaultBranch || true) &&
+      rm -rf /home/student/workspace/verification-project &&
+      chown student:student /home/student/.gitconfig
+
 tasks:
   - id: set-global-username
-    title: Set your global Git username
+    summary: Set your global Git username
     prompt: >-
-      Set your global Git username to 'Alex Chen'. Every commit you make on this system will use this name.
+      Configure your global Git username as `Alex Chen`.
     type: terminal_action
-    hints:
-      - "Use the Git configuration command with the global scope flag."
-      - "Ensure the key matches the standard user name property."
     solution:
       command: git config --global user.name "Alex Chen"
     validation:
@@ -31,16 +38,13 @@ tasks:
       match_type: exact
       expected_output: "Alex Chen"
     error_message: >-
-      Global username is not set to 'Alex Chen'. Make sure your global user configuration is set accurately.
+      Global `user.name` is not set to `Alex Chen`.
 
   - id: set-global-email
-    title: Set your global Git email
+    summary: Set your global Git email
     prompt: >-
-      Set your global Git email to 'alex.chen@engineering.local'.
+      Configure your global Git email address as `alex.chen@engineering.local`.
     type: terminal_action
-    hints:
-      - "Set the email configuration property at the global level."
-      - "Check that the email address is spelled exactly as specified."
     solution:
       command: git config --global user.email "alex.chen@engineering.local"
     validation:
@@ -48,16 +52,14 @@ tasks:
       match_type: exact
       expected_output: "alex.chen@engineering.local"
     error_message: >-
-      Global email is not set to 'alex.chen@engineering.local'. Check your global configuration settings.
+      Global `user.email` is not set to `alex.chen@engineering.local`.
 
   - id: change-default-branch
-    title: Change your default branch to 'main'
+    summary: Change your default branch to 'main'
     prompt: >-
-      Configure Git so that any newly initialized repository creates its initial branch as 'main' instead of the legacy default.
+      Configure Git globally so newly initialized repositories use `main` as their
+      default initial branch name.
     type: terminal_action
-    hints:
-      - "Git has an initialization configuration setting for the default branch name."
-      - "Apply this setting globally so all future repositories inherit it."
     solution:
       command: git config --global init.defaultBranch main
     validation:
@@ -65,16 +67,14 @@ tasks:
       match_type: exact
       expected_output: "main"
     error_message: >-
-      Default initial branch name is not set to 'main'. Verify your global initialization configuration.
+      Global `init.defaultBranch` is not set to `main`.
 
   - id: create-test-repo
-    title: Create a test repo to confirm settings
+    summary: Create a test repo to confirm settings
     prompt: >-
-      Create a new project directory at '~/workspace/verification-project' and initialize a Git repository inside it to verify your configuration settings.
+      Create the directory `~/workspace/verification-project` and initialize a
+      Git repository inside it.
     type: terminal_action
-    hints:
-      - "Ensure the target directory exists before running repository initialization."
-      - "Verify that Git initialized the repository with the newly configured default branch."
     solution:
       command: mkdir -p ~/workspace/verification-project && cd ~/workspace/verification-project && git init
     validation:
@@ -83,7 +83,7 @@ tasks:
       match_type: exact
       expected_output: "READY"
     error_message: >-
-      Repository was not found at ~/workspace/verification-project with initial branch 'main'. Verify directory creation and repository initialization.
+      No Git repository initialized on branch `main` was found at `~/workspace/verification-project`.
 
 completion:
   required_tasks: all

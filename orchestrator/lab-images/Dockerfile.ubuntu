@@ -47,6 +47,10 @@ RUN useradd -m -s /bin/bash -u 1000 student \
 # Allow student to start systemd services
 RUN mkdir -p /run/dbus && chown student:student /run/dbus
 
+# Ensure student user owns home directory and has complete permissions
+RUN chown -R student:student /home/student \
+    && chmod -R u+rwX /home/student
+
 WORKDIR /home/student
 
 ENTRYPOINT ["/sbin/init"]

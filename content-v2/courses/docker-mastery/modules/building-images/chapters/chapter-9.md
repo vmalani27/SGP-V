@@ -10,7 +10,7 @@
 
 ## The Problem We Are Solving
 
-Up to this point, our Dockerfiles have focused on isolated mechanics: creating single files, defining individual instructions, filtering contexts, and ordering layers. Real-world applications, however, are not isolated scripts. They depend on third-party packages, maintain local development caches, and run persistent background processes that must serve traffic to the outside world.
+Up to this point, our Dockerfiles have focused on isolated mechanics: creating single files, defining individual instructions, filtering contexts, and ordering layers. Real-world applications depend on third-party packages, maintain local development caches, and run persistent background processes that serve traffic to the outside world.
 
 When developers attempt to containerize an application without connecting these pieces, three common failures occur: host artifacts like `node_modules/` pollute the build context and corrupt the Linux container; builds crawl because dependencies re-download on every single code change; and web servers start successfully inside the container but remain completely unreachable from the host machine's browser. In this chapter, you will assemble the lessons from Chapters 5–8 into a complete, repeatable containerization workflow.
 

@@ -91,7 +91,7 @@ If you are mid-feature and created a new file, use `--include-untracked` or the 
 
 ## When Stashing Goes Wrong
 
-Stash is a temporary bookmark, not a backup. Two failure modes to know:
+Stash is a short-term local bookmark with two common failure modes:
 
 **The forgotten stash:** You stash something, fix the bug, merge the hotfix, go on vacation, come back two weeks later, and have no idea what is in stash@{0}. To inspect without applying:
 

@@ -7,7 +7,6 @@
 - Resolve the non-root Host UID/GID permission trap on mounted storage
 - Prevent data leakage by isolating sensitive runtime tokens in volatile RAM (`tmpfs`)
 
----
 
 ## The Ephemeral Utility Container Pattern
 
@@ -49,7 +48,6 @@ Key principles of this command:
 - `readonly`: Ensures the backup process cannot write, corrupt, or alter production data during the archive operation.
 - `-C /source .`: Strips absolute directory prefixes so the archive unpacks cleanly into any destination root.
 
----
 
 ## Disaster Recovery & Volume Restoration
 
@@ -72,7 +70,6 @@ docker run -d --name db-service \
   postgres:16-alpine
 ```
 
----
 
 ## The Non-Root Host UID/GID Permission Trap
 
@@ -100,7 +97,6 @@ The Linux kernel enforces file permissions based on the numeric **UID** and **GI
 2. **Leverage Docker Named Volumes:**
    When a named volume is mounted into a container for the first time, Docker automatically initializes directory ownership to match the container's `USER` directive! This is a primary reason named volumes are vastly preferred over bind mounts in production.
 
----
 
 ## Ephemeral In-Memory Storage (`tmpfs`)
 
@@ -115,7 +111,6 @@ docker run -d --name api-worker \
 - Data exists exclusively in the host kernel's virtual memory page cache.
 - The instant the container terminates, all data is destroyed without leaving residual blocks on NVMe or SSD disks.
 
----
 
 ## Summary Checklist
 

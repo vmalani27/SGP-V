@@ -40,4 +40,4 @@ Identify a specific commit using `git blame` and examine its full diff using `gi
 
 ## Reflection
 
-`git blame` is not for assigning fault; it is for understanding context. The goal when reading blame output is to find the commit message that explains the reasoning behind a change. A well-written commit message turns a mysterious line of code into something entirely understandable.
+`git blame` helps you recover the context behind a change. The goal when reading blame output is to find the commit message that explains the reasoning behind a specific line of code.

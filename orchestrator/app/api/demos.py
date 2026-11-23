@@ -49,8 +49,10 @@ def _create_lock_for(user_id: str, demo_id: str) -> threading.Lock:
 
 class CreateDemoRequest(BaseModel):
     demo_id: str
-    image: str = "labops-docker-fundamentals:latest"
+    image: str = ""
     user_id: str = ""
+    course_id: str = ""
+    module_id: str = ""
     pre_pull: list[str] = []
 
 
@@ -96,21 +98,35 @@ def create_demo(req: CreateDemoRequest, docker_svc: DockerService = Depends(get_
 
     from app.config import MAX_CONCURRENT_LABS, DEMO_PREFIX, LAB_PREFIX
     from app.utils.locks import global_provisioning_lock
+    from app.services.docker_service import resolve_image
+
+    target_image = resolve_image(req.image, req.module_id, req.course_id)
 
     lock = _create_lock_for(req.user_id, req.demo_id)
     with lock, global_provisioning_lock:
         # Re-check inside the lock
         existing = docker_svc.get_running_lab_by_labels(labels)
         if existing:
-            logger.info(
-                f"Demo '{req.demo_id}' reused existing container '{existing['name']}'"
-            )
-            return {
-                "name": existing["name"],
-                "status": existing["status"],
-                "container_id": existing["id"],
-                "reused": True,
-            }
+            existing_img = existing.get("image", "")
+            if existing_img != target_image and target_image not in existing_img:
+                logger.info(
+                    f"Existing demo container '{existing['name']}' has image '{existing_img}', "
+                    f"expected '{target_image}'. Tearing down to recreate with new image."
+                )
+                try:
+                    docker_svc.destroy_lab(existing["name"])
+                except Exception as e:
+                    logger.warning(f"Failed to destroy mismatched demo container {existing['name']}: {e}")
+            else:
+                logger.info(
+                    f"Demo '{req.demo_id}' reused existing container '{existing['name']}'"
+                )
+                return {
+                    "name": existing["name"],
+                    "status": existing["status"],
+                    "container_id": existing["id"],
+                    "reused": True,
+                }
 
         # Auto-teardown old demos and labs to conserve memory
         all_running_demos = docker_svc.client.containers.list(all=True, filters={"name": DEMO_PREFIX})
@@ -128,7 +144,7 @@ def create_demo(req: CreateDemoRequest, docker_svc: DockerService = Depends(get_
         name = f"{DEMO_PREFIX}-{uuid4().hex[:12]}"
 
         try:
-            info = docker_svc.start_lab(req.image, name, labels=labels)
+            info = docker_svc.start_lab(target_image, name, labels=labels)
         except (RuntimeError, ValueError) as e:
             raise HTTPException(status_code=500, detail=str(e))
 

@@ -56,7 +56,7 @@ Try running those three commands in your terminal right now.
 
 Now run `git status`. The working directory looks completely clean! `.env` is gone. Problem solved, right?
 
-**No.** Git is not a simple file backup tool—it is a history tracker. Every commit is an immutable snapshot.
+**No.** Git tracks history, not just current files. Every commit is an immutable snapshot.
 
 See for yourself by inspecting Git's commit history:
 

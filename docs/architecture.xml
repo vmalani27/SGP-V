@@ -126,7 +126,7 @@
         <mxCell id="fe_bootstrap" value="Content bootstrap: download tar.gz → sha256 verify → extract → serve locally" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="432" y="352" width="230" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="fe_terminal" value="xterm.js terminal — WS /ws/terminal (first-msg JWT handshake, never in URL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="fe_terminal" value="xterm.js terminal — WS /ws/terminal (first-msg shared-secret handshake, never in URL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="678" y="196" width="250" height="54" as="geometry"/>
         </mxCell>
         <mxCell id="fe_task" value="Lab task runner (terminal_action / port_check / file_check) + submit flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
@@ -219,7 +219,7 @@
         <mxCell id="orch_lifecycle" value="Container lifecycle — start / pause / resume / restart / destroy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="72" y="966" width="300" height="46" as="geometry"/>
         </mxCell>
-        <mxCell id="orch_ws2" value="WS /ws/terminal — first-msg JWT, tmux attach, PTY resize frames" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="orch_ws2" value="WS /ws/terminal — first-msg shared secret, tmux attach, PTY resize frames" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="72" y="1024" width="300" height="46" as="geometry"/>
         </mxCell>
         <mxCell id="orch_exec" value="exec validate — runs answer check inside container; returns exit code only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">

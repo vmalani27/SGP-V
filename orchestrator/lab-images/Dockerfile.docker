@@ -34,6 +34,10 @@ RUN apt-get update && apt-get install -y \
 # Ensure docker daemon starts with systemd
 RUN systemctl enable docker.service
 
+# Ensure student user owns home directory and has complete permissions
+RUN chown -R student:student /home/student \
+    && chmod -R u+rwX /home/student
+
 WORKDIR /home/student
 
 # VOLUME for nested docker and containerd storage to prevent overlayfs-on-overlayfs EINVAL errors

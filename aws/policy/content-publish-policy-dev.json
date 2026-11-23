@@ -2,7 +2,7 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "ListContentBuckets",
+      "Sid": "ListReleaseBuckets",
       "Effect": "Allow",
       "Action": [
         "s3:ListBucket"
@@ -12,10 +12,12 @@
       ]
     },
     {
-      "Sid": "WriteContentObjects",
+      "Sid": "ManageReleaseObjects",
       "Effect": "Allow",
       "Action": [
-        "s3:PutObject"
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
       ],
       "Resource": [
         "arn:aws:s3:::content-dev-586177432842-ap-south-1-an/*"

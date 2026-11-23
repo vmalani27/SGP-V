@@ -2,13 +2,11 @@ x-frontend-target: ${FRONTEND_TARGET:-runtime}
 x-orchestrator-target: ${ORCHESTRATOR_TARGET:-dev}
 services:
   proxy:
-    image: ${ECR_BASE_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27/labops-base}:nginx-alpine
+    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7}/labops-proxy:${IMAGE_TAG:-dev}
     pull_policy: missing
     container_name: labops-proxy
     ports:
     - "${PORT:-3000}:80"
-    volumes:
-    - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
     - frontend
     - orchestrator
@@ -16,7 +14,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27}/labops-frontend:${IMAGE_TAG:-dev}
+    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7}/labops-frontend:${IMAGE_TAG:-dev}
     pull_policy: missing
     build:
       context: ./next-app
@@ -43,7 +41,7 @@ services:
     restart: unless-stopped
 
   orchestrator:
-    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27}/labops-orchestrator:${IMAGE_TAG:-dev}
+    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7}/labops-orchestrator:${IMAGE_TAG:-dev}
     pull_policy: missing
     build:
       context: ./orchestrator
@@ -55,7 +53,6 @@ services:
     - "8000"
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
-    - ./orchestrator/app:/app/app
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
       LAB_PREFIX: labops-lab
@@ -68,7 +65,7 @@ services:
     restart: unless-stopped
 
   git-server:
-    image: ${ECR_BASE_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27/labops-base}:gitea-latest
+    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7}/labops-git-server:latest
     pull_policy: missing
     container_name: labops-git-server
     restart: unless-stopped
@@ -99,14 +96,15 @@ services:
       - "3001:3000"
 
   content-sync:
-    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7/vmalani27}/labops-content-sync:${IMAGE_TAG:-dev}
+    image: ${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7}/labops-content-sync:${IMAGE_TAG:-dev}
     pull_policy: missing
     build:
       context: ./sidecars/content-sync
     container_name: labops-content-sync
     restart: unless-stopped
     environment:
-      - CONTENT_PUBLIC_BASE_URL=${CONTENT_PUBLIC_BASE_URL:-https://d3rqfqpemi0u1s.cloudfront.net}
+      - CDN_URL=${CDN_URL:-https://d3rqfqpemi0u1s.cloudfront.net}
+      - LABOPS_CHANNEL=${LABOPS_CHANNEL:-dev}
       - CONTENT_DIR=/content
       - SYNC_INTERVAL=${CONTENT_SYNC_INTERVAL:-15m}
       - SYNC_ON_START=true

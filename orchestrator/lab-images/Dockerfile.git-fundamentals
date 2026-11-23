@@ -122,6 +122,11 @@ RUN echo '' >> /home/student/.bashrc \
     && echo 'parse_git_branch() { git branch 2>/dev/null | sed -n "s/^* //p"; }' >> /home/student/.bashrc \
     && echo 'export PS1="\[\033[01;32m\]\u@labops\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\[\033[01;33m\]\$(b=\$(parse_git_branch); [ -n \"\$b\" ] && echo \" (\$b)\")\[\033[00m\]\$ "' >> /home/student/.bashrc
 
+# Ensure student user owns all workspace files and has complete permissions
+RUN chown -R student:student /home/student \
+    && chmod -R u+rwX /home/student \
+    && chmod 600 /home/student/.git-credentials
+
 WORKDIR /home/student
 
 ENTRYPOINT ["/sbin/init"]

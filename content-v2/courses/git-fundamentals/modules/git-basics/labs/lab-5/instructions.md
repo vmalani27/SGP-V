@@ -2,44 +2,20 @@
 
 ## Scenario
 
-Your application directory contains sensitive configuration files (`.env`, `.env.local`) and compiled Python artifacts (`app.pyc`, `__pycache__/`). If anyone runs `git add .`, these files will be added to Git history and potentially leaked or cause merge conflicts.
+Your application directory in `/home/student/webapp` contains local credential files (`.env`, `.env.local`) and compiled Python bytecode (`app.pyc`, `__pycache__/`). Left unignored, a broad staging operation would include these sensitive and generated files in the commit history.
 
-In this lab, you will configure `.gitignore` to prevent these files from being tracked, inspect ignored files using Git flags, and safely untrack an already-committed file using `git rm --cached`.
+Your goal is to inspect the untracked workspace files, configure `.gitignore` to exclude environment and bytecode artifacts, commit `.gitignore`, and push the updated branch to `origin/main`.
 
-## What You'll Do
+## Objectives
 
-- Observe untracked files with `git status`
-- Create `.gitignore` to ignore `.env`, `.env.*`, `*.pyc`, and `__pycache__/`
-- Verify that ignored files are filtered out from default status and visible via `git status --ignored`
-- Use `git rm --cached` to stop tracking a committed file without deleting it from disk
-- Commit `.gitignore` and push your clean repository to the remote server (`origin/main`)
+- Identify untracked sensitive and generated files in the working directory
+- Configure `.gitignore` patterns to exclude environment files and Python bytecode
+- Commit `.gitignore` and synchronize `main` with `origin/main`
 
-## Operational Specifications
+## Acceptance Criteria
 
-### 1. Identify Untracked Sensitive/Artifact Files
-- Run `git status` in `/home/student/webapp` to see the uncommitted files.
-
-### 2. Configure .gitignore
-- Add entries for `.env`, `.env.*`, `*.pyc`, and `__pycache__/` to `.gitignore`.
-- Verify that `git status` only reports `.gitignore` as an untracked file.
-
-### 3. Check Ignored Files
-- Run `git status --ignored` to confirm that the unwanted files are categorized as ignored.
-
-### 4. Untrack an Already-Committed File
-- Force-add and commit `.env` to simulate a scenario where a sensitive file was accidentally committed.
-- Run `git rm --cached .env` to stop tracking it while preserving the file on disk.
-- Commit the removal.
-
-### 5. Commit .gitignore and Push
-- Stage and commit `.gitignore`.
-- Run `git push` to synchronize your changes with the remote repository on `origin/main`.
-
-## Acceptance Criteria Table
-
-| Requirement | Verification Check |
+| Requirement | Expected Outcome |
 | :--- | :--- |
-| .gitignore created | `.gitignore` contains rules for secrets and bytecode |
-| Files ignored | `git status` excludes `.env` and `*.pyc` |
-| Cached file removed | `git ls-files .env` returns empty while file remains on disk |
-| .gitignore committed & pushed | `git ls-remote origin refs/heads/main` matches local `HEAD` |
+| `.gitignore` created | Excludes `.env`, `.env.*`, `*.pyc`, and `__pycache__/` |
+| Unwanted files ignored | Environment and bytecode files remain on disk but do not appear as untracked |
+| Rules committed & pushed | `.gitignore` is committed on `main` and pushed to `origin/main` |

@@ -45,9 +45,10 @@ def _start_lock_for(user_id: str, lab_id: str) -> threading.Lock:
 
 class StartLabRequest(BaseModel):
     lab_id: str
-    image: str
+    image: str = ""
     user_id: str = ""
     course_id: str = ""
+    module_id: str = ""
     apt_packages: list[str] = []
     pre_pull: list[str] = []
     setup: list[dict[str, str]] = []
@@ -132,9 +133,12 @@ def start_lab(req: StartLabRequest, docker_svc: DockerService = Depends(get_dock
         session = LabSession(lab_type="custom", lab_id=req.lab_id, user_id=req.user_id)
         session.container_name = f"{LAB_PREFIX}-{session.session_id}"
 
+        from app.services.docker_service import resolve_image
+        image_name = resolve_image(req.image, req.module_id, req.course_id)
+
         try:
             logger.info(f"Issuing synchronous docker run command for {session.container_name}... (this may block depending on host performance)")
-            info = docker_svc.start_lab(req.image, session.container_name, labels=labels)
+            info = docker_svc.start_lab(image_name, session.container_name, labels=labels)
             session.container_id = info["id"]
             session.status = LabStatus.RUNNING
         except (RuntimeError, ValueError) as e:

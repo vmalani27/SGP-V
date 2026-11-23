@@ -4,7 +4,7 @@ param (
 )
 
 if (-not $Registry) {
-    $Registry = "public.ecr.aws/i9t1l0m7/vmalani27"
+    $Registry = "public.ecr.aws/i9t1l0m7"
 }
 
 Write-Host "==================================================" -ForegroundColor Cyan
@@ -13,12 +13,16 @@ Write-Host "==================================================" -ForegroundColor
 Write-Host ""
 
 $images = @(
-    @{ Name = "Frontend Service"; Remote = "$Registry/labops-frontend:$Tag"; Local = $null },
-    @{ Name = "Orchestrator Service"; Remote = "$Registry/labops-orchestrator:$Tag"; Local = $null },
-    @{ Name = "Base Ubuntu Lab Image"; Remote = "$Registry/labops-base:$Tag"; Aliases = @("labops-ubuntu:latest", "sgp-lab-ubuntu:latest") },
-    @{ Name = "Docker-in-Docker Lab Image"; Remote = "$Registry/labops-labs:docker-$Tag"; Aliases = @("labops-docker:latest", "sgp-lab-docker:latest") },
-    @{ Name = "Preloaded Fundamentals Lab Image"; Remote = "$Registry/labops-labs:docker-fundamentals-$Tag"; Aliases = @("labops-docker-fundamentals:latest", "sgp-lab-docker-fundamentals:latest") },
-    @{ Name = "Preloaded Docker Build Lab Image"; Remote = "$Registry/labops-labs:docker-build-$Tag"; Aliases = @("labops-docker-build:latest", "sgp-lab-docker-build:latest") }
+    @{ Name = "Frontend Service"; Remote = "$Registry/labops-frontend:$Tag"; Aliases = $null },
+    @{ Name = "Orchestrator Service"; Remote = "$Registry/labops-orchestrator:$Tag"; Aliases = $null },
+    @{ Name = "Content-Sync Service"; Remote = "$Registry/labops-content-sync:$Tag"; Aliases = $null },
+    @{ Name = "Proxy Service"; Remote = "$Registry/labops-proxy:$Tag"; Aliases = $null },
+    @{ Name = "Git Server Image"; Remote = "$Registry/labops-git-server:latest"; Aliases = $null },
+    @{ Name = "Base Ubuntu Lab Image"; Remote = "$Registry/labops-ubuntu:$Tag"; Aliases = @("labops-ubuntu:latest") },
+    @{ Name = "Docker-in-Docker Lab Image"; Remote = "$Registry/labops-docker:$Tag"; Aliases = @("labops-docker:latest") },
+    @{ Name = "Preloaded Fundamentals Lab Image"; Remote = "$Registry/labops-docker-fundamentals:$Tag"; Aliases = @("labops-docker-fundamentals:latest") },
+    @{ Name = "Preloaded Docker Build Lab Image"; Remote = "$Registry/labops-docker-build:$Tag"; Aliases = @("labops-docker-build:latest") },
+    @{ Name = "Preloaded Git Fundamentals Lab Image"; Remote = "$Registry/labops-git-fundamentals:$Tag"; Aliases = @("labops-git-fundamentals:latest") }
 )
 
 $step = 1

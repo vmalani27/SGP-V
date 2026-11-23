@@ -24,7 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 COPY fixtures/ /home/student/
 
 # Ensure student user owns all workspace files
-RUN chown -R student:student /home/student
+RUN chown -R student:student /home/student \
+    && chmod -R u+rwX /home/student
 
 WORKDIR /home/student
 

@@ -8,7 +8,6 @@
 - Adopt modern `--mount` syntax over legacy `-v` flags for production safety
 - Isolate sensitive ephemeral state into RAM using `tmpfs` mounts
 
----
 
 ## The Four Storage Mechanisms
 
@@ -50,7 +49,6 @@ Every container has access to four distinct types of storage, each designed for 
 | **Bind Mount** | Arbitrary host directory | Independent of Docker | Local source code mounting for hot reloading. |
 | **`tmpfs`** | Host system RAM | Wiped on container stop | High-speed cache, sensitive tokens/keys. |
 
----
 
 ## Why Databases Cannot Run on the Writable Layer
 
@@ -62,7 +60,6 @@ The `overlay2` storage driver uses a union filesystem:
 
 **Docker Volumes completely bypass the storage driver.** A volume is an un-unionized directory on the host filesystem managed by the Docker daemon. Read and write operations to a volume execute at **native bare-metal disk speeds**.
 
----
 
 ## Named Volumes: Mechanics & Lifecycle
 
@@ -96,7 +93,6 @@ The inspect output reveals the physical directory managed by Docker:
 - **Delete an unused volume:** `docker volume rm <volume-name>`
 - **Prune unattached volumes:** `docker volume prune -f`
 
----
 
 ## Modern Syntax: `--mount` vs Legacy `-v`
 
@@ -127,7 +123,6 @@ Key attributes of `--mount`:
 - `target`: Mount destination path inside the container namespace.
 - `readonly`: Optional boolean flag (`readonly` or `ro`) to prevent write access.
 
----
 
 ## In-Memory Ephemeral Mounts (`tmpfs`)
 
@@ -145,7 +140,6 @@ docker run -d \
 - When the container stops, the RAM is returned to the kernel. No bits remain on physical NVMe/SSD storage.
 - File operations inside `/app/secure-cache` achieve ultra-low latency RAM throughput.
 
----
 
 ## Key Takeaways
 

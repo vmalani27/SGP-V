@@ -8,7 +8,6 @@ The repository currently contains development configurations, unit test suites, 
 
 This is an independent practical assessment. You are given the operational specifications and acceptance criteria; you must determine the appropriate implementation and verify the result.
 
----
 
 ## Workspace Structure
 
@@ -27,7 +26,6 @@ inventory-service/
     └── server.test.ts
 ```
 
----
 
 ## Operational Specifications & Contract
 
@@ -59,7 +57,6 @@ Author a multi-stage `Dockerfile` in `~/inventory-service` using the official `n
 - The process inside the running container must execute as `node`.
 - Build-time compilation tooling (`tsc`) and local credentials (`.env`) must not be accessible anywhere in the running container filesystem.
 
----
 
 ## Acceptance Criteria
 

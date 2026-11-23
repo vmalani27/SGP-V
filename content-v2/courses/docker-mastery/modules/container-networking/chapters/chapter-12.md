@@ -16,7 +16,6 @@ However, in Docker, **every container has its own private network namespace**. I
 
 To connect containers, Docker virtualizes network stacks using distinct **network modes**.
 
----
 
 ## The Mental Model: Three Network Modes
 
@@ -61,7 +60,6 @@ In host mode, Docker removes the container's network isolation. The container sh
 In `none` mode, Docker creates a network namespace with only a loopback interface (`lo`). The container has **no external network access and no route to other containers**.
 - Ideal for security-critical tasks like offline cryptographic signing, running untrusted code sandboxes, or batch processing confidential datasets.
 
----
 
 ## Essential Networking Commands
 
@@ -106,7 +104,6 @@ Allows a running container to attach to multiple networks on the fly (dual-homin
 -p 127.0.0.1:8080:80    # Maps strictly to host localhost (safe for local reverse proxies)
 ```
 
----
 
 ## Hands-On Execution & Terminal Steps
 

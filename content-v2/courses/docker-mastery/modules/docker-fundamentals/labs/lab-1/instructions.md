@@ -8,7 +8,6 @@ Your objective is to diagnose the communication failure, configure non-root user
 
 This is an independent assessment. You are provided with operational constraints and acceptance criteria; you must determine the appropriate Linux and Docker CLI commands to achieve the desired state.
 
----
 
 ## Operational Specifications & Contract
 
@@ -24,7 +23,6 @@ This is an independent assessment. You are provided with operational constraints
 - Configure the container process to output the exact string `GREETING_FROM_ALPINE` to standard output.
 - Ensure the container object remains available on the host (not automatically purged) so its logs and configuration can be evaluated.
 
----
 
 ## Acceptance Criteria
 

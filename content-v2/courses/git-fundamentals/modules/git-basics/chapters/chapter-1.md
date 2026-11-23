@@ -36,7 +36,7 @@ You will see the initial commit record:
 cdd96d4 Initial application release
 ```
 
-A commit in Git is not an incremental diff of individual lines — it is a direct pointer to a **tree object**, representing the exact state of all project files at that point in time.
+Every commit in Git points directly to a **tree object** representing the complete state of all project files at that point in time.
 
 Inspect what the commit actually points to using low-level Git plumbing tools:
 
@@ -80,17 +80,17 @@ git show HEAD:auth.py
 The underlying graph structure looks like this:
 
 ```
-COMMIT  (cdd96d4: "Initial application release")
+COMMIT  (Initial application release)
   │
   ▼
-TREE    (1107d10: root directory snapshot)
+TREE    (root directory snapshot)
   ├── blob → README.md contents
   ├── blob → api.py contents
   ├── blob → auth.py contents
   └── blob → styles.css contents
 ```
 
-Git stores all of these objects — commits, trees, and blobs — in `.git/objects/`, indexed by their SHA content hashes. If `README.md` remains unchanged across 20 consecutive commits, all 20 commits reference the exact same blob SHA. Git never duplicates unchanged files — it reuses the identical object in storage.
+Git stores all of these objects — commits, trees, and blobs — in `.git/objects/`, indexed by their SHA content hashes. If `README.md` remains unchanged across 20 consecutive commits, all 20 commits reference the exact same blob SHA, avoiding duplicate storage of unchanged files.
 
 Now run `git status` inside `~/practice`:
 
@@ -117,25 +117,42 @@ Three things follow from this:
 2. **Speed.** `git log`, `git diff`, `git blame` — all read from local disk, instant.
 3. **No single point of failure.** If the central server goes down, every team member's machine still has the complete history.
 
-## Setting Up Your Identity
+## Configuring Your Identity and Defaults
 
-Before your first commit, tell Git who you are. Every commit is permanently stamped with this:
+Before making commits on a new machine, configure your author identity and default branch settings. Git reads configuration from three scopes:
+- **System (`/etc/gitconfig`)**: Defaults for all users on the host.
+- **Global (`~/.gitconfig`)**: Defaults for your user account across all repositories.
+- **Local (`.git/config`)**: Settings specific to a single repository.
+
+Set your global author name and email so every commit is stamped with your identity:
 
 ```bash
 git config --global user.name "Your Name"
 git config --global user.email "you@yourcompany.com"
 ```
 
-The `--global` flag writes to `~/.gitconfig` — applies to every repository on this machine.
-
-Verify it:
+Also configure the default initial branch name (`main`) for any new repository you create with `git init`:
 
 ```bash
-git config --list
+git config --global init.defaultBranch main
+```
+
+Verify your active configuration settings:
+
+```bash
+git config --global --list
+```
+
+When you create a new directory and initialize a repository with `git init`, Git uses these global settings automatically:
+
+```bash
+mkdir -p ~/demo-repo
+cd ~/demo-repo
+git init
 ```
 
 > [!TIP]
-> Use the same email you use for GitHub or GitLab. This links your commits to your profile so reviewers know who made each change.
+> Use the same email address associated with your GitHub or GitLab account so commits link to your developer profile during code reviews.
 
 ## How Professionals Use Git Every Day
 
@@ -149,9 +166,8 @@ git config --list
 
 ## Key Takeaways
 
-- Every commit is a pointer to a tree — a complete snapshot of the repository at that moment
-- Commits, trees, and blobs are stored as content-addressed objects in `.git/objects/` — unchanged files are deduplicated across commits
-- Use `git ls-tree <sha>` to inspect a snapshot and `git cat-file -p <sha>` to read any object
-- Every clone has the full history — work offline, recover from server failures
-- Configure `user.name` and `user.email` before your first commit — they are embedded in every commit permanently
-- Git is the foundation of CI/CD, infrastructure management, incident response, and code review
+- Every commit points to a tree object representing a complete snapshot of the repository at that moment.
+- Commits, trees, and blobs are stored as content-addressed objects in `.git/objects/`, deduplicating unchanged files across commits.
+- Use `git ls-tree <sha>` to inspect a snapshot and `git cat-file -p <sha>` to read any object.
+- Configure `user.name`, `user.email`, and `init.defaultBranch` with `git config --global` before initializing repositories with `git init`.
+- Git underpins CI/CD pipelines, Infrastructure as Code, incident response, and peer code review.

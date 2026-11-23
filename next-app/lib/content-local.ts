@@ -52,6 +52,8 @@ async function getDataDir(): Promise<string> {
   const candidates = [
     path.join(CONTENT_DIR, 'data'),
     CONTENT_DIR,
+    path.resolve(process.cwd(), 'content-v2'),
+    path.resolve(process.cwd(), '../content-v2'),
   ];
 
   for (const candidate of candidates) {
@@ -397,5 +399,42 @@ async function getChapterTitle(courseId: string, moduleId: string, chapterId: st
       return trimmed.slice(2).trim();
     }
   }
+  return null;
+}
+
+const MIME_TYPES: Record<string, string> = {
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.avif': 'image/avif',
+};
+
+export async function readAssetBuffer(
+  courseId: string,
+  assetPath: string
+): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const safePath = path.normalize(assetPath).replace(/^(\.\.[\/\\])+/, '');
+  const ext = path.extname(safePath).toLowerCase();
+  const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
+
+  try {
+    const base = await getDataDir();
+    const possiblePaths = [
+      path.join(base, 'courses', courseId, 'assets', safePath),
+      path.join(base, 'courses', courseId, safePath),
+    ];
+
+    for (const p of possiblePaths) {
+      try {
+        const buffer = await fs.readFile(p);
+        return { buffer, mimeType };
+      } catch {}
+    }
+  } catch {}
+
   return null;
 }

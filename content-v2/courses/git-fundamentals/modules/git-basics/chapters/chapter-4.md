@@ -4,7 +4,7 @@
 
 The terminal includes a pre-configured repository in the `~/practice` folder.
 
-You are working on `auth.py`. You fix a real bug — the password check was rejecting valid inputs with special characters. While you are in the file, you also rename a variable for clarity. These are two separate changes made for two distinct reasons.
+You are working on `auth.py`. You fix a real bug — the password check only tested for an empty string (`password == ""`) instead of catching missing or falsy values (`not password`). While you are in the file, you also rename a variable for clarity. These are two separate changes made for two distinct reasons.
 
 If you run `git add auth.py` and commit, both changes are packaged together. Anyone reviewing the commit history will see a single commit containing two unrelated changes, making it difficult to understand the intent or revert one without undoing the other.
 
@@ -56,7 +56,7 @@ The `--staged` flag tells Git to inspect only the changes currently sitting in y
 
 Then commit the staged hunk:
 ```bash
-git commit -m "Fix password check rejecting inputs with special characters"
+git commit -m "Reject missing or empty passwords in authenticate"
 ```
 
 Stage and commit the second chunk separately:
@@ -94,7 +94,7 @@ Because your branch tracks `origin/main` (configured via `git push -u origin mai
 
 ## `git add -p` in Practice
 
-Running `git add .` in a shared repository is a habit that makes history harder to read. Most engineers who work on shared codebases use `git add -p` or `git add <specific-file>` for every commit. The staging step is where commit hygiene happens — not in the editor.
+Running `git add .` in a shared repository is a habit that makes history harder to read. Most engineers who work on shared codebases use `git add -p` or `git add <specific-file>` for every commit so commit hygiene happens during staging.
 
 ```bash
 git diff             # inspect unstaged changes

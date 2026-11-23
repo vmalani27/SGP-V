@@ -6,7 +6,6 @@ An Express TypeScript microservice is provisioned in your home directory at `~/o
 
 Your objective is to assess and eliminate this bloat by establishing workspace context boundaries, measuring the baseline image footprint, and authoring a hardened, production-grade multi-stage `Dockerfile`.
 
----
 
 ## Workspace Structure
 
@@ -26,7 +25,6 @@ order-service/
     └── server.ts           # Service bootstrap
 ```
 
----
 
 ## Operational Requirements & Contract
 
@@ -65,7 +63,6 @@ The primary `Dockerfile` in `~/order-service` must implement a multi-stage archi
 - The running process must execute under unprivileged user identity (`node`).
 - Development tooling, specifically the TypeScript compiler executable (`tsc`), must be completely absent from the container filesystem.
 
----
 
 ## Success Criteria
 

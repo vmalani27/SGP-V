@@ -8,7 +8,6 @@ Your objective is to populate a production storage volume, execute an automated 
 
 This is an independent assessment. You are given operational constraints and acceptance criteria; you must determine the appropriate Docker CLI commands, mount syntax, and archive parameters to satisfy the contract.
 
----
 
 ## Operational Specifications & Contract
 
@@ -40,7 +39,6 @@ This is an independent assessment. You are given operational constraints and acc
 - Lifecycle: Run in detached mode (`sleep 300`).
 - Storage Mount: Attach an in-memory `tmpfs` mount at `/app/secrets` with a maximum size limit of `32m`.
 
----
 
 ## Acceptance Criteria
 

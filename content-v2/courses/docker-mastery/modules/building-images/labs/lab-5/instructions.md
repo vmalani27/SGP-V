@@ -2,7 +2,7 @@
 
 ## What You're Doing and Why
 
-So far you have run containers from images other people built. Now you will build an image of your own. The point of this lab is not the image itself — it is to make the pipeline visible: a **Dockerfile** describes the image, `docker build` turns that description into an **image**, and `docker run` turns the image into a **container**. By building something tiny, you see the whole pipeline without getting distracted by application details.
+So far you have run containers from existing images. Now you will build an image of your own to trace the full pipeline: a **Dockerfile** describes the image, `docker build` turns that description into an **image**, and `docker run` turns the image into a **container**.
 
 ## Background
 

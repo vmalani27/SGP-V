@@ -19,6 +19,7 @@ objectives:
 
 setup:
   - command: >
+      rm -rf /home/student/webapp &&
       mkdir -p /home/student/webapp && cd /home/student/webapp &&
       git init -b main &&
       git config user.email "student@labops.local" &&
@@ -41,9 +42,8 @@ tasks:
   - id: survey-the-damage
     summary: Explore the workspace
     prompt: >-
-      You just sat down at your workstation and found unfinished work left behind in `/home/student/webapp`. Look around the repository and examine the changes across each file before deciding how to proceed.
-
-      Looking at the changes across this project, what would happen if someone staged and committed everything right now under a commit titled "Fix login"?
+      Inspect the uncommitted changes in `/home/student/webapp`. What happens if
+      you stage and commit the entire directory under a single commit titled `"Fix login"`?
     type: multiple_choice
     options:
       - "Temporary debug logs and CSS changes would be saved together in the same commit as the login fix."
@@ -52,26 +52,13 @@ tasks:
       - "Git would erase the changes in `api.py` and `styles.css` because they do not relate to the login fix."
     validation:
       expected_answer: "Temporary debug logs and CSS changes would be saved together in the same commit as the login fix."
-    hints:
-      - "Check the diff of each changed file in the repository."
-      - "Think about what each change does and whether they all belong in one commit."
-    error_message: >-
-      Check the diffs across all modified files. api.py has temporary debug logs and styles.css has visual changes. Making one big commit mixes all these unrelated changes together.
 
   - id: commit-auth-fix
     summary: Commit the authentication fix
     prompt: >-
-      auth.py has one real fix: the empty password check was changed from
-      checking password == "" to using not password, which also catches None.
-
-      Stage only auth.py and commit it with a clear, descriptive message. 
-      Leave styles.css
-      and api.py as it is
+      In `/home/student/webapp`, stage and commit only `auth.py` with a descriptive
+      message while leaving `styles.css` and `api.py` unstaged.
     type: terminal_action
-    hints:
-      - "Stage only the specific file needed for this logical commit."
-      - "Write a commit message that explains what the authentication fix does."
-      - "Verify that the other two modified files remain unstaged in your working tree."
     solution:
       command: "cd /home/student/webapp && git add auth.py && git commit -m 'Fix empty-string password check to also reject None'"
     validation:
@@ -95,20 +82,14 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Ensure only auth.py is staged and committed. styles.css and api.py should still show as unstaged modifications.
+      `auth.py` is not committed alone, or `styles.css` and `api.py` do not remain unstaged.
 
   - id: commit-css-fix
-    summary: commit the css change
+    summary: Commit the CSS change
     prompt: >-
-      styles.css changed the button colour from red to brand blue (#2563eb).
-      That is a separate concern from the auth fix and deserves its own commit.
-
-      Stage styles.css and commit it with an appropriate message. api.py should remain unstaged.
+      In `/home/student/webapp`, stage and commit only `styles.css` with a descriptive
+      message while leaving `api.py` unstaged.
     type: terminal_action
-    hints:
-      - "Stage the stylesheet file independently from the remaining debug modifications."
-      - "Describe the visual styling change in your commit message."
-      - "Confirm that only api.py is left modified in your working tree."
     solution:
       command: "cd /home/student/webapp && git add styles.css && git commit -m 'Fix button colour from red to brand blue'"
     validation:
@@ -132,21 +113,14 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      styles.css was not committed as a separate snapshot, or api.py was prematurely staged. Check your repository status and commit log.
+      `styles.css` was not committed in its own commit, or `api.py` is no longer an unstaged modification.
 
   - id: discard-debug-changes
     summary: Discard the local debug changes in api.py
     prompt: >-
-      api.py has debug log lines added for local testing. They should
-      not be committed — debug noise in version history makes it harder to trace
-      real changes later.
-
-      Discard the changes in api.py entirely so that the file returns to its cleanly
-      committed state from HEAD. After discarding, your working tree should be completely clean.
+      Discard the unstaged debug modifications in `api.py` so the file returns to
+      its last committed state and the working tree is clean.
     type: terminal_action
-    hints:
-      - "Recall which command discards unstaged working tree changes back to the committed snapshot."
-      - "Verify that no unstaged diffs remain for api.py after discarding the changes."
     solution:
       command: "cd /home/student/webapp && git restore api.py"
     validation:
@@ -165,16 +139,13 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      api.py still contains unstaged working-tree modifications. Discard the changes and restore the clean committed version.
+      `api.py` still contains uncommitted modifications in the working tree.
 
   - id: read-the-history
     summary: Confirm the commit history tells a clean story
     prompt: >-
-      Inspect the commit log inside /home/student/webapp. You should see exactly
-      three commits, each describing one logical change.
-
-      Which command shows ONLY the files changed in the most recent commit,
-      without showing the full line-level diff?
+      Which command displays only the commit summary and list of modified files for
+       the most recent commit, without printing the line-level diff?
     type: multiple_choice
     options:
       - "git log --oneline -1 --name-only"
@@ -183,21 +154,12 @@ tasks:
       - "git show --stat"
     validation:
       expected_answer: "git log --oneline -1 --name-only"
-    hints:
-      - "You want the commit metadata and file list — not the line-level diff."
-      - "Look for a log flag that outputs file names rather than the complete diff patch."
 
   - id: publish-atomic-commits
     summary: Push your clean atomic commits to the remote repository
     prompt: >-
-      Your working tree in `/home/student/webapp` is now clean, and your local
-      `main` branch has two clean atomic commits ahead of `origin/main`.
-
-      Publish your commits to the remote server.
+      Publish your local `main` commits in `/home/student/webapp` to `origin/main`.
     type: terminal_action
-    hints:
-      - "Push your local branch updates to the configured remote repository."
-      - "Because main already tracks origin/main, synchronize the remote with a standard push."
     solution:
       command: "cd /home/student/webapp && git push"
     validation:
@@ -232,4 +194,4 @@ tasks:
       match_type: exact
       expected_output: PUSH_OK
     error_message: >-
-      The remote repository has not received your atomic commits, or your working tree is not clean. Ensure all prior tasks were completed and the commits are published to origin/main.
+      `origin/main` does not match your local `HEAD`, or the working tree is not clean.

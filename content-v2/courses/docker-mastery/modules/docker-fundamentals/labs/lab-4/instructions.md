@@ -8,7 +8,6 @@ Your objective is to inspect filesystem alterations in the writable layer, prove
 
 This is an independent assessment. You are provided with operational constraints and acceptance criteria; you must determine the appropriate Docker CLI commands and flags to achieve the target state.
 
----
 
 ## Operational Specifications & Contract
 
@@ -35,7 +34,6 @@ This is an independent assessment. You are provided with operational constraints
 ### 5. Storage Hygiene & Garbage Collection
 - Prune all stopped containers from the Docker engine so that zero exited containers remain on the host.
 
----
 
 ## Acceptance Criteria
 

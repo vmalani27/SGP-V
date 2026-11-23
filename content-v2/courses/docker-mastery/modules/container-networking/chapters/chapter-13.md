@@ -72,7 +72,6 @@ services:
 
 With `condition: service_healthy`, Compose polls the Redis container until `redis-cli ping` responds with `PONG`. Only then does Compose boot the `api` container.
 
----
 
 ## Docker Compose Command Reference & CLI Anatomy
 
@@ -108,7 +107,6 @@ docker compose start [SERVICE]      # Starts previously stopped containers
 docker compose restart [SERVICE]    # Restarts service containers
 ```
 
----
 
 ### 2. Stack Observability & Debugging
 
@@ -144,7 +142,6 @@ docker compose exec [OPTIONS] <SERVICE> <COMMAND>
 ```
 Example: `docker compose exec cache redis-cli ping` sends a ping directly to the `cache` service.
 
----
 
 ## Hands-On Execution & Terminal Steps
 

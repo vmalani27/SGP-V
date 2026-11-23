@@ -106,6 +106,7 @@ def publish(content_dir: Path, out_dir: Path, bucket: str, endpoint_url: str) ->
     print(f"[publisher] Content version generated: {version}")
 
     # Generate release manifests for dev and stable channels
+    os.environ["CDN_URL"] = f"{endpoint_url.rstrip('/')}/{bucket}"
     for ch in ["dev", "stable"]:
         subprocess.run(
             [sys.executable, "scripts/generate_release_manifest.py", ch, ch, str(out_dir)],

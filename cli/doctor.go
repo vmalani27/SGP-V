@@ -289,21 +289,25 @@ func CheckWSL2Systemd() (bool, string, error) {
 	for _, distro := range distros {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		cmd := exec.CommandContext(ctx, "wsl.exe", "-d", distro, "cat", "/etc/wsl.conf")
-		var out bytes.Buffer
-		cmd.Stdout = &out
+		var outBuf, errBuf bytes.Buffer
+		cmd.Stdout = &outBuf
+		cmd.Stderr = &errBuf
 		_ = cmd.Run()
 		cancel()
 
-		if parseWSLConfSystemd(out.String()) {
+		if parseWSLConfSystemd(outBuf.String()) {
 			return true, distro, nil
 		}
 
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 4*time.Second)
 		cmd2 := exec.CommandContext(ctx2, "wsl.exe", "-d", distro, "systemctl", "is-system-running")
-		out2, err2 := cmd2.Output()
+		var outBuf2, errBuf2 bytes.Buffer
+		cmd2.Stdout = &outBuf2
+		cmd2.Stderr = &errBuf2
+		err2 := cmd2.Run()
 		cancel2()
 		if err2 == nil {
-			s := strings.TrimSpace(string(out2))
+			s := strings.TrimSpace(outBuf2.String())
 			if s == "running" || s == "degraded" {
 				return true, distro, nil
 			}

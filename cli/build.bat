@@ -43,6 +43,7 @@ if not "%ARG%"=="" (
 
 echo Building labops.exe for Windows host [channel: %TARGET_ENV%]...
 call :build_one windows amd64 labops.exe %TARGET_ENV%
+copy /y labops.exe labops-windows-amd64.exe >nul 2>&1
 goto :end
 
 rem ------------------------------------------------------------

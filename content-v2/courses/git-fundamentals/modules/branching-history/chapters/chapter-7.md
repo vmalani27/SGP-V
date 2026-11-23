@@ -19,8 +19,6 @@ feature:            C --- D (HEAD)
 
 In this diagram, commits `A` and `B` represent shared history. Your feature branch diverged at `B` and added `C` and `D`. Until you merge, `main` knows nothing about those changes.
 
----
-
 ## Terminal Experiment: Creating and Committing on an Isolated Branch
 
 Switch to your terminal to observe how Git manages branch isolation in your practice repository.
@@ -97,8 +95,6 @@ git log --oneline -n 2
 
 The top commit now belongs to `feature/health-check`.
 
----
-
 ## The Core Discovery: Working Tree Isolation
 
 Now observe Git's branch switching behavior in action.
@@ -156,8 +152,6 @@ tail -n 5 api.py
 
 The `health()` function immediately reappears in your file.
 
----
-
 ## Under the Hood: Branch Pointers in `.git`
 
 Why is branch creation and switching practically instantaneous in Git, even in codebases with millions of lines of code?
@@ -183,8 +177,6 @@ cat .git/refs/heads/main
 ```
 
 Each branch file contains a 40-character commit SHA plus a newline (41 bytes total). Branch creation and switching update pointer references rather than duplicating files, keeping operations fast regardless of repository size.
-
----
 
 ## Merging and Cleaning Up
 
@@ -231,8 +223,6 @@ Verify with `git branch` that only `main` remains:
 git branch
 ```
 
----
-
 ## Professional Team Workflow
 
 In real production environments, branching follows structured conventions:
@@ -255,8 +245,6 @@ On a team, branches are the foundation for code review and automated CI:
 5. **Merge & Delete**: Once approved and green, the branch merges into `main` and is deleted.
 
 Keep feature branches small and short-lived. A branch that lives for two days and touches three files merges cleanly; a branch that diverges for a month creates painful merge conflicts.
-
----
 
 ## Key Takeaways
 

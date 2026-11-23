@@ -27,8 +27,6 @@ Git compares the changes introduced between `B` and `E` against the changes intr
 - **Fast-Forward Merge**: If the active branch has not advanced since diverging (commit `E` does not exist; `main` is still at `B`), Git simply moves the `main` pointer forward to `D`. No new commit is generated.
 - **Three-Way Merge**: If both branches contain independent commits since diverging (`E` and `D` both exist), Git applies the combined diffs and generates a new **merge commit**. A merge commit has two parent commits: `E` and `D`.
 
----
-
 ## Terminal Experiment: Merges and Conflict Resolution
 
 Switch to your terminal to observe how Git executes both merge modes in your practice repository.
@@ -192,8 +190,6 @@ Notice the graph topology: the new commit unites both parent branches into a sin
 git branch -d feature/port-override
 ```
 
----
-
 ## Aborting a Merge
 
 If a merge encounters complex conflicts and you need to discard the in-progress merge state without saving changes, run:
@@ -203,8 +199,6 @@ git merge --abort
 ```
 
 Git removes all conflict markers and restores both the working tree and index to the exact state of `HEAD` before `git merge` was executed.
-
----
 
 ## Production Team Workflows
 
@@ -221,8 +215,6 @@ When merging branches on shared platforms (GitHub, GitLab, Bitbucket), teams con
 Keep feature branches small and short-lived. Long-running branches accumulate divergence against `main`, increasing the probability and scope of merge collisions.
 
 Automated CI systems create temporary merge commits between incoming branches and `main` (`refs/pull/<id>/merge`) to run test suites. This catches **semantic conflicts**—cases where Git merges files without syntax errors, but the combined logic breaks application tests—before the PR is merged.
-
----
 
 ## Key Takeaways
 

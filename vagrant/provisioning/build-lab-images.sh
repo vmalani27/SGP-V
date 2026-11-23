@@ -4,7 +4,7 @@
 # ──────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REGISTRY="${ECR_REGISTRY:-public.ecr.aws/vmalani27}"
+REGISTRY="${ECR_REGISTRY:-public.ecr.aws/i9t1l0m7}"
 TAG="${1:-dev}"
 ORCHESTRATOR_DIR="/opt/sgp/orchestrator"
 LAB_IMAGES_DIR="$ORCHESTRATOR_DIR/lab-images"

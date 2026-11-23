@@ -14,6 +14,8 @@ export interface DemoStateQuery {
 
 export interface TerminalDemoSpec {
   id: string;
+  course_id?: string;
+  module_id?: string;
   image?: string;
   pre_pull?: string[];
   /** Optional port to expose for live Web Preview in the browser. */

@@ -73,17 +73,9 @@ function buildLabMeta(
   return meta;
 }
 
-const ENV_IMAGE_FALLBACKS: Record<string, string> = {
-  'linux-basic': 'labops-ubuntu:latest',
-  'docker-basic': 'labops-docker:latest',
-  'docker-fundamentals': 'labops-docker-fundamentals:latest',
-  'docker-build': 'labops-docker-build:latest',
-  'git-fundamentals': 'labops-git-fundamentals:latest',
-  'git': 'labops-git-fundamentals:latest',
-};
-
-function envConfigFrom(labConfig: Record<string, unknown> | null): {
+function envConfigFrom(labConfig: Record<string, unknown> | null, moduleId?: string): {
   image: string;
+  module_id?: string;
   apt_packages: string[];
   pre_pull: string[];
   setup: unknown[];
@@ -92,10 +84,11 @@ function envConfigFrom(labConfig: Record<string, unknown> | null): {
   const env = (typeof envRaw === 'object' && envRaw !== null ? envRaw : {}) as Record<string, unknown>;
   const baseImage =
     (env.base_image as string | undefined) ??
-    (typeof envRaw === 'string' ? ENV_IMAGE_FALLBACKS[envRaw] || envRaw : '');
+    (typeof envRaw === 'string' ? envRaw : '');
 
   return {
     image: baseImage,
+    module_id: moduleId,
     apt_packages: Array.isArray(env.apt_packages) ? (env.apt_packages as string[]) : [],
     pre_pull: Array.isArray(env.pre_pull) ? (env.pre_pull as string[]) : [],
     setup: Array.isArray(labConfig?.setup) ? (labConfig.setup as unknown[]) : [],
@@ -441,10 +434,10 @@ export default function LabClient({
         config = null;
       }
     }
-    const result = await api.labs.start(courseId, labId, envConfigFrom(config));
+    const result = await api.labs.start(courseId, labId, envConfigFrom(config, labInfo?.moduleId));
     setLabState(labStateFrom(result));
     setPhase('running');
-  }, [courseId, labId, labConfig]);
+  }, [courseId, labId, labConfig, labInfo?.moduleId]);
 
   const handleStart = useCallback(async () => {
     cancelCelebration();
@@ -497,7 +490,7 @@ export default function LabClient({
       }
       setLabState(null);
       try {
-        const result = await api.labs.start(courseId, labId, envConfigFrom(labConfig));
+        const result = await api.labs.start(courseId, labId, envConfigFrom(labConfig, labInfo?.moduleId));
         setLabState(labStateFrom(result));
         setTerminalEpoch((prev) => prev + 1);
       } catch (e3) {

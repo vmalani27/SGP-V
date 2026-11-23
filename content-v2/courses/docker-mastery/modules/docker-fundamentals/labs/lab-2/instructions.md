@@ -8,7 +8,6 @@ You do not know what happened. You were not there when it crashed. Your job is t
 
 This is the exact situation you will face on-call. The tools are `docker ps -a`, `docker logs`, and `docker inspect`. The evidence is in the container.
 
----
 
 ## Your Goal
 
@@ -20,7 +19,6 @@ Work through the diagnostic sequence:
 4. Identify the root cause from the evidence
 5. Pull a specific environment variable from the running container using `docker inspect --format`
 
----
 
 ## Quick Reference
 
@@ -46,7 +44,6 @@ docker logs payment-api | tail -1 > ~/crash-reason.txt
 docker inspect payment-api --format '{{.State.ExitCode}}' > ~/exit-code.txt
 ```
 
----
 
 ## What You Are Not Told
 

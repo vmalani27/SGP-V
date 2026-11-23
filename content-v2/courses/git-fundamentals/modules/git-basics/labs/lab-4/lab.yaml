@@ -40,9 +40,8 @@ tasks:
   - id: inspect-changes
     summary: Explore the changes in orders.py
     prompt: >-
-      You are reviewing the active work in `/home/student/order-service`. Look around the repository and examine the modifications made to `orders.py`.
-
-      Which of the following accurately describes the uncommitted modifications in `orders.py`?
+      Inspect the uncommitted modifications in `/home/student/order-service/orders.py`.
+      Which statement accurately describes the changes in `orders.py`?
     type: multiple_choice
     options:
       - "Changes touch three separate functions (`validate_order`, `calculate_discount`, and `format_receipt`) with independent purposes."
@@ -51,26 +50,14 @@ tasks:
       - "Changes update string formatting and type annotations across all four functions without modifying runtime logic."
     validation:
       expected_answer: "Changes touch three separate functions (`validate_order`, `calculate_discount`, and `format_receipt`) with independent purposes."
-    hints:
-      - "Inspect the unstaged diff in orders.py to see which functions were edited and what changed."
-      - "Review which functions contain added or removed lines versus those that remain untouched."
-    error_message: >-
-      Inspect the diff in orders.py. Notice that the modifications touch validate_order, calculate_discount, and format_receipt, while log_audit_trail is unchanged.
 
   - id: stage-first-hunk
     summary: Stage only the quantity validation fix hunk
     prompt: >-
-      Use interactive patch staging to stage ONLY the bug fix in `validate_order`
-      (the change from quantity == 0 to quantity <= 0).
-
-      Skip the other two hunks so that they remain unstaged in your working directory.
-
-      Verify that only the validation fix is staged before moving forward.
+      In `/home/student/order-service`, stage only the `validate_order` quantity
+      check fix (`quantity <= 0`) in `orders.py`, leaving the remaining
+      modifications unstaged.
     type: terminal_action
-    hints:
-      - "Invoke interactive patch staging on orders.py to review individual hunks."
-      - "Accept the hunk corresponding to the quantity validation fix, and skip the remaining hunks."
-      - "Check your staged differences to confirm only the first change is staged."
     solution:
       command: "cd /home/student/order-service && git add -p orders.py"
     validation:
@@ -96,17 +83,14 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      Only the quantity validation fix hunk should be staged. The other modifications must remain unstaged in your working directory. Inspect your staged changes and adjust.
+      The staged changes do not contain only the quantity validation fix.
 
   - id: commit-first-hunk
     summary: Commit the staged validation fix
     prompt: >-
-      Record the staged change with a commit message that clearly describes what
-      the validation fix does.
-
+      Commit the staged `validate_order` fix with a descriptive message while
+      leaving the remaining modifications in `orders.py` unstaged.
     type: terminal_action
-    hints:
-      - "Record a new commit with a message explaining the validation bug fix."
     solution:
       command: "cd /home/student/order-service && git commit -m 'Reject non-positive quantities in validate_order'"
     validation:
@@ -132,20 +116,14 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      The staged hunk has not been committed, or other changes were prematurely recorded. Check your commit log and working tree status.
+      The staged validation fix has not been committed, or other changes were included.
 
   - id: stage-and-commit-second-hunk
     summary: Stage and commit the discount variable rename
     prompt: >-
-      1. Stage the discount variable rename refactor in
-      `calculate_discount` discount function
-
-      2. Commit the refactor with its own descriptive message.
+      Stage and commit only the `discount_amount` variable rename in
+      `calculate_discount`, leaving the receipt formatting change unstaged.
     type: terminal_action
-    hints:
-      - "Use interactive patch staging again to select the discount refactor hunk."
-      - "Skip the receipt formatting modification so it remains unstaged."
-      - "Commit the staged refactor with a message describing the variable rename."
     solution:
       command: "cd /home/student/order-service && git add -p orders.py && git commit -m 'Rename disc to discount_amount for clarity'"
     validation:
@@ -177,20 +155,13 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      The discount refactor has not been committed as its own snapshot, or the receipt formatting change was prematurely staged. Check your commit history and working tree status.
+      The discount refactor has not been committed in its own snapshot, or the receipt formatting change was staged prematurely.
 
   - id: commit-third-hunk
     summary: Stage and commit the receipt formatting change
     prompt: >-
-      Stage the final remaining change in `orders.py` (the receipt formatting update) and
-      commit it with a clear, descriptive message.
-
-      After this commit, your repository should show 4 total commits and a completely clean working directory.
+      Stage and commit the remaining receipt formatting change in `orders.py`.
     type: terminal_action
-    hints:
-      - "Stage the remaining modification in orders.py."
-      - "Commit it with a message describing the currency formatting update."
-      - "Confirm your working tree has no remaining uncommitted changes."
     solution:
       command: "cd /home/student/order-service && git add orders.py && git commit -m 'Include currency unit USD in receipt summary'"
     validation:
@@ -215,19 +186,13 @@ tasks:
       match_type: exact
       expected_output: RESULT_OK
     error_message: >-
-      The remaining receipt formatting change in orders.py has not been committed, or uncommitted modifications still exist. Verify that 4 total commits exist and your working tree is clean.
+      The receipt formatting change has not been committed or uncommitted modifications remain in the working tree.
 
   - id: publish-hunk-commits
     summary: Push your atomic commits to the remote tracking branch
     prompt: >-
-      Your working tree in `/home/student/order-service` is clean, and your local
-      `main` branch has three clean atomic commits ahead of `origin/main`.
-
-      Publish your commits to the remote tracking branch.
+      Push your local `main` commits in `/home/student/order-service` to `origin/main`.
     type: terminal_action
-    hints:
-      - "Synchronize your local branch with its remote tracking branch."
-      - "Ensure the remote repository receives all new atomic commits."
     solution:
       command: "cd /home/student/order-service && git push"
     validation:
@@ -259,4 +224,4 @@ tasks:
       match_type: exact
       expected_output: PUSH_OK
     error_message: >-
-      The remote tracking branch has not received your commits. Verify that your working tree is clean and that local HEAD is synchronized with origin/main.
+      The remote branch origin/main does not match your local commit history.

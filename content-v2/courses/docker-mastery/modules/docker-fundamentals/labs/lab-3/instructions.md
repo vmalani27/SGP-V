@@ -6,7 +6,6 @@ A container named `broken-web` is already running in your environment. Your team
 
 Your job is to diagnose it, fix it, and then practice injecting environment variables — the mechanism that makes the same image behave differently in dev, staging, and prod.
 
----
 
 ## Your Goal
 
@@ -16,7 +15,6 @@ Your job is to diagnose it, fix it, and then practice injecting environment vari
 4. Launch a second container with two environment variables injected and verify they made it in
 5. Override the default container execution and inspect its runtime configuration
 
----
 
 ## Quick Reference
 
@@ -46,7 +44,6 @@ docker run -d <image> <command...>
 docker inspect <name> --format '{{.Config.Cmd}}'
 ```
 
----
 
 ## The Key Distinction to Understand
 

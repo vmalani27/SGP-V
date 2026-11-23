@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -88,6 +87,9 @@ func IsDockerDaemonRunning() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "docker", "info")
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
 	return cmd.Run() == nil
 }
 
@@ -127,6 +129,9 @@ func CheckWSLDockerReady() (bool, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "wsl.exe", "-d", distro, "docker", "info")
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
 	if cmd.Run() == nil {
 		return true, distro
 	}
@@ -179,8 +184,23 @@ fi
 if [ ! -f /usr/bin/sysbox-runc ]; then
   echo "Installing Sysbox CE runtime..."
   SYSBOX_VERSION="0.7.0"
-  SYSBOX_URL="https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_amd64.deb"
-  curl -fsSL -o /tmp/sysbox-ce.deb "$SYSBOX_URL"
+  SYSBOX_URLS=(
+    "https://downloads.nestybox.com/sysbox/releases/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}-0.linux_amd64.deb"
+    "https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_amd64.deb"
+    "https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}-0.linux_amd64.deb"
+  )
+  DOWNLOADED=0
+  for URL in "${SYSBOX_URLS[@]}"; do
+    echo "Downloading Sysbox from $URL..."
+    if curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused -o /tmp/sysbox-ce.deb "$URL"; then
+      DOWNLOADED=1
+      break
+    fi
+  done
+  if [ "$DOWNLOADED" -eq 0 ]; then
+    echo "ERROR: Failed to download Sysbox runtime from release mirrors." >&2
+    exit 1
+  fi
   systemctl stop docker docker.socket 2>/dev/null || service docker stop 2>/dev/null || true
   apt-get install -y /tmp/sysbox-ce.deb
   rm -f /tmp/sysbox-ce.deb
@@ -271,8 +291,23 @@ fi
 if [ ! -f /usr/bin/sysbox-runc ]; then
   echo "Installing Sysbox CE runtime..."
   SYSBOX_VERSION="0.7.0"
-  SYSBOX_URL="https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_amd64.deb"
-  curl -fsSL -o /tmp/sysbox-ce.deb "$SYSBOX_URL"
+  SYSBOX_URLS=(
+    "https://downloads.nestybox.com/sysbox/releases/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}-0.linux_amd64.deb"
+    "https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_amd64.deb"
+    "https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}-0.linux_amd64.deb"
+  )
+  DOWNLOADED=0
+  for URL in "${SYSBOX_URLS[@]}"; do
+    echo "Downloading Sysbox from $URL..."
+    if curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused -o /tmp/sysbox-ce.deb "$URL"; then
+      DOWNLOADED=1
+      break
+    fi
+  done
+  if [ "$DOWNLOADED" -eq 0 ]; then
+    echo "ERROR: Failed to download Sysbox runtime from release mirrors." >&2
+    exit 1
+  fi
   $SUDO systemctl stop docker docker.socket 2>/dev/null || $SUDO service docker stop 2>/dev/null || true
   $SUDO apt-get install -y /tmp/sysbox-ce.deb
   rm -f /tmp/sysbox-ce.deb
@@ -311,15 +346,21 @@ $SUDO systemctl enable --now docker 2>/dev/null || $SUDO service docker start 2>
 func EnsureDockerReady(wslDistro string) bool {
 	if _, _, err := RunDockerCmd(wslDistro, "info"); err == nil {
 		if wslDistro != "" && wslDistro != "native" {
-			EnsureWSL2Provisioned(wslDistro)
+			if !EnsureWSL2Provisioned(wslDistro) {
+				return false
+			}
 		} else if runtime.GOOS == "linux" {
-			EnsureNativeLinuxProvisioned()
+			if !EnsureNativeLinuxProvisioned() {
+				return false
+			}
 		}
 		return true
 	}
 
 	if wslDistro != "" && wslDistro != "native" {
-		EnsureWSL2Provisioned(wslDistro)
+		if !EnsureWSL2Provisioned(wslDistro) {
+			return false
+		}
 
 		ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = exec.CommandContext(ctx1, "wsl.exe", "-d", wslDistro, "-u", "root", "service", "docker", "start").Run()
@@ -329,7 +370,9 @@ func EnsureDockerReady(wslDistro string) bool {
 		_ = exec.CommandContext(ctx2, "wsl.exe", "-d", wslDistro, "-u", "root", "systemctl", "start", "docker").Run()
 		cancel2()
 	} else if runtime.GOOS == "linux" {
-		EnsureNativeLinuxProvisioned()
+		if !EnsureNativeLinuxProvisioned() {
+			return false
+		}
 
 		ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = exec.CommandContext(ctx1, "systemctl", "start", "docker").Run()
@@ -404,23 +447,43 @@ func cleanStaleContainers(wslDistro string) {
 
 // EnsureImagePresent checks if a Docker image is cached locally. If missing, it pulls the image.
 // If silent is true, output is suppressed so background pre-warming does not interfere with the user's terminal.
-func EnsureImagePresent(wslDistro string, imageName string, silent bool, tags ...string) {
+func EnsureImagePresent(wslDistro string, imageName string, silent bool, tags ...string) bool {
 	_, _, inspectErr := RunDockerCmd(wslDistro, "image", "inspect", imageName)
 	if inspectErr != nil {
 		if !silent {
-			fmt.Printf("\n  -> Pre-fetching image (%s)...\n", imageName)
+			fmt.Printf("  -> Pre-fetching image (%s)...\n", imageName)
 		}
-		var cmd *exec.Cmd
-		if wslDistro != "" && wslDistro != "native" {
-			cmd = exec.Command("wsl.exe", "-d", wslDistro, "docker", "pull", imageName)
-		} else {
-			cmd = exec.Command("docker", "pull", imageName)
+		maxRetries := 3
+		var pullErr error
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			var cmd *exec.Cmd
+			if wslDistro != "" && wslDistro != "native" {
+				cmd = exec.Command("wsl.exe", "-d", wslDistro, "docker", "pull", imageName)
+			} else {
+				cmd = exec.Command("docker", "pull", imageName)
+			}
+			if !silent {
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+			}
+			pullErr = cmd.Run()
+			if pullErr == nil {
+				break
+			}
+			if attempt < maxRetries {
+				backoff := time.Duration(attempt*4) * time.Second
+				if !silent {
+					fmt.Printf("  Warning: pull failed for %s, retrying in %v...\n", imageName, backoff)
+				}
+				time.Sleep(backoff)
+			}
 		}
-		if !silent {
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+		if pullErr != nil {
+			if !silent {
+				fmt.Printf("  Error: failed to pull %s after %d attempts: %v\n", imageName, maxRetries, pullErr)
+			}
+			return false
 		}
-		_ = cmd.Run()
 	}
 
 	for _, tag := range tags {
@@ -435,6 +498,7 @@ func EnsureImagePresent(wslDistro string, imageName string, silent bool, tags ..
 			_, _, _ = RunDockerCmd(wslDistro, "image", "tag", imageName, tag)
 		}
 	}
+	return true
 }
 
 // categorizeImages splits managed images into core application stack images vs course lab environment images.
@@ -453,17 +517,11 @@ func categorizeImages(channel string) (stack []managedImage, lab []managedImage,
 	return stack, lab, nil
 }
 
-// PreloadImagesParallel pulls and tags images concurrently using goroutines.
-func PreloadImagesParallel(wslDistro string, images []managedImage, silent bool) {
-	var wg sync.WaitGroup
+// PreloadImages pulls and tags images sequentially with backoff retry to avoid ECR rate limiting.
+func PreloadImages(wslDistro string, images []managedImage, silent bool) {
 	for _, img := range images {
-		wg.Add(1)
-		go func(m managedImage) {
-			defer wg.Done()
-			EnsureImagePresent(wslDistro, m.Remote, silent, m.Tags...)
-		}(img)
+		EnsureImagePresent(wslDistro, img.Remote, silent, img.Tags...)
 	}
-	wg.Wait()
 }
 
 // StartNativeStack manages the container stack natively without docker-compose.
@@ -538,11 +596,11 @@ func StartNativeStack(wslDistro string) bool {
 		}
 	}
 
-	// [Phase 1] Pre-fetch core control-plane stack images concurrently for ultra-fast startup
-	PreloadImagesParallel(wslDistro, stackImages, false)
+	// [Phase 1] Pre-fetch core control-plane stack images sequentially with backoff retry
+	PreloadImages(wslDistro, stackImages, false)
 
-	// [Phase 2] Pre-warm course lab environment images in background so onboarding is instant
-	go PreloadImagesParallel(wslDistro, labImages, true)
+	// [Phase 2] Pre-fetch and tag course lab environment images synchronously so on-demand pulls are never triggered
+	PreloadImages(wslDistro, labImages, false)
 
 	// [1/4] Preparing workspace network
 	fmt.Print("[1/4] Preparing workspace network... ")

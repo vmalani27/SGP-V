@@ -348,6 +348,7 @@ export const api = {
       labId: string,
       envConfig: {
         image: string;
+        module_id?: string;
         apt_packages?: string[];
         pre_pull?: string[];
         setup?: unknown[];
@@ -364,8 +365,9 @@ export const api = {
         body: JSON.stringify({
           user_id: userId,
           course_id: courseId,
+          module_id: envConfig.module_id,
           lab_id: labId,
-          image: envConfig.image || "labops-docker:latest",
+          image: envConfig.image || '',
           apt_packages: envConfig.apt_packages,
           pre_pull: envConfig.pre_pull,
           setup: envConfig.setup
@@ -608,7 +610,11 @@ export const api = {
     },
 },
   demos: {
-    ensure: async (demoId: string, spec: { image?: string; pre_pull?: string[] }, opts: { signal?: AbortSignal } = {}) => {
+    ensure: async (
+      demoId: string,
+      spec: { image?: string; pre_pull?: string[]; course_id?: string; module_id?: string },
+      opts: { signal?: AbortSignal } = {}
+    ) => {
       const userId = await getUserId();
       const res = await orchestratorFetch<{
         name: string;
@@ -622,7 +628,10 @@ export const api = {
           body: JSON.stringify({
             user_id: userId,
             demo_id: demoId,
-            image: spec.image || 'labops-docker:latest',
+            course_id: spec.course_id,
+            module_id: spec.module_id,
+            image: spec.image || '',
+            pre_pull: spec.pre_pull,
           }),
         }
       );

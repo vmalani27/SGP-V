@@ -8,7 +8,6 @@ Your assignment is to provision isolated network tiers, position services strict
 
 This is an independent assessment. You are given operational constraints and acceptance criteria; you must determine the appropriate Docker commands and configurations to achieve the desired state.
 
----
 
 ## Target Architecture
 
@@ -25,7 +24,6 @@ This is an independent assessment. You are given operational constraints and acc
 (web-proxy must NOT be able to resolve or communicate with cache-db)
 ```
 
----
 
 ## Operational Specifications & Contract
 
@@ -55,7 +53,6 @@ This is an independent assessment. You are given operational constraints and acc
 - `app-gateway` must be capable of resolving and communicating with `cache-db` on port 6379 and `web-proxy` on port 80 using standard service discovery.
 - `web-proxy` must be strictly isolated from `data-net`. Any attempt from `web-proxy` to resolve or transmit packets to `cache-db` must fail.
 
----
 
 ## Acceptance Criteria
 

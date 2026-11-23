@@ -8,7 +8,6 @@ Your assignment is to provision an isolated named Docker volume, attach it to a 
 
 This is an independent assessment. You are given operational constraints and acceptance criteria; you must determine the appropriate Docker CLI commands, mount syntax, and database commands to satisfy the contract.
 
----
 
 ## Operational Specifications & Contract
 
@@ -39,7 +38,6 @@ This is an independent assessment. You are given operational constraints and acc
 - Storage Mount: Attach the existing `inventory-db-data` volume at `/data`.
 - Verification: Querying the key `SYS_CHECK` must successfully retrieve `PERSISTENCE_ACTIVE_2026`.
 
----
 
 ## Acceptance Criteria
 

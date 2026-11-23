@@ -8,7 +8,6 @@ Manual container commands have created operational friction and deployment failu
 
 This is an independent assessment. You are provided the operational specifications and acceptance criteria; you must author the configuration and execute the deployment without guided instruction.
 
----
 
 ## Target Architecture
 
@@ -25,7 +24,6 @@ This is an independent assessment. You are provided the operational specificatio
 (proxy must NOT be able to resolve or route packets to cache)
 ```
 
----
 
 ## Operational Specifications & Contract
 
@@ -60,7 +58,6 @@ This is an independent assessment. You are provided the operational specificatio
 - Public HTTP traffic on `http://localhost:8080` must return HTTP 200 from the proxy.
 - Perimeter security must be maintained: attempts by the proxy container to communicate with `cache` must be blocked by network isolation.
 
----
 
 ## Acceptance Criteria
 

@@ -29,7 +29,7 @@ docker build
                          └── ...
 ```
 
-The context is not just "the folder with the Dockerfile". It is the set of files Docker makes available to the build. Everything `COPY` refers to must live inside it.
+The build context defines the exact set of files Docker makes available to the build. Everything `COPY` refers to must live inside it.
 
 ## Why `COPY` Cannot Access Arbitrary Host Paths
 
@@ -38,7 +38,7 @@ Because the build only sees the context, `COPY` is limited to it:
 - `COPY hello.txt .` works when `hello.txt` is inside the context.
 - `COPY ../sibling/something.txt .` **fails** — that file is outside the directory you handed to `docker build`.
 
-This is not a limitation you can work around with paths; it is the boundary of what the build is allowed to see. If you need a file in the image, it must be inside the build context.
+The build context acts as a strict boundary on what the Docker daemon can access during a build. If you need a file in the image, it must live inside the build context.
 
 ## What Gets Sent to the Daemon
 
