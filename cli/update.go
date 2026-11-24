@@ -232,7 +232,7 @@ func RunUpdate() bool {
 		if wslReady {
 			useWSL = true
 		} else {
-			fmt.Println("LabOps cannot update because the Docker daemon is not running on host or inside WSL2.")
+			Println("LabOps cannot update because the Docker daemon is not running on host or inside WSL2.")
 			return false
 		}
 	}
@@ -242,7 +242,7 @@ func RunUpdate() bool {
 		targetDistro = wslDistro
 	}
 	if !EnsureDockerReady(targetDistro) {
-		fmt.Println("LabOps cannot update because the Docker daemon did not respond in time.")
+		Println("LabOps cannot update because the Docker daemon did not respond in time.")
 		return false
 	}
 
@@ -258,29 +258,29 @@ func RunUpdate() bool {
 	}
 
 	if useWSL {
-		fmt.Printf("Updating LabOps (%s channel) via WSL2 (%s)\n", channel, wslDistro)
+		Printf("Updating LabOps (%s channel) via WSL2 (%s)\n", channel, wslDistro)
 	} else {
-		fmt.Printf("Updating LabOps (%s channel)\n", channel)
+		Printf("Updating LabOps (%s channel)\n", channel)
 	}
 	if manifest != nil {
-		fmt.Printf("Release version: %s\n", manifest.Version)
+		Printf("Release version: %s\n", manifest.Version)
 		state.ReleaseVersion = manifest.Version
 		state.ContentVersion = manifest.Content.Version
 	} else {
-		fmt.Printf("Notice: No release manifest for channel '%s' (falling back to direct channel tags)\n", channel)
+		Printf("Notice: No release manifest for channel '%s' (falling back to direct channel tags)\n", channel)
 		if err != nil {
 			// Intentionally silent or verbose if needed
 		}
 	}
 
-	fmt.Println("==================================================")
-	fmt.Println("[1/2] Updating course curriculum content...")
+	Println("==================================================")
+	Println("[1/2] Updating course curriculum content...")
 	if err := SyncCourseContent(cdnURL, true); err != nil {
-		fmt.Printf("Warning: Could not sync latest content from %s: %v\n", cdnURL, err)
-		fmt.Println("Continuing with cached course content...")
+		Printf("Warning: Could not sync latest content from %s: %v\n", cdnURL, err)
+		Println("Continuing with cached course content...")
 	}
 
-	fmt.Println("\n[2/2] Updating managed container images...")
+	Println("\n[2/2] Updating managed container images...")
 
 	if manifest != nil && len(manifest.Images) > 0 {
 		keys := make([]string, 0, len(manifest.Images))
@@ -294,7 +294,7 @@ func RunUpdate() bool {
 			name := imageDisplayName(key)
 			target := imgMeta.Remote
 
-			fmt.Printf("  - [%d/%d] Updating %s (%s)...\n", index+1, len(keys), name, imgMeta.Remote)
+			Printf("  - [%d/%d] Updating %s (%s)...\n", index+1, len(keys), name, imgMeta.Remote)
 			var cmd *exec.Cmd
 			if useWSL {
 				cmd = exec.Command("wsl.exe", "-d", wslDistro, "docker", "pull", target)
@@ -304,7 +304,7 @@ func RunUpdate() bool {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
-				fmt.Printf("Update failed for %s: %v\n", name, err)
+				Printf("Update failed for %s: %v\n", name, err)
 				return false
 			}
 
@@ -316,7 +316,7 @@ func RunUpdate() bool {
 					tagCmd = exec.Command("docker", "tag", target, imgMeta.Alias)
 				}
 				if err := tagCmd.Run(); err != nil {
-					fmt.Printf("Update failed while tagging %s as %s: %v\n", name, imgMeta.Alias, err)
+					Printf("Update failed while tagging %s as %s: %v\n", name, imgMeta.Alias, err)
 					return false
 				}
 			}
@@ -331,7 +331,7 @@ func RunUpdate() bool {
 	} else {
 		images := labOpsImages(channel)
 		for index, image := range images {
-			fmt.Printf("  - [%d/%d] Updating %s...\n", index+1, len(images), image.Name)
+			Printf("  - [%d/%d] Updating %s...\n", index+1, len(images), image.Name)
 			var cmd *exec.Cmd
 			if useWSL {
 				cmd = exec.Command("wsl.exe", "-d", wslDistro, "docker", "pull", image.Remote)
@@ -341,7 +341,7 @@ func RunUpdate() bool {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
-				fmt.Printf("Update failed for %s: %v\n", image.Name, err)
+				Printf("Update failed for %s: %v\n", image.Name, err)
 				return false
 			}
 			for _, tag := range image.Tags {
@@ -352,7 +352,7 @@ func RunUpdate() bool {
 					tagCmd = exec.Command("docker", "tag", image.Remote, tag)
 				}
 				if err := tagCmd.Run(); err != nil {
-					fmt.Printf("Update failed while preparing %s: %v\n", image.Name, err)
+					Printf("Update failed while preparing %s: %v\n", image.Name, err)
 					return false
 				}
 			}
@@ -366,11 +366,11 @@ func RunUpdate() bool {
 	}
 
 	if err := saveInstallState(state); err != nil {
-		fmt.Printf("Images updated, but LabOps state could not be saved: %v\n", err)
+		Printf("Images updated, but LabOps state could not be saved: %v\n", err)
 		return false
 	}
-	fmt.Println("==================================================")
-	fmt.Println("LabOps is up to date. Run 'labops start' to launch it.")
+	Println("==================================================")
+	Println("LabOps is up to date. Run 'labops start' to launch it.")
 	return true
 }
 
@@ -378,36 +378,36 @@ func RunUpdate() bool {
 func RunVersion() bool {
 	path, err := statePath()
 	if err != nil {
-		fmt.Printf("Unable to locate LabOps state: %v\n", err)
+		Printf("Unable to locate LabOps state: %v\n", err)
 		return false
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Println("LabOps is not installed. Run 'labops update' first.")
+			Println("LabOps is not installed. Run 'labops update' first.")
 			return true
 		}
-		fmt.Printf("Unable to read LabOps state: %v\n", err)
+		Printf("Unable to read LabOps state: %v\n", err)
 		return false
 	}
 	var state installState
 	if err := json.Unmarshal(data, &state); err != nil {
-		fmt.Printf("LabOps state is invalid: %v\n", err)
+		Printf("LabOps state is invalid: %v\n", err)
 		return false
 	}
 	if state.ReleaseVersion != "" {
-		fmt.Printf("LabOps release:  %s\n", state.ReleaseVersion)
+		Printf("LabOps release:  %s\n", state.ReleaseVersion)
 	} else {
-		fmt.Println("LabOps release:  (custom / dev build)")
+		Println("LabOps release:  (custom / dev build)")
 	}
-	fmt.Printf("LabOps channel:  %s\n", state.Channel)
-	fmt.Printf("Content CDN:     %s\n", GetContentCDNURL())
-	fmt.Printf("Content version: %s\n", ReadLocalContentVersion())
-	fmt.Printf("Content cache:   %s\n", GetContentDir())
-	fmt.Printf("Last update:     %s\n", state.UpdatedAt)
-	fmt.Printf("Managed images:  %d\n", len(state.Images))
+	Printf("LabOps channel:  %s\n", state.Channel)
+	Printf("Content CDN:     %s\n", GetContentCDNURL())
+	Printf("Content version: %s\n", ReadLocalContentVersion())
+	Printf("Content cache:   %s\n", GetContentDir())
+	Printf("Last update:     %s\n", state.UpdatedAt)
+	Printf("Managed images:  %d\n", len(state.Images))
 	if len(state.ImageDigests) > 0 {
-		fmt.Println("\nInstalled Images & Digests:")
+		Println("\nInstalled Images & Digests:")
 		keys := make([]string, 0, len(state.ImageDigests))
 		for k := range state.ImageDigests {
 			keys = append(keys, k)
@@ -416,9 +416,9 @@ func RunVersion() bool {
 		for _, img := range keys {
 			digest := state.ImageDigests[img]
 			if digest != "" {
-				fmt.Printf("  - %-28s %s\n", img, digest)
+				Printf("  - %-28s %s\n", img, digest)
 			} else {
-				fmt.Printf("  - %-28s %s\n", img, state.Images[img])
+				Printf("  - %-28s %s\n", img, state.Images[img])
 			}
 		}
 	}

@@ -329,29 +329,12 @@ func CheckPort80Availability() (bool, int) {
 	return true, port
 }
 
-// printCLI outputs formatted messages ensuring CRLF on Windows to prevent terminal staircasing.
-func printCLI(format string, a ...any) {
-	msg := fmt.Sprintf(format, a...)
-	if runtime.GOOS == "windows" {
-		msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\r\n", "\n"), "\n", "\r\n")
-	}
-	fmt.Print(msg)
-}
-
-func printLine(a ...any) {
-	msg := fmt.Sprintln(a...)
-	if runtime.GOOS == "windows" {
-		msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\r\n", "\n"), "\n", "\r\n")
-	}
-	fmt.Print(msg)
-}
-
 // RunDoctor runs all hardware and software diagnostics concurrently in a clean, student-friendly format.
 func RunDoctor() bool {
 	initWindowsConsole()
 
-	printLine("LabOps System Check")
-	printLine("------------------------------------")
+	Println("LabOps System Check")
+	Println("------------------------------------")
 
 	var wg sync.WaitGroup
 
@@ -419,10 +402,10 @@ func RunDoctor() bool {
 	}
 
 	if sysOk {
-		printCLI("  [OK]   %-21s %s\n", "System requirements", sysDetail)
+		Printf("  [OK]   %-21s %s\n", "System requirements", sysDetail)
 	} else {
 		allPassed = false
-		printCLI("  [FAIL] %-21s %s\n", "System requirements", sysDetail)
+		Printf("  [FAIL] %-21s %s\n", "System requirements", sysDetail)
 	}
 
 	// 2. Lab Runtime Engine (Docker)
@@ -443,10 +426,10 @@ func RunDoctor() bool {
 	}
 
 	if engineOk {
-		printCLI("  [OK]   %-21s %s\n", "Lab Runtime Engine", engineDetail)
+		Printf("  [OK]   %-21s %s\n", "Lab Runtime Engine", engineDetail)
 	} else {
 		allPassed = false
-		printCLI("  [FAIL] %-21s %s\n", "Lab Runtime Engine", engineDetail)
+		Printf("  [FAIL] %-21s %s\n", "Lab Runtime Engine", engineDetail)
 	}
 
 	// 3. Local Workspace Port
@@ -468,22 +451,22 @@ func RunDoctor() bool {
 	}
 
 	if portOk {
-		printCLI("  [OK]   %-21s %s\n", "Workspace Port", portDetail)
+		Printf("  [OK]   %-21s %s\n", "Workspace Port", portDetail)
 	} else {
 		allPassed = false
-		printCLI("  [FAIL] %-21s %s\n", "Workspace Port", portDetail)
+		Printf("  [FAIL] %-21s %s\n", "Workspace Port", portDetail)
 	}
 
 	// Result Summary
-	printLine()
+	Println()
 	if allPassed {
-		printLine("Everything looks good! Run 'labops start' to begin.")
+		Println("Everything looks good! Run 'labops start' to begin.")
 		return true
 	}
 
-	printLine("Action Needed:")
+	Println("Action Needed:")
 	for _, hint := range failureHints {
-		printCLI("  • %s\n", hint)
+		Printf("  • %s\n", hint)
 	}
 
 	return false

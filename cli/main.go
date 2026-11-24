@@ -1,30 +1,29 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"strings"
 )
 
 // PrintHelp displays CLI usage guidance.
 func PrintHelp() {
-	fmt.Println("LabOps — Interactive DevOps Learning Environment")
-	fmt.Println("Usage: labops <command>")
-	fmt.Println("\nCommands:")
-	fmt.Println("  start     Start your learning workspace (opens in browser)")
-	fmt.Println("  stop      Stop your learning workspace")
-	fmt.Println("  restart   Restart your learning workspace")
-	fmt.Println("  status    Check if your workspace is running")
-	fmt.Println("  update    Download latest courses and lab materials")
-	fmt.Println("  doctor    Check if your computer is ready to run LabOps")
-	fmt.Println("  logs      Show troubleshooting logs")
-	fmt.Println("  version   Show installed version of LabOps")
-	fmt.Println("  help      Show this help menu")
-	fmt.Println("\nQuick Start:")
-	fmt.Println("  1. Check system:   labops doctor")
-	fmt.Println("  2. Start learning: labops start")
-	fmt.Println("  3. Stop when done: labops stop")
-	fmt.Println("==================================================")
+	Println("LabOps — Interactive DevOps Learning Environment")
+	Println("Usage: labops <command>")
+	Println("\nCommands:")
+	Println("  start     Start your learning workspace (opens in browser)")
+	Println("  stop      Stop your learning workspace")
+	Println("  restart   Restart your learning workspace")
+	Println("  status    Check if your workspace is running")
+	Println("  update    Download latest courses and lab materials")
+	Println("  doctor    Check if your computer is ready to run LabOps")
+	Println("  logs      Show troubleshooting logs")
+	Println("  version   Show installed version of LabOps")
+	Println("  help      Show this help menu")
+	Println("\nQuick Start:")
+	Println("  1. Check system:   labops doctor")
+	Println("  2. Start learning: labops start")
+	Println("  3. Stop when done: labops stop")
+	Println("==================================================")
 }
 
 func main() {
@@ -59,7 +58,7 @@ func main() {
 		PrintHelp()
 		os.Exit(0)
 	default:
-		fmt.Printf("Error: Unknown command: '%s'\n", command)
+		Printf("Error: Unknown command: '%s'\n", command)
 		PrintHelp()
 		os.Exit(1)
 	}

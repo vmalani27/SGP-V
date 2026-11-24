@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -12,7 +11,7 @@ func RunStatus() bool {
 	if wslReady {
 		wslDistro = distro
 	} else if !IsDockerDaemonRunning() {
-		fmt.Println("LabOps is not running (Docker daemon is inactive).")
+		Println("LabOps is not running (Docker daemon is inactive).")
 		return false
 	}
 
@@ -28,8 +27,8 @@ func RunStatus() bool {
 		{Name: "labops-content-sync", Key: "Content Sync", Label: ""},
 	}
 
-	fmt.Println("LabOps Stack Status:")
-	fmt.Println("--------------------------------------------------")
+	Println("LabOps Stack Status:")
+	Println("--------------------------------------------------")
 
 	anyRunning := false
 	for _, s := range services {
@@ -38,21 +37,25 @@ func RunStatus() bool {
 		if err == nil && statusStr == "running" {
 			anyRunning = true
 			if s.Label != "" {
-				fmt.Printf("  [OK]   %-22s %s (%s)\n", s.Key, s.Label, statusStr)
+				Printf("  [OK]   %-22s %s (%s)\n", s.Key, s.Label, statusStr)
 			} else {
-				fmt.Printf("  [OK]   %-22s %s\n", s.Key, statusStr)
+				Printf("  [OK]   %-22s %s\n", s.Key, statusStr)
 			}
 		} else {
-			fmt.Printf("  [STOP] %-22s Stopped\n", s.Key)
+			Printf("  [STOP] %-22s Stopped\n", s.Key)
 		}
 	}
 
-	fmt.Println("--------------------------------------------------")
-	if anyRunning && IsAlreadyHealthy() {
-		fmt.Println("LabOps is active at http://localhost:3000")
+	Println("--------------------------------------------------")
+	if anyRunning {
+		if IsAlreadyHealthy() {
+			Println("LabOps is active at http://localhost:3000")
+			return true
+		}
+		Println("LabOps services are running (starting up at http://localhost:3000)...")
 		return true
 	}
 
-	fmt.Println("LabOps is not active. Run 'labops start' to launch.")
+	Println("LabOps is not active. Run 'labops start' to launch.")
 	return false
 }

@@ -153,8 +153,8 @@ func EnsureWSL2Provisioned(wslDistro string) bool {
 		return true
 	}
 
-	fmt.Printf("\n[Bootstrap] Auto-provisioning WSL2 (%s) with Docker CE & Sysbox runtime...\n", wslDistro)
-	fmt.Println("This initial setup may take 1-2 minutes. Please wait...")
+	Printf("\n[Bootstrap] Auto-provisioning WSL2 (%s) with Docker CE & Sysbox runtime...\n", wslDistro)
+	Println("This initial setup may take 1-2 minutes. Please wait...")
 
 	script := `set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -228,11 +228,11 @@ systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null ||
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
-		fmt.Printf("Warning: WSL2 auto-bootstrap encountered an issue: %v\n", err)
+		Printf("Warning: WSL2 auto-bootstrap encountered an issue: %v\n", err)
 		return false
 	}
 
-	fmt.Println("WSL2 environment auto-provisioned successfully!")
+	Println("WSL2 environment auto-provisioned successfully!")
 	return true
 }
 
@@ -257,8 +257,8 @@ func EnsureNativeLinuxProvisioned() bool {
 		return true
 	}
 
-	fmt.Println("\n[Bootstrap] Auto-provisioning Native Linux with Docker CE & Sysbox runtime...")
-	fmt.Println("This initial setup may take 1-2 minutes. Please wait...")
+	Println("\n[Bootstrap] Auto-provisioning Native Linux with Docker CE & Sysbox runtime...")
+	Println("This initial setup may take 1-2 minutes. Please wait...")
 
 	script := `set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -334,11 +334,11 @@ $SUDO systemctl enable --now docker 2>/dev/null || $SUDO service docker start 2>
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
-		fmt.Printf("Warning: Native Linux auto-bootstrap encountered an issue: %v\n", err)
+		Printf("Warning: Native Linux auto-bootstrap encountered an issue: %v\n", err)
 		return false
 	}
 
-	fmt.Println("Native Linux environment auto-provisioned successfully!")
+	Println("Native Linux environment auto-provisioned successfully!")
 	return true
 }
 
@@ -451,7 +451,7 @@ func EnsureImagePresent(wslDistro string, imageName string, silent bool, tags ..
 	_, _, inspectErr := RunDockerCmd(wslDistro, "image", "inspect", imageName)
 	if inspectErr != nil {
 		if !silent {
-			fmt.Printf("  -> Pre-fetching image (%s)...\n", imageName)
+			Printf("  -> Pre-fetching image (%s)...\n", imageName)
 		}
 		maxRetries := 3
 		var pullErr error
@@ -473,14 +473,14 @@ func EnsureImagePresent(wslDistro string, imageName string, silent bool, tags ..
 			if attempt < maxRetries {
 				backoff := time.Duration(attempt*4) * time.Second
 				if !silent {
-					fmt.Printf("  Warning: pull failed for %s, retrying in %v...\n", imageName, backoff)
+					Printf("  Warning: pull failed for %s, retrying in %v...\n", imageName, backoff)
 				}
 				time.Sleep(backoff)
 			}
 		}
 		if pullErr != nil {
 			if !silent {
-				fmt.Printf("  Error: failed to pull %s after %d attempts: %v\n", imageName, maxRetries, pullErr)
+				Printf("  Error: failed to pull %s after %d attempts: %v\n", imageName, maxRetries, pullErr)
 			}
 			return false
 		}
@@ -493,7 +493,7 @@ func EnsureImagePresent(wslDistro string, imageName string, silent bool, tags ..
 		_, _, tagErr := RunDockerCmd(wslDistro, "image", "inspect", tag)
 		if tagErr != nil {
 			if !silent {
-				fmt.Printf("  -> Tagging %s as %s...\n", imageName, tag)
+				Printf("  -> Tagging %s as %s...\n", imageName, tag)
 			}
 			_, _, _ = RunDockerCmd(wslDistro, "image", "tag", imageName, tag)
 		}
@@ -531,25 +531,25 @@ func StartNativeStack(wslDistro string) bool {
 		modeName = fmt.Sprintf("Native WSL2 Mode (%s)", wslDistro)
 	}
 
-	fmt.Printf("\nStarting LabOps in %s...\n", modeName)
-	fmt.Println("--------------------------------------------------")
+	Printf("\nStarting LabOps in %s...\n", modeName)
+	Println("--------------------------------------------------")
 
 	if !EnsureDockerReady(wslDistro) {
-		fmt.Println("Error: Docker daemon did not respond in time.")
-		fmt.Println("Please ensure Docker is running or start Docker inside WSL2.")
+		Println("Error: Docker daemon did not respond in time.")
+		Println("Please ensure Docker is running or start Docker inside WSL2.")
 		return false
 	}
 
 	// Fast-path: if workspace is already running and healthy
 	if IsAlreadyHealthy() {
-		fmt.Println("LabOps is already running at http://localhost:3000")
+		Println("LabOps is already running at http://localhost:3000")
 		_ = OpenBrowser("http://localhost:3000")
 		return true
 	}
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Printf("Error: Unable to determine home directory: %v\n", err)
+		Printf("Error: Unable to determine home directory: %v\n", err)
 		return false
 	}
 
@@ -603,22 +603,22 @@ func StartNativeStack(wslDistro string) bool {
 	PreloadImages(wslDistro, labImages, false)
 
 	// [1/4] Preparing workspace network
-	fmt.Print("[1/4] Preparing workspace network... ")
+	Print("[1/4] Preparing workspace network... ")
 	_, _, _ = RunDockerCmd(wslDistro, "network", "create", "labops-net")
 
 	// Silently stop and remove stale containers to avoid name/port conflicts
 	cleanStaleContainers(wslDistro)
-	fmt.Println("done.")
+	Println("done.")
 
 	// Check if port 3000 is still occupied after removing stale containers
 	if !CheckPortAvailable(3000) {
-		fmt.Println("\nError: Port 3000 is already in use by another application on your machine.")
-		fmt.Println("Please close the conflicting application or run 'labops stop' to reset stale containers.")
+		Println("\nError: Port 3000 is already in use by another application on your machine.")
+		Println("Please close the conflicting application or run 'labops stop' to reset stale containers.")
 		return false
 	}
 
 	// [2/4] Starting core services (git-server, content-sync, orchestrator)
-	fmt.Print("[2/4] Starting core services... ")
+	Print("[2/4] Starting core services... ")
 
 	// Git Server
 	gitImage = reg + "/labops-git-server:latest"
@@ -650,8 +650,8 @@ func StartNativeStack(wslDistro string) bool {
 		"sh", "-c", "(/bin/sh -c 'until su-exec git gitea admin user list >/dev/null 2>&1; do sleep 2; done; su-exec git gitea admin user create --username student --password password123 --email student@example.local --admin || true') & exec /usr/bin/entrypoint",
 	}
 	if _, stderr, err := RunDockerCmd(wslDistro, gitCmd...); err != nil {
-		fmt.Println("FAILED")
-		fmt.Printf("Error starting Git Server: %s\n", stderr)
+		Println("FAILED")
+		Printf("Error starting Git Server: %s\n", stderr)
 		return false
 	}
 
@@ -672,8 +672,8 @@ func StartNativeStack(wslDistro string) bool {
 		syncImage,
 	}
 	if _, stderr, err := RunDockerCmd(wslDistro, syncCmd...); err != nil {
-		fmt.Println("FAILED")
-		fmt.Printf("Error starting Content Sync: %s\n", stderr)
+		Println("FAILED")
+		Printf("Error starting Content Sync: %s\n", stderr)
 		return false
 	}
 
@@ -698,14 +698,14 @@ func StartNativeStack(wslDistro string) bool {
 		orchImage,
 	}
 	if _, stderr, err := RunDockerCmd(wslDistro, orchCmd...); err != nil {
-		fmt.Println("FAILED")
-		fmt.Printf("Error starting Orchestrator: %s\n", stderr)
+		Println("FAILED")
+		Printf("Error starting Orchestrator: %s\n", stderr)
 		return false
 	}
-	fmt.Println("done.")
+	Println("done.")
 
 	// [3/4] Initializing gateway and web UI
-	fmt.Print("[3/4] Initializing gateway and web UI... ")
+	Print("[3/4] Initializing gateway and web UI... ")
 
 	// Frontend
 	feImage = reg + "/labops-frontend:" + chanName
@@ -726,8 +726,8 @@ func StartNativeStack(wslDistro string) bool {
 		feImage,
 	}
 	if _, stderr, err := RunDockerCmd(wslDistro, feCmd...); err != nil {
-		fmt.Println("FAILED")
-		fmt.Printf("Error starting Frontend: %s\n", stderr)
+		Println("FAILED")
+		Printf("Error starting Frontend: %s\n", stderr)
 		return false
 	}
 
@@ -743,31 +743,31 @@ func StartNativeStack(wslDistro string) bool {
 		proxyImage,
 	}
 	if _, stderr, err := RunDockerCmd(wslDistro, proxyCmd...); err != nil {
-		fmt.Println("FAILED")
+		Println("FAILED")
 		if strings.Contains(strings.ToLower(stderr), "port is already allocated") || strings.Contains(strings.ToLower(stderr), "address already in use") {
-			fmt.Println("\nError: Port 3000 is already in use by another application on your machine.")
-			fmt.Println("Please close the conflicting application or run 'labops stop' to reset stale containers.")
+			Println("\nError: Port 3000 is already in use by another application on your machine.")
+			Println("Please close the conflicting application or run 'labops stop' to reset stale containers.")
 		} else {
-			fmt.Printf("Error starting Proxy gateway: %s\n", stderr)
+			Printf("Error starting Proxy gateway: %s\n", stderr)
 		}
 		return false
 	}
-	fmt.Println("done.")
+	Println("done.")
 
 	// [4/4] Verifying health
-	fmt.Print("[4/4] Verifying health... ")
+	Print("[4/4] Verifying health... ")
 	frontendURL := "http://localhost:3000"
 	if !PollOrchestratorEndpoint(45*time.Second) || !PollEndpoint(frontendURL, 45*time.Second) {
-		fmt.Println("FAILED")
-		fmt.Println("Error: Workspace took too long to respond. Run 'labops restart' or check 'labops logs'.")
+		Println("FAILED")
+		Println("Error: Workspace took too long to respond. Run 'labops restart' or check 'labops logs'.")
 		return false
 	}
 
-	fmt.Println("done.")
-	fmt.Println("Opening http://localhost:3000 in your browser...")
+	Println("done.")
+	Println("Opening http://localhost:3000 in your browser...")
 
 	if err := OpenBrowser(frontendURL); err != nil {
-		fmt.Println("Please open http://localhost:3000 manually.")
+		Println("Please open http://localhost:3000 manually.")
 	}
 
 	return true
@@ -782,41 +782,41 @@ func StartWSL2Mode(distro string) bool {
 func StartDockerMode() bool {
 	if !CheckDependency("docker") {
 		if wslAvailable, distro := CheckWSL2Available(); wslAvailable {
-			fmt.Printf("Host 'docker' CLI not found, but detected WSL2 (%s).\n", distro)
-			fmt.Println("Switching to Native WSL2 Mode...")
+			Printf("Host 'docker' CLI not found, but detected WSL2 (%s).\n", distro)
+			Println("Switching to Native WSL2 Mode...")
 			return StartWSL2Mode(distro)
 		}
 		if runtime.GOOS == "linux" {
-			fmt.Println("Host 'docker' CLI not found. Attempting Native Linux auto-provisioning...")
+			Println("Host 'docker' CLI not found. Attempting Native Linux auto-provisioning...")
 			if EnsureNativeLinuxProvisioned() && EnsureDockerReady("") {
 				return StartNativeStack("")
 			}
-			fmt.Println("Error: 'docker' CLI is not found in PATH.")
-			fmt.Println("Please install Docker CE or run 'sudo apt-get install docker-ce docker-ce-cli'.")
+			Println("Error: 'docker' CLI is not found in PATH.")
+			Println("Please install Docker CE or run 'sudo apt-get install docker-ce docker-ce-cli'.")
 			return false
 		}
-		fmt.Println("Error: 'docker' CLI is not found in PATH.")
-		fmt.Println("Please install Docker Desktop or ensure docker is in your PATH.")
+		Println("Error: 'docker' CLI is not found in PATH.")
+		Println("Please install Docker Desktop or ensure docker is in your PATH.")
 		return false
 	}
 
 	if !IsDockerDaemonRunning() {
 		if wslAvailable, distro := CheckWSL2Available(); wslAvailable {
-			fmt.Printf("Docker daemon not running on Windows host, but detected WSL2 (%s).\n", distro)
-			fmt.Println("Switching to Native WSL2 Mode...")
+			Printf("Docker daemon not running on Windows host, but detected WSL2 (%s).\n", distro)
+			Println("Switching to Native WSL2 Mode...")
 			return StartWSL2Mode(distro)
 		}
 		if runtime.GOOS == "linux" {
-			fmt.Println("Docker daemon not running. Attempting to start daemon / auto-provision...")
+			Println("Docker daemon not running. Attempting to start daemon / auto-provision...")
 			if EnsureNativeLinuxProvisioned() && EnsureDockerReady("") {
 				return StartNativeStack("")
 			}
-			fmt.Println("Error: Docker daemon is not running.")
-			fmt.Println("Please start Docker daemon with 'sudo systemctl start docker' or run labops as root.")
+			Println("Error: Docker daemon is not running.")
+			Println("Please start Docker daemon with 'sudo systemctl start docker' or run labops as root.")
 			return false
 		}
-		fmt.Println("Error: Docker daemon is not running.")
-		fmt.Println("Please start Docker Desktop or start Docker inside WSL2 and try again.")
+		Println("Error: Docker daemon is not running.")
+		Println("Please start Docker Desktop or start Docker inside WSL2 and try again.")
 		return false
 	}
 
@@ -850,7 +850,7 @@ func RunStart() bool {
 	for _, arg := range os.Args[2:] {
 		lower := strings.ToLower(arg)
 		if lower == "--vm" || lower == "-v" || lower == "--vagrant" {
-			fmt.Println("Notice: Vagrant/VM mode is currently disabled. Defaulting to Docker runtime.")
+			Println("Notice: Vagrant/VM mode is currently disabled. Defaulting to Docker runtime.")
 			break
 		}
 		if lower == "--docker" || lower == "-d" || lower == "--desktop" {
@@ -860,16 +860,22 @@ func RunStart() bool {
 			if wslAvailable {
 				return StartWSL2Mode(wslDistro)
 			}
-			fmt.Println("Error: WSL2 with systemd is not ready.")
+			Println("Error: WSL2 with systemd is not ready.")
 			return false
 		}
 	}
 
-	// Default directly to native runtime without prompting
+	// Priority 1: If Docker daemon is running on host, use Host Docker Mode directly
+	if IsDockerDaemonRunning() {
+		return StartDockerMode()
+	}
+
+	// Priority 2: Fallback to Native WSL2 Mode if WSL2 environment is available
 	if wslAvailable {
 		return StartWSL2Mode(wslDistro)
 	}
 
+	// Priority 3: Default to StartDockerMode (reports clear diagnostics if Docker is stopped)
 	return StartDockerMode()
 }
 

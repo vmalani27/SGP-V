@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -30,11 +29,11 @@ func RunStop() bool {
 	}
 
 	if !hasContainers && !IsAlreadyHealthy() {
-		fmt.Println("LabOps is not running.")
+		Println("LabOps is not running.")
 		return true
 	}
 
-	fmt.Print("Stopping LabOps... ")
+	Print("Stopping LabOps... ")
 
 	stackContainers := []string{"labops-proxy", "labops-frontend", "labops-orchestrator", "labops-git-server", "labops-content-sync"}
 
@@ -63,6 +62,6 @@ func RunStop() bool {
 		_, _, _ = RunDockerCmd(wslDistro, "network", "rm", "labops-net")
 	}
 
-	fmt.Println("done.")
+	Println("done.")
 	return true
 }
