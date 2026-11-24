@@ -66,3 +66,20 @@ func getWindowsDisk() (float64, error) {
 	}
 	return float64(freeBytesAvailable) / (1024 * 1024 * 1024), nil
 }
+
+func initWindowsConsole() {
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	getConsoleMode := kernel32.NewProc("GetConsoleMode")
+	setConsoleMode := kernel32.NewProc("SetConsoleMode")
+	handle, err := syscall.GetStdHandle(syscall.STD_OUTPUT_HANDLE)
+	if err == nil && handle != syscall.InvalidHandle {
+		var mode uint32
+		r, _, _ := getConsoleMode.Call(uintptr(handle), uintptr(unsafe.Pointer(&mode)))
+		if r != 0 {
+			// Clear DISABLE_NEWLINE_AUTO_RETURN (0x0008), enable ENABLE_PROCESSED_OUTPUT (0x0001) and ENABLE_WRAP_AT_EOL_OUTPUT (0x0002)
+			mode &^= 0x0008
+			mode |= 0x0001 | 0x0002
+			setConsoleMode.Call(uintptr(handle), uintptr(mode))
+		}
+	}
+}

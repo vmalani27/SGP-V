@@ -15,3 +15,5 @@ func getWindowsRAM() (float64, error) {
 func getWindowsDisk() (float64, error) {
 	return 0, fmt.Errorf("windows only")
 }
+
+func initWindowsConsole() {}

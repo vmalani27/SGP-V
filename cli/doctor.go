@@ -329,22 +329,39 @@ func CheckPort80Availability() (bool, int) {
 	return true, port
 }
 
+// printCLI outputs formatted messages ensuring CRLF on Windows to prevent terminal staircasing.
+func printCLI(format string, a ...any) {
+	msg := fmt.Sprintf(format, a...)
+	if runtime.GOOS == "windows" {
+		msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\r\n", "\n"), "\n", "\r\n")
+	}
+	fmt.Print(msg)
+}
+
+func printLine(a ...any) {
+	msg := fmt.Sprintln(a...)
+	if runtime.GOOS == "windows" {
+		msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\r\n", "\n"), "\n", "\r\n")
+	}
+	fmt.Print(msg)
+}
+
 // RunDoctor runs all hardware and software diagnostics concurrently in a clean, student-friendly format.
 func RunDoctor() bool {
-	fmt.Println("LabOps System Check")
-	fmt.Println("------------------------------------")
+	initWindowsConsole()
+
+	printLine("LabOps System Check")
+	printLine("------------------------------------")
 
 	var wg sync.WaitGroup
 
 	var virt bool
 	var ram, disk float64
-	var sysd bool
-	var distro string
-	var wslReady bool
 	var dockerHostRunning bool
+	var wslReady bool
 	var isHealthy bool
 
-	wg.Add(6)
+	wg.Add(4)
 
 	go func() {
 		defer wg.Done()
@@ -363,23 +380,15 @@ func RunDoctor() bool {
 
 	go func() {
 		defer wg.Done()
-		sysd, distro, _ = CheckWSL2Systemd()
-		if sysd && distro != "" {
+		dockerHostRunning = IsDockerDaemonRunning()
+		if !dockerHostRunning && runtime.GOOS == "windows" {
 			wslReady, _ = CheckWSLDockerReady()
 		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		dockerHostRunning = IsDockerDaemonRunning()
-	}()
-
-	go func() {
-		defer wg.Done()
 		isHealthy = IsAlreadyHealthy()
 	}()
 
 	wg.Wait()
+	initWindowsConsole()
 
 	allPassed := true
 	var failureHints []string
@@ -410,80 +419,37 @@ func RunDoctor() bool {
 	}
 
 	if sysOk {
-		fmt.Printf("  [OK]   %-21s %s\n", "System requirements", sysDetail)
+		printCLI("  [OK]   %-21s %s\n", "System requirements", sysDetail)
 	} else {
 		allPassed = false
-		fmt.Printf("  [FAIL] %-21s %s\n", "System requirements", sysDetail)
+		printCLI("  [FAIL] %-21s %s\n", "System requirements", sysDetail)
 	}
 
-	// 2. Subsystem / Environment
-	envOk := true
-	var envDetail string
-
-	switch runtime.GOOS {
-	case "windows":
-		if distro != "" {
-			envDetail = fmt.Sprintf("WSL2 (%s)", distro)
-			if !sysd {
-				envOk = false
-				envDetail = fmt.Sprintf("WSL2 (%s - systemd not enabled)", distro)
-				failureHints = append(failureHints, fmt.Sprintf("Enable systemd in WSL2: add '[boot] systemd=true' to /etc/wsl.conf in %s and run 'wsl --shutdown'.", distro))
-			}
-		} else {
-			envOk = false
-			envDetail = "WSL2 not found"
-			failureHints = append(failureHints, "Install WSL2 by opening PowerShell as Administrator and running: wsl --install -d Ubuntu-22.04")
-		}
-		if envOk {
-			fmt.Printf("  [OK]   %-21s %s\n", "Windows Subsystem", envDetail)
-		} else {
-			allPassed = false
-			fmt.Printf("  [FAIL] %-21s %s\n", "Windows Subsystem", envDetail)
-		}
-	case "linux":
-		fmt.Printf("  [OK]   %-21s %s\n", "Linux Environment", "Native Linux Kernel")
-	case "darwin":
-		fmt.Printf("  [OK]   %-21s %s\n", "macOS Environment", "Darwin Kernel")
-	}
-
-	// 3. Lab Runtime Engine (Docker in WSL2 or Host Docker)
+	// 2. Lab Runtime Engine (Docker)
 	engineOk := false
 	var engineDetail string
 
-	if runtime.GOOS == "windows" {
-		if wslReady || sysd {
-			engineOk = true
-			engineDetail = "Ready"
-		} else if dockerHostRunning {
-			engineOk = true
-			engineDetail = "Ready"
-		} else {
-			if CheckDependency("docker") {
-				engineDetail = "Stopped (Docker Engine is not running)"
-				failureHints = append(failureHints, "Start Docker Desktop or start Docker inside WSL2 ('sudo service docker start').")
-			} else {
-				engineDetail = "Docker not installed"
-				failureHints = append(failureHints, "Install Docker Desktop for Windows or install Docker inside your WSL2 Ubuntu distro.")
-			}
-		}
+	if dockerHostRunning || wslReady {
+		engineOk = true
+		engineDetail = "Ready"
 	} else {
-		if dockerHostRunning {
-			engineOk = true
-			engineDetail = "Ready"
+		if CheckDependency("docker") {
+			engineDetail = "Stopped (Docker Engine is not running)"
+			failureHints = append(failureHints, "Start Docker Desktop or start Docker inside your terminal ('sudo service docker start').")
 		} else {
-			engineDetail = "Docker daemon not running"
-			failureHints = append(failureHints, "Ensure the Docker daemon is running ('sudo systemctl start docker').")
+			engineDetail = "Docker not installed"
+			failureHints = append(failureHints, "Install Docker Desktop to run container labs.")
 		}
 	}
 
 	if engineOk {
-		fmt.Printf("  [OK]   %-21s %s\n", "Lab Runtime Engine", engineDetail)
+		printCLI("  [OK]   %-21s %s\n", "Lab Runtime Engine", engineDetail)
 	} else {
 		allPassed = false
-		fmt.Printf("  [FAIL] %-21s %s\n", "Lab Runtime Engine", engineDetail)
+		printCLI("  [FAIL] %-21s %s\n", "Lab Runtime Engine", engineDetail)
 	}
 
-	// 4. Local Workspace Port
+	// 3. Local Workspace Port
 	portOk := false
 	var portDetail string
 
@@ -502,22 +468,22 @@ func RunDoctor() bool {
 	}
 
 	if portOk {
-		fmt.Printf("  [OK]   %-21s %s\n", "Workspace Port", portDetail)
+		printCLI("  [OK]   %-21s %s\n", "Workspace Port", portDetail)
 	} else {
 		allPassed = false
-		fmt.Printf("  [FAIL] %-21s %s\n", "Workspace Port", portDetail)
+		printCLI("  [FAIL] %-21s %s\n", "Workspace Port", portDetail)
 	}
 
 	// Result Summary
-	fmt.Println()
+	printLine()
 	if allPassed {
-		fmt.Println("Everything looks good! Run 'labops start' to begin.")
+		printLine("Everything looks good! Run 'labops start' to begin.")
 		return true
 	}
 
-	fmt.Println("Action Needed:")
+	printLine("Action Needed:")
 	for _, hint := range failureHints {
-		fmt.Printf("  • %s\n", hint)
+		printCLI("  • %s\n", hint)
 	}
 
 	return false
