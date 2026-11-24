@@ -6,13 +6,15 @@ import (
 
 // RunStatus checks if LabOps services are running and prints clean status info.
 func RunStatus() bool {
-	wslReady, distro := CheckWSLDockerReady()
 	wslDistro := ""
-	if wslReady {
-		wslDistro = distro
-	} else if !IsDockerDaemonRunning() {
-		Println("LabOps is not running (Docker daemon is inactive).")
-		return false
+	if !IsDockerDaemonRunning() {
+		wslReady, distro := CheckWSLDockerReady()
+		if wslReady {
+			wslDistro = distro
+		} else {
+			Println("LabOps is not running (Docker daemon is inactive).")
+			return false
+		}
 	}
 
 	services := []struct {

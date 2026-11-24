@@ -287,7 +287,7 @@ func CheckWSL2Systemd() (bool, string, error) {
 	}
 
 	for _, distro := range distros {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		cmd := exec.CommandContext(ctx, "wsl.exe", "-d", distro, "cat", "/etc/wsl.conf")
 		var outBuf, errBuf bytes.Buffer
 		cmd.Stdout = &outBuf

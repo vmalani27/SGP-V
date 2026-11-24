@@ -6,10 +6,12 @@ import (
 
 // RunStop stops any running LabOps containers and networks natively.
 func RunStop() bool {
-	wslReady, distro := CheckWSLDockerReady()
 	wslDistro := ""
-	if wslReady {
-		wslDistro = distro
+	if !IsDockerDaemonRunning() {
+		wslReady, distro := CheckWSLDockerReady()
+		if wslReady {
+			wslDistro = distro
+		}
 	}
 
 	// Stop Docker stack on host and/or WSL2

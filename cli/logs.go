@@ -6,10 +6,12 @@ import (
 
 // RunLogs displays troubleshooting logs from active LabOps containers.
 func RunLogs() bool {
-	wslReady, distro := CheckWSLDockerReady()
 	wslDistro := ""
-	if wslReady {
-		wslDistro = distro
+	if !IsDockerDaemonRunning() {
+		wslReady, distro := CheckWSLDockerReady()
+		if wslReady {
+			wslDistro = distro
+		}
 	}
 
 	containers := []string{"labops-proxy", "labops-frontend", "labops-orchestrator", "labops-git-server", "labops-content-sync"}
