@@ -230,7 +230,8 @@ jobs:
         run: |
           SLUG="${{ needs.setup-slug.outputs.slug }}"
           SHA_TAG="${SLUG}-${GITHUB_SHA::7}"
-          PREVIEW_CDN="${{ env.CDN_URL }}/previews/${SLUG}"
+          CLEAN_CDN=$(echo "${{ env.CDN_URL }}" | sed 's|/*$||')
+          PREVIEW_CDN="${CLEAN_CDN}/previews/${SLUG}"
           python scripts/generate_release_manifest.py \
             "${SHA_TAG}" \
             "preview-${SLUG}" \
@@ -368,7 +369,8 @@ jobs:
         run: |
           SLUG="${{ needs.setup-slug.outputs.slug }}"
           BRANCH="${{ needs.setup-slug.outputs.branch }}"
-          PREVIEW_BASE="${{ env.CDN_URL }}/previews/${SLUG}"
+          CLEAN_CDN=$(echo "${{ env.CDN_URL }}" | sed 's|/*$||')
+          PREVIEW_BASE="${CLEAN_CDN}/previews/${SLUG}"
 
           echo "## 🚀 Dev Preview Deployed for \`${BRANCH}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
