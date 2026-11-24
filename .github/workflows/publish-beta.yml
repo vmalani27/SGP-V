@@ -57,6 +57,13 @@ jobs:
     name: Build & Push OCI Images to ECR (Beta)
     runs-on: ubuntu-latest
     environment: beta
+    env:
+      ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+      CDN_URL: ${{ vars.CDN_URL }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -64,8 +71,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.ECR_AUTH_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.ECR_AUTH_REGION }}
 
       - name: Log in to Amazon ECR Public
         uses: aws-actions/amazon-ecr-login@v2
@@ -161,6 +168,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-content, build-images]
     environment: beta
+    env:
+      ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+      CDN_URL: ${{ vars.CDN_URL }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -195,8 +209,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.ECR_AUTH_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.ECR_AUTH_REGION }}
 
       - name: Upload Content & Manifests to S3 (Beta)
         run: |
@@ -230,6 +244,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: publish-release
     environment: beta
+    env:
+      ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+      ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+      CDN_URL: ${{ vars.CDN_URL }}
     strategy:
       fail-fast: false
       matrix:
@@ -277,6 +295,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-beta-cli
     environment: beta
+    env:
+      ECR_AUTH_REGION: ${{ vars.ECR_AUTH_REGION }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      ECR_PUBLIC_REGISTRY: ${{ vars.ECR_PUBLIC_REGISTRY }}
+      CDN_URL: ${{ vars.CDN_URL }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
     steps:
       - name: Download All Binaries
         uses: actions/download-artifact@v4
@@ -295,8 +320,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.ECR_AUTH_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.ECR_AUTH_REGION }}
 
       - name: Upload Binaries to S3 (Beta)
         run: |
