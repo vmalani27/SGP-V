@@ -42,6 +42,31 @@ def get_canonical_ecr_ref(normalized_image: str) -> str | None:
     return mapping.get(normalized_image)
 
 
+def resolve_image(image: str = "", module_id: str = "", course_id: str = "") -> str:
+    """Resolve the target container image based on explicit image, module, or course."""
+    if image:
+        return IMAGE_ALIASES.get(image, image)
+
+    # Infer from module_id
+    if module_id:
+        if module_id in ("building-images", "docker-build"):
+            return "labops-docker-build:latest"
+        if "git" in module_id:
+            return "labops-git-fundamentals:latest"
+        if "docker" in module_id or "container" in module_id:
+            return "labops-docker-fundamentals:latest"
+
+    # Infer from course_id
+    if course_id:
+        if "git" in course_id:
+            return "labops-git-fundamentals:latest"
+        if "docker" in course_id:
+            return "labops-docker-fundamentals:latest"
+
+    # Default fallback
+    return "labops-docker-fundamentals:latest"
+
+
 def get_runtime_options() -> dict:
     """Dynamically applies security and runtime settings based on CONTAINER_RUNTIME_MODE.
 
