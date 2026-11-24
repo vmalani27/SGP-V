@@ -1,18 +1,11 @@
-name: build-and-release-cli
+name: test-and-build-cli
 
 on:
-  push:
-    branches:
-      - main
-      - beta
-    paths:
-      - 'cli/**'
-      - '.github/workflows/build-cli.yml'
   pull_request:
     branches:
-      - main
-      - beta
       - dev
+      - master
+      - main
     paths:
       - 'cli/**'
       - '.github/workflows/build-cli.yml'
@@ -70,10 +63,6 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             CHANNEL="${{ github.event.inputs.channel }}"
-          elif [ "${{ github.ref_name }}" = "main" ]; then
-            CHANNEL="stable"
-          elif [ "${{ github.ref_name }}" = "beta" ]; then
-            CHANNEL="beta"
           else
             CHANNEL="dev"
           fi

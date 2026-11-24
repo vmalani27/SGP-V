@@ -1,15 +1,6 @@
 name: build-and-publish-images
 
 on:
-  push:
-    branches:
-      - main
-      - beta
-    paths:
-      - 'orchestrator/**'
-      - 'next-app/**'
-      - 'sidecars/content-sync/**'
-      - '.github/workflows/build-images.yml'
   workflow_dispatch:
     inputs:
       force_build_all:
