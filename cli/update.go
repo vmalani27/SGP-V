@@ -62,17 +62,21 @@ func registryBase() string {
 
 func labOpsImages(channel string) []managedImage {
 	base := registryBase()
+	tag := channel
+	if strings.HasPrefix(channel, "preview-") {
+		tag = strings.TrimPrefix(channel, "preview-")
+	}
 	return []managedImage{
-		{Name: "Frontend Service", Remote: base + "/labops-frontend:" + channel},
-		{Name: "Orchestrator Service", Remote: base + "/labops-orchestrator:" + channel},
-		{Name: "Content-Sync Sidecar", Remote: base + "/labops-content-sync:" + channel},
-		{Name: "Proxy Image", Remote: base + "/labops-proxy:" + channel},
+		{Name: "Frontend Service", Remote: base + "/labops-frontend:" + tag},
+		{Name: "Orchestrator Service", Remote: base + "/labops-orchestrator:" + tag},
+		{Name: "Content-Sync Sidecar", Remote: base + "/labops-content-sync:" + tag},
+		{Name: "Proxy Image", Remote: base + "/labops-proxy:" + tag},
 		{Name: "Git Server Image", Remote: base + "/labops-git-server:latest"},
-		{Name: "Base Ubuntu Lab Image", Remote: base + "/labops-ubuntu:" + channel, Tags: []string{"labops-ubuntu:latest"}},
-		{Name: "Docker Lab (DinD)", Remote: base + "/labops-docker:" + channel, Tags: []string{"labops-docker:latest"}},
-		{Name: "Docker Fundamentals Lab", Remote: base + "/labops-docker-fundamentals:" + channel, Tags: []string{"labops-docker-fundamentals:latest"}},
-		{Name: "Docker Build Lab", Remote: base + "/labops-docker-build:" + channel, Tags: []string{"labops-docker-build:latest"}},
-		{Name: "Git Fundamentals Lab", Remote: base + "/labops-git-fundamentals:" + channel, Tags: []string{"labops-git-fundamentals:latest"}},
+		{Name: "Base Ubuntu Lab Image", Remote: base + "/labops-ubuntu:" + tag, Tags: []string{"labops-ubuntu:latest"}},
+		{Name: "Docker Lab (DinD)", Remote: base + "/labops-docker:" + tag, Tags: []string{"labops-docker:latest"}},
+		{Name: "Docker Fundamentals Lab", Remote: base + "/labops-docker-fundamentals:" + tag, Tags: []string{"labops-docker-fundamentals:latest"}},
+		{Name: "Docker Build Lab", Remote: base + "/labops-docker-build:" + tag, Tags: []string{"labops-docker-build:latest"}},
+		{Name: "Git Fundamentals Lab", Remote: base + "/labops-git-fundamentals:" + tag, Tags: []string{"labops-git-fundamentals:latest"}},
 	}
 }
 
@@ -154,10 +158,19 @@ func selectedChannel() string {
 
 // GetContentCDNURL returns the content CDN URL injected at build or overridden via environment.
 func GetContentCDNURL() string {
+	var cdn string
 	if env := strings.TrimSpace(os.Getenv("CDN_URL")); env != "" {
-		return strings.TrimRight(env, "/")
+		cdn = env
+	} else {
+		cdn = defaultCDNURL
 	}
-	return strings.TrimRight(defaultCDNURL, "/")
+	cdn = strings.TrimRight(cdn, "/")
+	if idx := strings.Index(cdn, "://"); idx != -1 {
+		proto := cdn[:idx+3]
+		rest := strings.ReplaceAll(cdn[idx+3:], "//", "/")
+		cdn = proto + rest
+	}
+	return cdn
 }
 
 func fetchReleaseManifest(cdnURL string, channel string) (*ReleaseManifest, error) {
