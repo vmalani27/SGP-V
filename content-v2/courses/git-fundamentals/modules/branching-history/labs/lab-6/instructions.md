@@ -4,7 +4,7 @@
 
 Accidentally committing and pushing sensitive data (such as API keys, passwords, or environment files) is one of the most common and critical security incidents in software development. 
 
-In this lab, you will respond to a real incident: someone committed a `.env` file containing production database credentials and pushed it to the remote repository. You will learn why simply deleting the file in a new commit fails to secure the system, how to rewind local history using `git reset`, how to prevent future leaks using `.gitignore`, and how to overwrite the remote history using `git push --force`.
+A teammate committed a `.env` file containing production database credentials and pushed it to the remote repository. Simply deleting the file in a new commit fails to secure the system because earlier commits remain reachable in the repository history. To remediate the leak, rewind local history, exclude future credential files with `.gitignore`, and synchronize the sanitized timeline with the remote repository.
 
 ## Command Reference
 

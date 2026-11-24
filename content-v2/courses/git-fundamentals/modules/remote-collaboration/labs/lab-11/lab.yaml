@@ -119,7 +119,7 @@ tasks:
   - id: blame-line-author
     title: Attribute the change with git blame
     prompt: >-
-      Run 'git blame src/auth.py' in '~/workspace/incident-investigation'. Who was the author credited with adding 'ENABLE_DEV_BYPASS = True'?
+      Inspect the line-by-line attribution of `src/auth.py` in `~/workspace/incident-investigation`. Who is the author credited with adding `ENABLE_DEV_BYPASS = True`?
     type: multiple_choice
     options:
       - Dave Miller
@@ -129,7 +129,7 @@ tasks:
     validation:
       expected_answer: Dave Miller
     error_message: >-
-      Check the author name attributed to the line containing 'ENABLE_DEV_BYPASS = True' in 'git blame src/auth.py'.
+      Check the author name attributed to the line containing 'ENABLE_DEV_BYPASS = True'.
     hint: >-
       Examine the author column on the line introducing the bypass in git blame.
 

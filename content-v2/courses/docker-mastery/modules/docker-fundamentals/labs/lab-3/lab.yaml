@@ -33,7 +33,7 @@ tasks:
     validation:
       expected_answer: "The port is bound to 127.0.0.1 (loopback only) — traffic from other machines never reaches the container."
     error_message: >-
-      Run 'docker port broken-web'. You will see 80/tcp -> 127.0.0.1:9090. That loopback binding is why remote access fails.
+      Inspect the host port binding address for broken-web. A loopback binding restricts access exclusively to localhost.
 
   - id: fix-port-binding
     summary: Re-deploy the container with a correct port binding.
@@ -67,7 +67,7 @@ tasks:
       match_type: exact
       expected_output: PORT_FIXED
     error_message: >-
-      fixed-web is not running with port 9090 bound to 0.0.0.0. Use: docker run -d --name fixed-web -p 0.0.0.0:9090:80 nginx:alpine
+      fixed-web is not running with port 9090 bound to all host interfaces (0.0.0.0).
 
   - id: inject-env-vars
     summary: Launch a container with runtime environment variables and verify them.
@@ -149,7 +149,7 @@ tasks:
       match_type: exact
       expected_output: CMD_OVERRIDE_OK
     error_message: >-
-      Container `custom-cmd` must be running with a startup command configured to run `sleep 300`. Inspect your container's configuration.
+      Container `custom-cmd` is not running or its configured execution command is incorrect. Inspect the container configuration.
 
 completion:
   required_tasks: all

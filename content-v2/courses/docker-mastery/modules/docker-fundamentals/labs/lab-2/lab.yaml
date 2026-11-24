@@ -64,7 +64,7 @@ tasks:
       match_type: exact
       expected_output: LOGS_READ
     error_message: >-
-      ~/crash-reason.txt is missing or does not contain the crash reason. Run docker logs payment-api and save the relevant line.
+      ~/crash-reason.txt is missing or does not contain the crash reason from the container logs.
 
   - id: check-exit-code
     summary: Identify what exit code payment-api exited with.
@@ -90,7 +90,7 @@ tasks:
       match_type: exact
       expected_output: EXIT_CODE_OK
     error_message: >-
-      ~/exit-code.txt should contain 127. Use: docker inspect payment-api --format '{{.State.ExitCode}}'
+      ~/exit-code.txt is missing or does not contain the recorded numeric exit code.
 
   - id: remove-failed-container
     summary: Remove the failed container.
@@ -125,8 +125,7 @@ tasks:
       match_type: exact
       expected_output: LIFECYCLE_OK
     error_message: >-
-      `payment-api` still exists. Remove the stopped container with `docker rm`
-      and verify with `docker ps -a`. Do not remove `api-service`.
+      Container payment-api still exists. Ensure the stopped container is removed while leaving api-service running.
 
   - id: inspect-running-container
     summary: Extract the DB_HOST environment variable from api-service.
@@ -152,7 +151,7 @@ tasks:
       match_type: exact
       expected_output: INSPECT_OK
     error_message: >-
-      ~/db-host.txt should contain 'postgres-db'. Use docker inspect api-service --format '{{.Config.Env}}' and extract DB_HOST.
+      ~/db-host.txt is missing or does not contain the extracted DB_HOST value.
 
 completion:
   required_tasks: all

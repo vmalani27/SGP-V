@@ -8,8 +8,6 @@ All diagram assets have been downloaded and bundled directly into the course ass
 - **Git Fundamentals Assets**: [`content-v2/courses/git-fundamentals/assets/`](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/git-fundamentals/assets/)
 - **Docker Mastery Assets**: [`content-v2/courses/docker-mastery/assets/`](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/docker-mastery/assets/)
 
----
-
 ## 1. Git Fundamentals (`git-fundamentals`)
 
 ### Audit Table
@@ -27,8 +25,6 @@ All diagram assets have been downloaded and bundled directly into the course ass
 | **remote-collaboration** | [chapter-9.md#L109](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/git-fundamentals/modules/remote-collaboration/chapters/chapter-9.md#L109) | **`git fetch` vs. `git pull` Pointer Mechanics**<br>Impact of network fetch on local `main` vs. remote-tracking `origin/main`. | Markdown table | 📦 [`assets/remote-branches-2.svg`](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/git-fundamentals/assets/remote-branches-2.svg) \| [`remote-branches-3.svg`](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/git-fundamentals/assets/remote-branches-3.svg)<br>📖 *Source: Pro Git 2nd Edition (Ch 3.5)* ([Docs](https://git-scm.com/book/en/v2/Git-Branching-Remote-Branches#_remote_branches)) |
 | **remote-collaboration** | [chapter-10.md#L44](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/git-fundamentals/modules/remote-collaboration/chapters/chapter-10.md#L44) | **The Stash Stack Architecture**<br>LIFO stack structure of `stash@{0}`, `stash@{1}`. | Code comments / command output block | 📦 [`assets/git-stash.svg`](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/git-fundamentals/assets/git-stash.svg)<br>📖 *Source: Pro Git 2nd Edition (Ch 7.3)* ([Docs](https://git-scm.com/book/en/v2/Git-Tools-Stashing-and-Cleaning#_git_stashing)) |
 | **complete-workflow** | [chapter-12.md#L24](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/git-fundamentals/modules/complete-workflow/chapters/chapter-12.md#L24) | **Daily Feature Branch Lifecycle Routine**<br>7-stage daily developer cycle from `git pull` to remote branch cleanup. | Numbered subsections and code snippets | 📦 [`assets/lr-branches-1.svg`](file:///d:/vanshmalanidata/Document/GitHub/SGP-V/content-v2/courses/git-fundamentals/assets/lr-branches-1.svg)<br>📖 *Source: GitHub Flow & Pro Git (Ch 5.1)* ([Docs](https://docs.github.com/en/get-started/using-github/github-flow)) |
-
----
 
 ## 2. Docker Mastery (`docker-mastery`)
 

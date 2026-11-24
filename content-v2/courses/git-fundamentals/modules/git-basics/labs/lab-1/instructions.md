@@ -4,7 +4,7 @@
 
 Before creating commits on a new development machine, Git requires your author identity and default repository initialization settings. Git stores user-wide defaults in `~/.gitconfig` when configured at the global scope.
 
-In this lab, you will configure your global developer name, email address, and default initial branch (`main`), then initialize a verification repository at `~/workspace/verification-project` to confirm that new repositories inherit those settings.
+Configure your global developer name, email address, and default initial branch (`main`), then initialize a verification repository at `~/workspace/verification-project` to confirm that new repositories inherit those settings.
 
 ## Objectives
 

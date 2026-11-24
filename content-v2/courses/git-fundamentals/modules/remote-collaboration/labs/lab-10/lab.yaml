@@ -67,84 +67,41 @@ objectives:
 tasks:
 
   - id: confirm-dirty-state
-
-    summary: Verify you have uncommitted changes before stashing.
-
+    summary: Save in-progress work to the stash.
     prompt: >-
-
-      You are already on `feature/user-dashboard` with two modified/new files.
-
-      Run `git status` in `~/workspace/live-project` to confirm the working directory
-
-      is not clean, then stash your changes.
-
-
-
-      After stashing, `git status` should show a clean working directory.
-
+      In `~/workspace/live-project`, stash all in-progress changes on `feature/user-dashboard` so the working tree is completely clean and the modifications are saved in the stash list.
     type: terminal_action
-
     validation:
-
       command: |-
-
         python3 -c "
-
         import subprocess, sys, os
-
-
 
         cwd = os.path.expanduser('~/workspace/live-project')
 
-
-
         # Must be on feature branch
-
         branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
-
         if branch.stdout.decode().strip() != 'feature/user-dashboard':
-
             print('Not on feature/user-dashboard.')
-
             sys.exit(0)
-
-
 
         # Working directory must be clean now (stashed)
-
         status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, cwd=cwd)
-
         if status.stdout.strip():
-
-            print('Working directory not clean. Run: git stash')
-
+            print('RESULT_FAIL: Working directory not clean.')
             sys.exit(0)
-
-
 
         # Stash list must have at least one entry
-
         stash = subprocess.run(['git', 'stash', 'list'], capture_output=True, cwd=cwd)
-
         if not stash.stdout.strip():
-
-            print('No stash found. Run: git stash')
-
+            print('RESULT_FAIL: No stash found.')
             sys.exit(0)
 
-
-
         print('STASHED_OK')
-
         "
-
       match_type: exact
-
       expected_output: STASHED_OK
-
     error_message: >-
-
-      Either the working directory still has changes, or git stash list is empty. Run: git stash
+      Working directory modifications are still uncommitted or no stash entry was created. Stash your changes so the working tree is clean.
 
 
 
@@ -233,84 +190,42 @@ tasks:
 
 
   - id: restore-stash
-
-    summary: Return to your feature branch and pop the stash.
-
+    summary: Return to your feature branch and restore the stash.
     prompt: >-
-
-      The hotfix is done. Switch back to `feature/user-dashboard` and run `git stash pop`
-
-      to restore your in-progress work.
-
-
-
-      Verify: `src/dashboard.py` is back, `git stash list` is empty, and you are on `feature/user-dashboard`.
-
+      Switch back to `feature/user-dashboard` and restore your previously stashed work so `src/dashboard.py` is present in your working tree and the stash list is cleared.
     type: terminal_action
-
     validation:
-
       command: |-
-
         python3 -c "
-
         import subprocess, sys, os
-
-
 
         cwd = os.path.expanduser('~/workspace/live-project')
 
-
-
         # Must be back on feature branch
-
         branch = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, cwd=cwd)
-
         if branch.stdout.decode().strip() != 'feature/user-dashboard':
-
             print('Not on feature/user-dashboard.')
-
             sys.exit(0)
-
-
 
         # dashboard.py must be restored (in working tree or staged)
-
         check = subprocess.run(['test', '-f', f'{cwd}/src/dashboard.py'], capture_output=True)
-
         import os
-
         if not os.path.exists(os.path.join(cwd, 'src', 'dashboard.py')):
-
             print('src/dashboard.py not found — stash pop may not have worked.')
-
             sys.exit(0)
-
-
 
         # Stash should be empty
-
         stash = subprocess.run(['git', 'stash', 'list'], capture_output=True, cwd=cwd)
-
         if stash.stdout.strip():
-
-            print('Stash still has entries. Run: git stash pop')
-
+            print('RESULT_FAIL: Stash still has entries.')
             sys.exit(0)
 
-
-
         print('RESTORE_OK')
-
         "
-
       match_type: exact
-
       expected_output: RESTORE_OK
-
     error_message: >-
-
-      Either not back on feature/user-dashboard, src/dashboard.py is missing, or git stash list still shows entries.
+      Either not on feature/user-dashboard, src/dashboard.py is missing from the working directory, or the stash entry was not removed from the stash list.
 
 
 

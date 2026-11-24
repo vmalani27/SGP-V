@@ -2,7 +2,7 @@
 
 ## What You're Doing and Why
 
-Docker builds images in **layers**, and it caches the layers it has already built. On your next build, any step whose inputs did not change is reused from cache instead of re-running. That behavior is why Dockerfile ordering matters — and it is easy to watch happen. In this lab you will build an image whose Dockerfile follows the dependency-installation pattern, then edit the source and the dependency file in turn and observe exactly which steps are cached and which re-run.
+Docker builds images in **layers**, caching each completed layer. When rebuilding, any step whose inputs remain unchanged is reused from the cache. Because changing an early step invalidates all subsequent layers, Dockerfile instruction order directly dictates build performance. Practice structuring Dockerfiles with the dependency-installation pattern, then modify source and dependency files to observe layer cache hits and invalidations.
 
 ## Background
 

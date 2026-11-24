@@ -71,8 +71,8 @@ tasks:
       Ensure your working tree matches the clean state before the secret was introduced. After this step, `git log --oneline` should show only the initial commit, and `.env` should no longer exist in the working directory.
     type: terminal_action
     hints:
-      - "Use `git reset --hard HEAD~1` inside `/home/student/api-service`."
-      - "Check with `git log --oneline` and `git status` after resetting."
+      - "Recall which git reset mode updates both the HEAD pointer and the working tree to match the target commit."
+      - "Target the commit prior to HEAD so that only the initial clean commit remains."
     solution:
       command: "cd /home/student/api-service && git reset --hard HEAD~1"
     validation:
@@ -104,7 +104,7 @@ tasks:
       match_type: exact
       expected_output: REWIND_OK
     error_message: >-
-      Run `git reset --hard HEAD~1` inside `/home/student/api-service`. Confirm that only the initial commit remains in history and `.env` is removed.
+      The local branch history or working tree does not match the clean state. Ensure the branch is rewound to the initial commit and .env is removed.
 
   - id: configure-gitignore
     summary: Add .gitignore and commit it
@@ -114,9 +114,8 @@ tasks:
       Create a `.gitignore` file containing `.env`, then stage and commit it with a clear commit message (such as `"Add .gitignore to exclude secrets"`).
     type: terminal_action
     hints:
-      - "Create `.gitignore` containing `.env`."
-      - "Stage `.gitignore` with `git add .gitignore`."
-      - "Commit it with `git commit -m 'Add .gitignore to exclude secrets'`."
+      - "Create a `.gitignore` file in the repository root and add the pattern for the sensitive file."
+      - "Stage the new ignore file and create a commit so the rule is tracked."
     solution:
       command: "cd /home/student/api-service && echo '.env' > .gitignore && git add .gitignore && git commit -m 'Add .gitignore to exclude secrets'"
     validation:
@@ -164,13 +163,11 @@ tasks:
   - id: force-push-remote
     summary: Force-push your cleaned history to the remote repository
     prompt: >-
-      Your local `main` branch now contains two clean commits with no sensitive credentials. However, the remote repository still retains the bad commit, so a regular `git push` will be rejected.
-
-      Force-push your local `main` branch to `origin` using `git push --force` to overwrite the remote timeline.
+      Your local `main` branch now contains two clean commits with no sensitive credentials. Overwrite the remote `origin/main` branch with your local history.
     type: terminal_action
     hints:
-      - "Run `git push --force origin main` inside `/home/student/api-service`."
-      - "Verify that remote main matches your local HEAD."
+      - "Because the remote branch history has diverged from your rewound local branch, standard fast-forward pushing is rejected."
+      - "Consider the push flag required to overwrite remote history with local commits."
     solution:
       command: "cd /home/student/api-service && git push --force origin main"
     validation:
@@ -199,4 +196,4 @@ tasks:
       match_type: exact
       expected_output: FORCE_PUSH_OK
     error_message: >-
-      Run `git push --force origin main` inside `/home/student/api-service`. Make sure the remote repository branch matches your local HEAD.
+      Remote main does not match your sanitized local HEAD. Ensure the rewritten branch is pushed to origin.
