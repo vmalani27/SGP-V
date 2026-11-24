@@ -310,10 +310,11 @@ jobs:
           path: ./binaries
           merge-multiple: true
 
-      - name: Generate Checksums
+      - name: Generate Checksums & Archives
         working-directory: ./binaries
         run: |
           chmod +x labops-linux-* 2>/dev/null || true
+          tar -czf labops-linux-amd64.tar.gz labops-linux-amd64
           sha256sum labops-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 

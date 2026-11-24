@@ -66,7 +66,7 @@ jobs:
 
       - name: Log Promotion Summary
         run: |
-          echo "## 🎉 Production Promotion Complete" >> $GITHUB_STEP_SUMMARY
+          echo "##Production Promotion Complete" >> $GITHUB_STEP_SUMMARY
           echo "Production has been promoted directly from the verified Beta artifacts without rebuilding." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "* **Production Portal:** ${{ env.CDN_URL }}/" >> $GITHUB_STEP_SUMMARY

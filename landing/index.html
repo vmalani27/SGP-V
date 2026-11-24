@@ -259,13 +259,13 @@
           </p>
         </div>
 
-        <!-- Platform Toggle -->
-        <div class="inline-flex items-center p-1 rounded-xl bg-white/[0.05] border border-borderDim">
+        <!-- Platform Toggle (3 Options) -->
+        <div class="inline-flex flex-wrap items-center justify-center p-1 rounded-xl bg-white/[0.05] border border-borderDim gap-1">
           <button 
             id="tab-windows" 
             type="button"
             onclick="switchPlatform('windows')"
-            class="flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition bg-blue-600 text-white shadow-sm"
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-medium transition bg-blue-600 text-white shadow-sm"
           >
             <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.901"/></svg>
             Windows (x64)
@@ -274,10 +274,19 @@
             id="tab-linux" 
             type="button"
             onclick="switchPlatform('linux')"
-            class="flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition text-slate-400 hover:text-white"
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-medium transition text-slate-400 hover:text-white"
           >
             <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12.004 0C5.373 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.6.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
-            Linux (x64)
+            Linux Binary
+          </button>
+          <button 
+            id="tab-linux-tar" 
+            type="button"
+            onclick="switchPlatform('linux-tar')"
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-medium transition text-slate-400 hover:text-white"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+            Linux (.tar.gz)
           </button>
         </div>
 
@@ -312,7 +321,7 @@
             </div>
           </div>
 
-          <!-- Linux Card -->
+          <!-- Linux Binary Card -->
           <div id="panel-linux" class="space-y-4 hidden">
             <a 
               id="btn-linux"
@@ -333,6 +342,35 @@
                 <button 
                   type="button"
                   onclick="copyCmd('cmd-linux', this)"
+                  class="shrink-0 px-3 py-1.5 rounded-md border border-borderDim bg-white/[0.06] hover:bg-white/[0.12] text-slate-200 text-xs font-mono transition"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Linux (.tar.gz) Card -->
+          <div id="panel-linux-tar" class="space-y-4 hidden">
+            <a 
+              id="btn-linux-tar"
+              href="downloads/labops-linux-amd64.tar.gz" 
+              download 
+              class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition shadow-lg shadow-blue-500/20"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              <span id="btn-linux-tar-label">Download labops-linux-amd64.tar.gz</span>
+            </a>
+
+            <div class="p-1.5 rounded-xl border border-white/[0.08] bg-[#0c0d12] shadow-2xl ring-1 ring-white/[0.05]">
+              <div class="flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-[#090a0f] border border-borderDim font-mono text-xs text-left">
+                <div class="flex items-center gap-2 overflow-x-auto text-slate-200 custom-scrollbar py-0.5">
+                  <span class="text-emerald-400 font-semibold select-none">$</span>
+                  <code id="cmd-linux-tar">tar -xzf labops-linux-amd64.tar.gz &amp;&amp; ./labops-linux-amd64 start</code>
+                </div>
+                <button 
+                  type="button"
+                  onclick="copyCmd('cmd-linux-tar', this)"
                   class="shrink-0 px-3 py-1.5 rounded-md border border-borderDim bg-white/[0.06] hover:bg-white/[0.12] text-slate-200 text-xs font-mono transition"
                 >
                   Copy
@@ -509,6 +547,8 @@
             const btnWinLabel = document.getElementById('btn-win-label');
             const btnLinux = document.getElementById('btn-linux');
             const btnLinuxLabel = document.getElementById('btn-linux-label');
+            const btnLinuxTar = document.getElementById('btn-linux-tar');
+            const btnLinuxTarLabel = document.getElementById('btn-linux-tar-label');
             const metaVer = document.getElementById('meta-ver');
             const metaSha = document.getElementById('meta-sha');
             const metaWrapper = document.getElementById('meta-toggle-wrapper');
@@ -521,6 +561,10 @@
               if (btnLinux) {
                 btnLinux.href = 'downloads/beta/labops-linux-amd64';
                 btnLinuxLabel.innerText = 'Download labops-linux-amd64 (Beta)';
+              }
+              if (btnLinuxTar) {
+                btnLinuxTar.href = 'downloads/beta/labops-linux-amd64.tar.gz';
+                btnLinuxTarLabel.innerText = 'Download labops-linux-amd64.tar.gz (Beta)';
               }
               if (metaVer) {
                 metaVer.innerText = 'v1.1.0-beta.2';
@@ -541,6 +585,10 @@
               if (btnLinux) {
                 btnLinux.href = 'downloads/labops-linux-amd64';
                 btnLinuxLabel.innerText = 'Download labops-linux-amd64';
+              }
+              if (btnLinuxTar) {
+                btnLinuxTar.href = 'downloads/labops-linux-amd64.tar.gz';
+                btnLinuxTarLabel.innerText = 'Download labops-linux-amd64.tar.gz';
               }
               if (metaVer) {
                 metaVer.innerText = 'v1.0.4';
@@ -571,22 +619,25 @@
           function switchPlatform(os) {
             const winTab = document.getElementById('tab-windows');
             const linTab = document.getElementById('tab-linux');
+            const tarTab = document.getElementById('tab-linux-tar');
             const winPanel = document.getElementById('panel-windows');
             const linPanel = document.getElementById('panel-linux');
+            const tarPanel = document.getElementById('panel-linux-tar');
             const wslNote = document.getElementById('wsl-note');
 
-            if (os === 'windows') {
-              winTab.className = 'flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition bg-blue-600 text-white shadow-sm';
-              linTab.className = 'flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition text-slate-400 hover:text-white';
-              winPanel.classList.remove('hidden');
-              linPanel.classList.add('hidden');
-              if (wslNote) wslNote.classList.remove('hidden');
-            } else {
-              linTab.className = 'flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition bg-blue-600 text-white shadow-sm';
-              winTab.className = 'flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-mono font-medium transition text-slate-400 hover:text-white';
-              linPanel.classList.remove('hidden');
-              winPanel.classList.add('hidden');
-              if (wslNote) wslNote.classList.add('hidden');
+            const activeClass = 'flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-medium transition bg-blue-600 text-white shadow-sm';
+            const inactiveClass = 'flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-medium transition text-slate-400 hover:text-white';
+
+            winTab.className = os === 'windows' ? activeClass : inactiveClass;
+            linTab.className = os === 'linux' ? activeClass : inactiveClass;
+            tarTab.className = os === 'linux-tar' ? activeClass : inactiveClass;
+
+            winPanel.classList.toggle('hidden', os !== 'windows');
+            linPanel.classList.toggle('hidden', os !== 'linux');
+            tarPanel.classList.toggle('hidden', os !== 'linux-tar');
+
+            if (wslNote) {
+              wslNote.classList.toggle('hidden', os !== 'windows');
             }
           }
 
