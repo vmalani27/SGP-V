@@ -286,12 +286,13 @@
           <!-- Windows Card -->
           <div id="panel-windows" class="space-y-4">
             <a 
+              id="btn-win"
               href="downloads/labops-windows-amd64.exe" 
               download 
               class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition shadow-lg shadow-blue-500/20"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              Download labops-windows-amd64.exe
+              <span id="btn-win-label">Download labops-windows-amd64.exe</span>
             </a>
             
             <div class="p-1.5 rounded-xl border border-white/[0.08] bg-[#0c0d12] shadow-2xl ring-1 ring-white/[0.05]">
@@ -314,12 +315,13 @@
           <!-- Linux Card -->
           <div id="panel-linux" class="space-y-4 hidden">
             <a 
+              id="btn-linux"
               href="downloads/labops-linux-amd64" 
               download 
               class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition shadow-lg shadow-blue-500/20"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              Download labops-linux-amd64
+              <span id="btn-linux-label">Download labops-linux-amd64</span>
             </a>
 
             <div class="p-1.5 rounded-xl border border-white/[0.08] bg-[#0c0d12] shadow-2xl ring-1 ring-white/[0.05]">
@@ -340,18 +342,22 @@
           </div>
         </div>
 
-        <!-- Beta / Early Preview Channel Info -->
-        <div class="pt-2 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-400">
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono text-[11px]">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-            Beta Channel Available
+        <!-- Muted Release Metadata Trigger (Pattern 1) -->
+        <div id="release-meta" class="pt-1 flex items-center justify-center gap-2.5 text-xs font-mono text-zinc-500">
+          <span id="meta-ver">v1.0.4</span>
+          <span>&bull;</span>
+          <a id="meta-sha" href="downloads/SHA256SUMS.txt" target="_blank" class="hover:text-zinc-300 transition">SHA256</a>
+          <span>&bull;</span>
+          <span id="meta-toggle-wrapper">
+            <button 
+              id="meta-channel-btn"
+              type="button" 
+              onclick="toggleChannel()" 
+              class="hover:text-zinc-300 transition underline underline-offset-4 cursor-pointer"
+            >
+              Switch to beta &rarr;
+            </button>
           </span>
-          <span>Want early access? Test upcoming features:</span>
-          <a href="downloads/beta/labops-windows-amd64.exe" class="text-blue-400 hover:text-blue-300 hover:underline font-mono">Windows</a>
-          <span>•</span>
-          <a href="downloads/beta/labops-linux-amd64" class="text-blue-400 hover:text-blue-300 hover:underline font-mono">Linux</a>
-          <span>•</span>
-          <a href="beta/index.html" class="text-slate-300 hover:text-white hover:underline font-mono">Beta Playground</a>
         </div>
 
         <!-- CLI Reference Toggle Button -->
@@ -495,6 +501,73 @@
         </div>
 
         <script>
+          let isBeta = false;
+
+          function setChannel(beta) {
+            isBeta = beta;
+            const btnWin = document.getElementById('btn-win');
+            const btnWinLabel = document.getElementById('btn-win-label');
+            const btnLinux = document.getElementById('btn-linux');
+            const btnLinuxLabel = document.getElementById('btn-linux-label');
+            const metaVer = document.getElementById('meta-ver');
+            const metaSha = document.getElementById('meta-sha');
+            const metaWrapper = document.getElementById('meta-toggle-wrapper');
+
+            if (isBeta) {
+              if (btnWin) {
+                btnWin.href = 'downloads/beta/labops-windows-amd64.exe';
+                btnWinLabel.innerText = 'Download labops-windows-amd64 (Beta)';
+              }
+              if (btnLinux) {
+                btnLinux.href = 'downloads/beta/labops-linux-amd64';
+                btnLinuxLabel.innerText = 'Download labops-linux-amd64 (Beta)';
+              }
+              if (metaVer) {
+                metaVer.innerText = 'v1.1.0-beta.2';
+                metaVer.className = 'text-amber-400/90 font-mono';
+              }
+              if (metaSha) {
+                metaSha.href = 'downloads/beta/SHA256SUMS.txt';
+              }
+              if (metaWrapper) {
+                metaWrapper.innerHTML = '<a href="beta/index.html" class="hover:text-zinc-300 transition underline underline-offset-4">Beta Playground</a> &bull; <button type="button" onclick="setChannel(false)" class="hover:text-zinc-300 transition underline underline-offset-4 cursor-pointer">&larr; Standard release</button>';
+              }
+              history.replaceState(null, '', '#beta');
+            } else {
+              if (btnWin) {
+                btnWin.href = 'downloads/labops-windows-amd64.exe';
+                btnWinLabel.innerText = 'Download labops-windows-amd64.exe';
+              }
+              if (btnLinux) {
+                btnLinux.href = 'downloads/labops-linux-amd64';
+                btnLinuxLabel.innerText = 'Download labops-linux-amd64';
+              }
+              if (metaVer) {
+                metaVer.innerText = 'v1.0.4';
+                metaVer.className = 'text-zinc-500 font-mono';
+              }
+              if (metaSha) {
+                metaSha.href = 'downloads/SHA256SUMS.txt';
+              }
+              if (metaWrapper) {
+                metaWrapper.innerHTML = '<button type="button" onclick="setChannel(true)" class="hover:text-zinc-300 transition underline underline-offset-4 cursor-pointer">Switch to beta &rarr;</button>';
+              }
+              if (window.location.hash === '#beta') {
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+              }
+            }
+          }
+
+          function toggleChannel() {
+            setChannel(!isBeta);
+          }
+
+          window.addEventListener('DOMContentLoaded', () => {
+            if (window.location.hash === '#beta') {
+              setChannel(true);
+            }
+          });
+
           function switchPlatform(os) {
             const winTab = document.getElementById('tab-windows');
             const linTab = document.getElementById('tab-linux');
