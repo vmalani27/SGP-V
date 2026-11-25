@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - dev
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_build_all:
+        description: 'Force build and push all images'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -21,8 +27,60 @@ env:
   CDN_URL: ${{ vars.CDN_URL }}
   S3_BUCKET: ${{ secrets.S3_BUCKET }}
   CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
+  DYNAMODB_REGION: ${{ vars.DYNAMODB_REGION }}
+  DYNAMODB_TABLE_BASE_IMAGES: ${{ vars.DYNAMODB_TABLE_BASE_IMAGES }}
+  DYNAMODB_TABLE_APPS: ${{ vars.DYNAMODB_TABLE_APPS }}
+  DYNAMODB_TABLE_LABS: ${{ vars.DYNAMODB_TABLE_LABS }}
 
 jobs:
+  # ── DETECT CHANGES ──────────────────────────────────────────────
+  changes:
+    name: Detect Changed Components
+    runs-on: ubuntu-latest
+    outputs:
+      workflow: ${{ steps.filter.outputs.workflow }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      orchestrator: ${{ steps.filter.outputs.orchestrator }}
+      content_sync: ${{ steps.filter.outputs.content_sync }}
+      proxy: ${{ steps.filter.outputs.proxy }}
+      lab_ubuntu: ${{ steps.filter.outputs.lab_ubuntu }}
+      lab_docker: ${{ steps.filter.outputs.lab_docker }}
+      lab_docker_fundamentals: ${{ steps.filter.outputs.lab_docker_fundamentals }}
+      lab_docker_build: ${{ steps.filter.outputs.lab_docker_build }}
+      lab_git_fundamentals: ${{ steps.filter.outputs.lab_git_fundamentals }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Detect Changed Paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            workflow:
+              - '.github/workflows/publish-beta.yml'
+              - 'scripts/manage_image_registry.py'
+            frontend:
+              - 'next-app/**'
+            orchestrator:
+              - 'orchestrator/app/**'
+              - 'orchestrator/Dockerfile'
+              - 'orchestrator/requirements.txt'
+            content_sync:
+              - 'sidecars/content-sync/**'
+            proxy:
+              - 'proxy/**'
+            lab_ubuntu:
+              - 'orchestrator/lab-images/Dockerfile.ubuntu'
+            lab_docker:
+              - 'orchestrator/lab-images/Dockerfile.docker'
+            lab_docker_fundamentals:
+              - 'orchestrator/lab-images/Dockerfile.docker-fundamentals'
+            lab_docker_build:
+              - 'orchestrator/lab-images/Dockerfile.docker-build'
+            lab_git_fundamentals:
+              - 'orchestrator/lab-images/Dockerfile.git-fundamentals'
+
   # ── 1. BUILD & PACK CURRICULUM CONTENT ───────────────────────────
   build-content:
     name: Build Curriculum Content & Catalog (Beta)
@@ -55,6 +113,7 @@ jobs:
   # ── 2. BUILD & PUSH OCI IMAGES FOR BETA ──────────────────────────
   build-images:
     name: Build & Push OCI Images to ECR (Beta)
+    needs: changes
     runs-on: ubuntu-latest
     environment: beta
     env:
@@ -64,9 +123,21 @@ jobs:
       CDN_URL: ${{ vars.CDN_URL }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
       CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
+      DYNAMODB_REGION: ${{ vars.DYNAMODB_REGION }}
+      DYNAMODB_TABLE_BASE_IMAGES: ${{ vars.DYNAMODB_TABLE_BASE_IMAGES }}
+      DYNAMODB_TABLE_APPS: ${{ vars.DYNAMODB_TABLE_APPS }}
+      DYNAMODB_TABLE_LABS: ${{ vars.DYNAMODB_TABLE_LABS }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install DynamoDB Client
+        run: pip install boto3
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -87,73 +158,137 @@ jobs:
         run: |
           REG="${{ env.ECR_PUBLIC_REGISTRY }}"
           BETA_TAG="beta-${GITHUB_SHA::7}"
+          FORCE="${{ github.event.inputs.force_build_all == 'true' || needs.changes.outputs.workflow == 'true' }}"
 
-          echo "Building Services and Lab Images for beta branch (${BETA_TAG})..."
+          echo "Checking DynamoDB state for Beta environment..."
+          python scripts/manage_image_registry.py check-missing > missing.json
+          cat missing.json
+
+          NEED_FE=$(jq -r '.frontend' missing.json)
+          NEED_ORCH=$(jq -r '.orchestrator' missing.json)
+          NEED_SYNC=$(jq -r '."content-sync"' missing.json)
+          NEED_PROXY=$(jq -r '.proxy' missing.json)
+          NEED_UBUNTU=$(jq -r '."labops-ubuntu"' missing.json)
+          NEED_DOCKER=$(jq -r '."labops-docker"' missing.json)
+          NEED_FUND=$(jq -r '."labops-docker-fundamentals"' missing.json)
+          NEED_BUILD=$(jq -r '."labops-docker-build"' missing.json)
+          NEED_GIT=$(jq -r '."labops-git-fundamentals"' missing.json)
 
           # 1. Frontend
-          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-node:20-alpine" \
-            -t "${REG}/labops-frontend:beta" -t "${REG}/labops-frontend:${BETA_TAG}" --push ./next-app
-          FE_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-frontend:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.frontend }}" = "true" ] || [ "${NEED_FE}" = "false" ]; then
+            echo "==> Building frontend..."
+            docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-node:20-alpine" \
+              -t "${REG}/labops-frontend:beta" -t "${REG}/labops-frontend:${BETA_TAG}" --push ./next-app
+            FE_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-frontend:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category app --name frontend \
+              --remote "${REG}/labops-frontend:${BETA_TAG}" --digest "${FE_DIGEST}" --commit "${GITHUB_SHA}"
+          else
+            echo "==> Skipping frontend: unchanged and registered in DynamoDB."
+          fi
 
           # 2. Orchestrator
-          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-python:3.12-alpine" \
-            -t "${REG}/labops-orchestrator:beta" -t "${REG}/labops-orchestrator:${BETA_TAG}" --push ./orchestrator
-          ORCH_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-orchestrator:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.orchestrator }}" = "true" ] || [ "${NEED_ORCH}" = "false" ]; then
+            echo "==> Building orchestrator..."
+            docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-python:3.12-alpine" \
+              -t "${REG}/labops-orchestrator:beta" -t "${REG}/labops-orchestrator:${BETA_TAG}" --push ./orchestrator
+            ORCH_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-orchestrator:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category app --name orchestrator \
+              --remote "${REG}/labops-orchestrator:${BETA_TAG}" --digest "${ORCH_DIGEST}" --commit "${GITHUB_SHA}"
+          else
+            echo "==> Skipping orchestrator: unchanged and registered in DynamoDB."
+          fi
 
           # 3. Content-Sync
-          docker buildx build --platform linux/amd64 \
-            --build-arg BUILD_BASE_IMAGE="${REG}/labops-golang:1.23-alpine" \
-            --build-arg RUNTIME_BASE_IMAGE="${REG}/labops-alpine:3.20" \
-            --build-arg DEFAULT_CDN_URL="${{ env.CDN_URL }}" \
-            -t "${REG}/labops-content-sync:beta" -t "${REG}/labops-content-sync:${BETA_TAG}" --push ./sidecars/content-sync
-          SYNC_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-content-sync:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.content_sync }}" = "true" ] || [ "${NEED_SYNC}" = "false" ]; then
+            echo "==> Building content-sync..."
+            docker buildx build --platform linux/amd64 \
+              --build-arg BUILD_BASE_IMAGE="${REG}/labops-golang:1.23-alpine" \
+              --build-arg RUNTIME_BASE_IMAGE="${REG}/labops-alpine:3.20" \
+              --build-arg DEFAULT_CDN_URL="${{ env.CDN_URL }}" \
+              -t "${REG}/labops-content-sync:beta" -t "${REG}/labops-content-sync:${BETA_TAG}" --push ./sidecars/content-sync
+            SYNC_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-content-sync:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category app --name content-sync \
+              --remote "${REG}/labops-content-sync:${BETA_TAG}" --digest "${SYNC_DIGEST}" --commit "${GITHUB_SHA}"
+          else
+            echo "==> Skipping content-sync: unchanged and registered in DynamoDB."
+          fi
 
           # 4. Proxy
-          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-nginx:1.27-alpine" \
-            -t "${REG}/labops-proxy:beta" -t "${REG}/labops-proxy:${BETA_TAG}" --push ./proxy
-          PROXY_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-proxy:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.proxy }}" = "true" ] || [ "${NEED_PROXY}" = "false" ]; then
+            echo "==> Building proxy..."
+            docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-nginx:1.27-alpine" \
+              -t "${REG}/labops-proxy:beta" -t "${REG}/labops-proxy:${BETA_TAG}" --push ./proxy
+            PROXY_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-proxy:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category app --name proxy \
+              --remote "${REG}/labops-proxy:${BETA_TAG}" --digest "${PROXY_DIGEST}" --commit "${GITHUB_SHA}"
+          else
+            echo "==> Skipping proxy: unchanged and registered in DynamoDB."
+          fi
 
           # 5. Base Labs & Preloaded Labs
-          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:22.04" \
-            -t "${REG}/labops-ubuntu:beta" -t "${REG}/labops-ubuntu:${BETA_TAG}" \
-            -f ./orchestrator/lab-images/Dockerfile.ubuntu --push ./orchestrator/lab-images
-          UBUNTU_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-ubuntu:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.lab_ubuntu }}" = "true" ] || [ "${NEED_UBUNTU}" = "false" ]; then
+            echo "==> Building labops-ubuntu..."
+            docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:22.04" \
+              -t "${REG}/labops-ubuntu:beta" -t "${REG}/labops-ubuntu:${BETA_TAG}" \
+              -f ./orchestrator/lab-images/Dockerfile.ubuntu --push ./orchestrator/lab-images
+            UBUNTU_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-ubuntu:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category lab --name labops-ubuntu \
+              --remote "${REG}/labops-ubuntu:${BETA_TAG}" --digest "${UBUNTU_DIGEST}" --commit "${GITHUB_SHA}" --alias "labops-ubuntu:latest"
+          else
+            echo "==> Skipping labops-ubuntu: unchanged and registered in DynamoDB."
+          fi
 
-          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:beta" \
-            -t "${REG}/labops-docker:beta" -t "${REG}/labops-docker:${BETA_TAG}" \
-            -f ./orchestrator/lab-images/Dockerfile.docker --push ./orchestrator/lab-images
-          DOCKER_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.lab_docker }}" = "true" ] || [ "${{ needs.changes.outputs.lab_ubuntu }}" = "true" ] || [ "${NEED_DOCKER}" = "false" ]; then
+            echo "==> Building labops-docker..."
+            docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:beta" \
+              -t "${REG}/labops-docker:beta" -t "${REG}/labops-docker:${BETA_TAG}" \
+              -f ./orchestrator/lab-images/Dockerfile.docker --push ./orchestrator/lab-images
+            DOCKER_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category lab --name labops-docker \
+              --remote "${REG}/labops-docker:${BETA_TAG}" --digest "${DOCKER_DIGEST}" --commit "${GITHUB_SHA}" --alias "labops-docker:latest"
+          else
+            echo "==> Skipping labops-docker: unchanged and registered in DynamoDB."
+          fi
 
-          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:beta" \
-            -t "${REG}/labops-docker-fundamentals:beta" -t "${REG}/labops-docker-fundamentals:${BETA_TAG}" \
-            -f ./orchestrator/lab-images/Dockerfile.docker-fundamentals --push ./orchestrator/lab-images
-          FUND_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-fundamentals:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.lab_docker_fundamentals }}" = "true" ] || [ "${{ needs.changes.outputs.lab_ubuntu }}" = "true" ] || [ "${NEED_FUND}" = "false" ]; then
+            echo "==> Building labops-docker-fundamentals..."
+            docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:beta" \
+              -t "${REG}/labops-docker-fundamentals:beta" -t "${REG}/labops-docker-fundamentals:${BETA_TAG}" \
+              -f ./orchestrator/lab-images/Dockerfile.docker-fundamentals --push ./orchestrator/lab-images
+            FUND_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-fundamentals:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category lab --name labops-docker-fundamentals \
+              --remote "${REG}/labops-docker-fundamentals:${BETA_TAG}" --digest "${FUND_DIGEST}" --commit "${GITHUB_SHA}" --alias "labops-docker-fundamentals:latest"
+          else
+            echo "==> Skipping labops-docker-fundamentals: unchanged and registered in DynamoDB."
+          fi
 
-          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-docker:beta" \
-            -t "${REG}/labops-docker-build:beta" -t "${REG}/labops-docker-build:${BETA_TAG}" \
-            -f ./orchestrator/lab-images/Dockerfile.docker-build --push ./orchestrator/lab-images
-          BUILD_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-build:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.lab_docker_build }}" = "true" ] || [ "${{ needs.changes.outputs.lab_docker }}" = "true" ] || [ "${NEED_BUILD}" = "false" ]; then
+            echo "==> Building labops-docker-build..."
+            docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-docker:beta" \
+              -t "${REG}/labops-docker-build:beta" -t "${REG}/labops-docker-build:${BETA_TAG}" \
+              -f ./orchestrator/lab-images/Dockerfile.docker-build --push ./orchestrator/lab-images
+            BUILD_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-docker-build:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category lab --name labops-docker-build \
+              --remote "${REG}/labops-docker-build:${BETA_TAG}" --digest "${BUILD_DIGEST}" --commit "${GITHUB_SHA}" --alias "labops-docker-build:latest"
+          else
+            echo "==> Skipping labops-docker-build: unchanged and registered in DynamoDB."
+          fi
 
-          docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:beta" \
-            -t "${REG}/labops-git-fundamentals:beta" -t "${REG}/labops-git-fundamentals:${BETA_TAG}" \
-            -f ./orchestrator/lab-images/Dockerfile.git-fundamentals --push ./orchestrator/lab-images
-          GIT_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-git-fundamentals:beta" --raw | sha256sum | cut -d' ' -f1)
+          if [ "${FORCE}" = "true" ] || [ "${{ needs.changes.outputs.lab_git_fundamentals }}" = "true" ] || [ "${{ needs.changes.outputs.lab_ubuntu }}" = "true" ] || [ "${NEED_GIT}" = "false" ]; then
+            echo "==> Building labops-git-fundamentals..."
+            docker buildx build --platform linux/amd64 --build-arg BASE_IMAGE="${REG}/labops-ubuntu:beta" \
+              -t "${REG}/labops-git-fundamentals:beta" -t "${REG}/labops-git-fundamentals:${BETA_TAG}" \
+              -f ./orchestrator/lab-images/Dockerfile.git-fundamentals --push ./orchestrator/lab-images
+            GIT_DIGEST=$(docker buildx imagetools inspect "${REG}/labops-git-fundamentals:beta" --raw | sha256sum | cut -d' ' -f1)
+            python scripts/manage_image_registry.py record --category lab --name labops-git-fundamentals \
+              --remote "${REG}/labops-git-fundamentals:${BETA_TAG}" --digest "${GIT_DIGEST}" --commit "${GITHUB_SHA}" --alias "labops-git-fundamentals:latest"
+          else
+            echo "==> Skipping labops-git-fundamentals: unchanged and registered in DynamoDB."
+          fi
 
-          # Record image digest map for audit & promotion
-          cat <<EOF > images.json
-          {
-            "frontend": { "remote": "${REG}/labops-frontend:${BETA_TAG}", "digest": "sha256:${FE_DIGEST}" },
-            "orchestrator": { "remote": "${REG}/labops-orchestrator:${BETA_TAG}", "digest": "sha256:${ORCH_DIGEST}" },
-            "content-sync": { "remote": "${REG}/labops-content-sync:${BETA_TAG}", "digest": "sha256:${SYNC_DIGEST}" },
-            "proxy": { "remote": "${REG}/labops-proxy:${BETA_TAG}", "digest": "sha256:${PROXY_DIGEST}" },
-            "git-server": { "remote": "${REG}/labops-git-server:latest", "digest": "" },
-            "labops-ubuntu": { "remote": "${REG}/labops-ubuntu:${BETA_TAG}", "digest": "sha256:${UBUNTU_DIGEST}", "alias": "labops-ubuntu:latest" },
-            "labops-docker": { "remote": "${REG}/labops-docker:${BETA_TAG}", "digest": "sha256:${DOCKER_DIGEST}", "alias": "labops-docker:latest" },
-            "labops-docker-fundamentals": { "remote": "${REG}/labops-docker-fundamentals:${BETA_TAG}", "digest": "sha256:${FUND_DIGEST}", "alias": "labops-docker-fundamentals:latest" },
-            "labops-docker-build": { "remote": "${REG}/labops-docker-build:${BETA_TAG}", "digest": "sha256:${BUILD_DIGEST}", "alias": "labops-docker-build:latest" },
-            "labops-git-fundamentals": { "remote": "${REG}/labops-git-fundamentals:${BETA_TAG}", "digest": "sha256:${GIT_DIGEST}", "alias": "labops-git-fundamentals:latest" }
-          }
-          EOF
+          echo "Exporting images.json from DynamoDB..."
+          python scripts/manage_image_registry.py export-manifest --output images.json
+          cat images.json
 
       - name: Upload Images Metadata Map
         uses: actions/upload-artifact@v4
