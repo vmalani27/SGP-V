@@ -130,44 +130,32 @@ function getLabProgressKey(courseId: string, labId: string): string {
 function readSavedLabProgress(courseId: string, labId: string, sessionId?: string): SavedLabProgress | null {
   if (typeof window === 'undefined') return null;
   try {
-    // 1. Primary: stable key per course and lab
+    // Progress is strictly bound to an active container session.
+    // If there is no active session or the session IDs differ, the container is fresh
+    // and progress from an older, destroyed container must never be restored.
+    if (!sessionId) return null;
+
+    // 1. Check primary key
     const primaryKey = getLabProgressKey(courseId, labId);
     const raw = localStorage.getItem(primaryKey);
     if (raw) {
       const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.sessionId === sessionId) {
+          return parsed as SavedLabProgress;
+        }
+      }
+    }
+
+    // 2. Check session-specific key
+    const sessionKey = `${primaryKey}_${sessionId}`;
+    const sessionRaw = localStorage.getItem(sessionKey);
+    if (sessionRaw) {
+      const parsed = JSON.parse(sessionRaw);
       if (parsed && typeof parsed === 'object') return parsed as SavedLabProgress;
     }
 
-    // 2. Fallback: session-specific key if provided
-    if (sessionId) {
-      const sessionKey = `${primaryKey}_${sessionId}`;
-      const sessionRaw = localStorage.getItem(sessionKey);
-      if (sessionRaw) {
-        const parsed = JSON.parse(sessionRaw);
-        if (parsed && typeof parsed === 'object') return parsed as SavedLabProgress;
-      }
-    }
-
-    // 3. Fallback: scan any legacy session-specific keys for this course and lab
-    const prefix = `${primaryKey}_`;
-    let latest: SavedLabProgress | null = null;
-    let latestTime = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(prefix)) {
-        try {
-          const item = JSON.parse(localStorage.getItem(k) || '');
-          if (item && typeof item === 'object') {
-            const t = typeof item.updatedAt === 'number' ? item.updatedAt : 0;
-            if (!latest || t >= latestTime) {
-              latest = item as SavedLabProgress;
-              latestTime = t;
-            }
-          }
-        } catch {}
-      }
-    }
-    return latest;
+    return null;
   } catch (e) {
     console.warn('[LabClient] Failed to read saved task progress:', e);
     return null;
@@ -421,6 +409,7 @@ export default function LabClient({
     setSidebarOpen(false);
     setPhase('provisioning');
     setError(null);
+    clearSavedLabProgress(courseId, labId);
     setTaskProgress(null);
     taskProgressRef.current = null;
     setTaskStatuses({});
@@ -452,6 +441,7 @@ export default function LabClient({
 
   const handleStartNew = useCallback(async () => {
     cancelCelebration();
+    clearSavedLabProgress(courseId, labId, labState?.sessionId);
     if (labState) {
       try {
         await api.labs.destroy(courseId, labId, labState.sessionId);
@@ -467,42 +457,47 @@ export default function LabClient({
       setError(msg);
       setPhase('error');
     }
-  }, [provisionLab, cancelCelebration, labState]);
+  }, [provisionLab, cancelCelebration, labState, courseId, labId]);
 
   const handleRestart = async () => {
     if (!labState) return;
     cancelCelebration();
     setRestarting(true);
     setPhase('provisioning');
+    clearSavedLabProgress(courseId, labId, labState.sessionId);
+    setTaskProgress(null);
+    taskProgressRef.current = null;
+    setTaskStatuses({});
+    setTaskErrors({});
+    setTasksError(null);
+
     try {
-      if (labState.status === 'running') {
-        await api.labs.stop(courseId, labId, labState.sessionId);
-      }
-      await api.labs.resume(courseId, labId, labState.sessionId);
-      setLabState({ ...labState, status: 'running' });
-      setTerminalEpoch((prev) => prev + 1);
+      await api.labs.destroy(courseId, labId, labState.sessionId);
     } catch (e) {
-      console.error('Stop/resume restart failed, recreating container:', e);
-      try {
-        await api.labs.destroy(courseId, labId, labState.sessionId);
-      } catch (e2) {
-        console.error('Failed to destroy old lab:', e2);
-      }
-      setLabState(null);
-      try {
-        const result = await api.labs.start(courseId, labId, envConfigFrom(labConfig, labInfo?.moduleId));
-        setLabState(labStateFrom(result));
-        setTerminalEpoch((prev) => prev + 1);
-      } catch (e3) {
-        const msg = e3 instanceof Error ? e3.message : 'Failed to start lab';
-        setError(msg);
-        setPhase('error');
-        setRestarting(false);
-        return;
-      }
+      console.warn('Failed to destroy lab during restart:', e);
     }
-    setRestarting(false);
-    setPhase('running');
+    setLabState(null);
+
+    try {
+      let config = labConfig;
+      if (!config) {
+        try {
+          config = await api.content.getLabConfig(courseId, labId);
+        } catch {
+          config = null;
+        }
+      }
+      const result = await api.labs.start(courseId, labId, envConfigFrom(config, labInfo?.moduleId));
+      setLabState(labStateFrom(result));
+      setTerminalEpoch((prev) => prev + 1);
+      setPhase('running');
+    } catch (e3) {
+      const msg = e3 instanceof Error ? e3.message : 'Failed to restart lab';
+      setError(msg);
+      setPhase('error');
+    } finally {
+      setRestarting(false);
+    }
   };
 
   const handleStop = async () => {
