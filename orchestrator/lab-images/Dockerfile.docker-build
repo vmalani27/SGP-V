@@ -23,6 +23,15 @@ RUN apt-get update -o Acquire::Retries=3 && apt-get install -y --no-install-reco
 # Pre-populate chapter fixtures into /home/student
 COPY fixtures/ /home/student/
 
+# Initialize fixtures required for labs (git repo & bytecode for hello-app)
+RUN mkdir -p /home/student/hello-app/__pycache__ \
+    && touch /home/student/hello-app/__pycache__/app.cpython-312.pyc \
+    && git -C /home/student/hello-app init -b main \
+    && git -C /home/student/hello-app config user.name "Student" \
+    && git -C /home/student/hello-app config user.email "student@labops.local" \
+    && git -C /home/student/hello-app add . \
+    && git -C /home/student/hello-app commit -m "Initial commit"
+
 # Ensure student user owns all workspace files
 RUN chown -R student:student /home/student \
     && chmod -R u+rwX /home/student
