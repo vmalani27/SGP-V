@@ -32,7 +32,7 @@ You build a small "greeter" image that runs a shell script. The script must be e
 2. Write a Dockerfile using all six common instructions: `FROM`, `WORKDIR`, `COPY`, `RUN`, `EXPOSE`, `CMD`.
 3. Build the image as `greeter-app`.
 4. Run it as a container named `greeter` and confirm it prints `hello from the image`.
-5. Inspect the image and confirm port `8080` is documented.
+5. Explain where EXPOSE metadata is stored and its effect on runtime port publishing.
 6. State which instructions run at build time and which at run time.
 
 ## Tasks
@@ -41,7 +41,7 @@ You build a small "greeter" image that runs a shell script. The script must be e
 - [ ] **write-dockerfile** — Write a Dockerfile with `FROM`, `WORKDIR`, `COPY`, `RUN`, `EXPOSE`, and `CMD`.
 - [ ] **build-image** — Build it as `greeter-app`.
 - [ ] **run-image** — Run it as a container named `greeter` and confirm it prints `hello from the image`.
-- [ ] **verify-expose** — Confirm the image documents port `8080`.
+- [ ] **verify-expose** — Identify how Docker records EXPOSE declarations and their runtime effect.
 - [ ] **when-run** — Identify when `RUN` and `CMD` each execute.
 
 ## Reflection

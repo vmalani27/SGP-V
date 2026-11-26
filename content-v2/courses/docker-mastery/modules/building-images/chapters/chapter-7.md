@@ -74,9 +74,76 @@ For most projects, the same list applies:
 
 ## Security Implications
 
-The build context is a small but real attack surface. If a directory accidentally contains credentials or private data, and nothing excludes them, they end up inside the image's layers — where anyone with access to the image can read them later with `docker history`. `.dockerignore` is the cheap way to keep secrets and junk out of the build, and out of the images you ship.
+The build context is a small but real attack surface. If a directory accidentally contains credentials or private data, and nothing excludes them, they end up inside the image's layers — where anyone with access to the image can read them later with `docker history`. `.dockerignore` is the standard tool to keep secrets and unnecessary artifacts out of the build, and out of the images you ship.
 
-> **Try This:** In a project directory, create a large or secret file (say, `secret.txt` and a `node_modules/` directory with a dummy file inside). Build without a `.dockerignore` and confirm the build context is larger; then add a `.dockerignore` excluding both and rebuild — the build should be faster and the image should not contain them.
+## Walkthrough: Build Context in Action with express-app
+
+The workspace provides a pre-configured sample project at `~/express-app`. Inspect its structure:
+
+```bash
+cd ~/express-app
+ls -la
+```
+
+```text
+total 24
+drwxr-xr-x 2 student student 4096 Nov 23 05:54 .
+-rw-r--r-- 1 student student   42 Nov 23 05:54 .dockerignore
+-rw-r--r-- 1 student student  123 Nov 23 05:54 Dockerfile
+-rw-r--r-- 1 student student  173 Nov 23 05:54 package.json
+-rw-r--r-- 1 student student  273 Nov 23 05:54 server.js
+```
+
+### Inspecting Context Exclusions
+
+Examine the exclusion patterns in `.dockerignore`:
+
+```bash
+cat .dockerignore
+```
+
+```text
+node_modules
+npm-debug.log
+.git
+.DS_Store
+```
+
+The Dockerfile contains `COPY . .`, which attempts to copy everything in the directory into the container. Because `node_modules` and `.git` are listed in `.dockerignore`, Docker filters them out before transferring the context to the builder daemon.
+
+### Building the Sample Image
+
+Build the container image using `~/express-app` as the build context (`.`):
+
+```bash
+docker build -t express-demo .
+```
+
+The Docker daemon receives only the application source files, executes `npm install` inside the Linux build container to download runtime dependencies, and saves the image to the local store.
+
+### Running and Verifying the Container
+
+Start a background container named `my-express` and map host port 3000 to container port 3000:
+
+```bash
+docker run -d --name my-express -p 3000:3000 express-demo
+```
+
+Test that the web service is operational:
+
+```bash
+curl http://localhost:3000
+```
+
+```json
+{"status":"ok","message":"Hello from inside the container!"}
+```
+
+Stop and remove the demonstration container:
+
+```bash
+docker rm -f my-express
+```
 
 ## Key Takeaways
 

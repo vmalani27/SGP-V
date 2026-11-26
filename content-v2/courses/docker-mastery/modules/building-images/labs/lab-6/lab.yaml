@@ -86,17 +86,17 @@ tasks:
 
   - id: verify-expose
     prompt: >-
-      Inspect the `greeter-app` image and confirm that port `8080` is documented
-      in its configuration.
-    type: terminal_action
+      Where does Docker store the port specified in `EXPOSE 8080`, and what effect does it have at runtime?
+    type: multiple_choice
+    options:
+      - "It is stored in the image configuration metadata (`.Config.ExposedPorts`); external access still requires `-p` at runtime"
+      - "It is written to `/etc/services` inside the container filesystem during the build"
+      - "It automatically binds to `0.0.0.0:8080` on the host system when `docker run` starts"
+      - "It creates an active iptables forwarding rule on the host network interface"
     validation:
-      command: >-
-        docker image inspect greeter-app --format '{{json .Config.ExposedPorts}}'
-        2>/dev/null | grep -q '8080/tcp' && echo EXPOSE_OK
-      match_type: exact
-      expected_output: EXPOSE_OK
+      expected_answer: "It is stored in the image configuration metadata (`.Config.ExposedPorts`); external access still requires `-p` at runtime"
     error_message: >-
-      The image configuration does not contain the required documented service port.
+      The selected answer does not identify that EXPOSE only writes metadata to the image configuration and requires explicit runtime publishing.
 
   - id: when-run
     prompt: >-
