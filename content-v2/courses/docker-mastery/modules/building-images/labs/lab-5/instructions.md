@@ -36,7 +36,7 @@ You need to package a system status announcement payload into a lightweight cont
 2. Author `~/status-banner/Dockerfile` to base on `alpine:latest`, configure `/app` as the working directory, copy `banner.txt`, and output the banner contents when started.
 3. Build and tag the image as `status-banner:1.0`.
 4. Run the image as a container named `status-runner` and verify the output.
-5. Identify the distinct roles of the Dockerfile, image, and container.
+5. Understand why Alpine Linux is chosen as a minimal base image.
 
 ## Tasks
 
@@ -44,7 +44,7 @@ You need to package a system status announcement payload into a lightweight cont
 - [ ] **write-dockerfile** — Author a `Dockerfile` with `FROM`, `WORKDIR`, `COPY`, and `CMD` to display the banner.
 - [ ] **build-image** — Build and tag the image as `status-banner:1.0`.
 - [ ] **run-image** — Launch `status-runner` and confirm it prints the status banner in its logs.
-- [ ] **what-built** — Identify what `docker build` and `docker run` each produce.
+- [ ] **alpine-base** — Identify why Alpine Linux is widely selected as a minimal base image.
 
 ## Reflection
 

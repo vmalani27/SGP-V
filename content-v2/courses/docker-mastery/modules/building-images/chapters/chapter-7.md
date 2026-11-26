@@ -1,4 +1,4 @@
-# Chapter 7: Build Context and `.dockerignore`
+# Chapter 7: Build Context and .dockerignore
 
 ## In this chapter, you will
 

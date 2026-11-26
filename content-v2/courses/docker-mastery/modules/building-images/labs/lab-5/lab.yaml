@@ -78,17 +78,18 @@ tasks:
       The status-runner container was not found, did not use the status-banner:1.0
       image, or did not produce the expected banner in its logs.
 
-  - id: what-built
+  - id: alpine-base
     prompt: >-
-      Which statement correctly describes the relationship between a Dockerfile,
-      an image, and a container?
+      Why is Alpine Linux (`alpine`) widely chosen as a base image for minimal
+      Docker containers?
     type: multiple_choice
     options:
-      - "docker build produces an image from a Dockerfile; docker run produces a container from an image"
-      - "docker build produces a container; docker run produces an image"
-      - "The Dockerfile, the image, and the container are all the same thing"
+      - "It is an ultra-lightweight Linux distribution (~5 MB) that minimizes image size and attack surface"
+      - "It is the only distribution compatible with the Docker container engine"
+      - "It automatically bundles Python, Node.js, and standard build toolchains"
+      - "It bypasses layer caching during the image build process"
     validation:
-      expected_answer: "docker build produces an image from a Dockerfile; docker run produces a container from an image"
+      expected_answer: "It is an ultra-lightweight Linux distribution (~5 MB) that minimizes image size and attack surface"
     error_message: >-
-      The selected statement does not distinguish the Dockerfile, image, and
-      container or assigns the build and run operations to the wrong objects.
+      The selected answer does not describe the core characteristics or purpose
+      of using Alpine Linux as a minimal base image.
