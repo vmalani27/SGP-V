@@ -126,14 +126,12 @@ CMD ["node", "dist/server.js"]
 
 Let's walk through the full lifecycle: generating local dependencies on the host, observing single-stage bloat, and building the optimized multi-stage image.
 
-> [!TIP]
 > **Try it in the terminal:** Compare a single-stage build with a multi-stage build, then run and verify the production image.
 
 ## The Learning Loop (Cause & Effect)
 
 Now verify the security and hygiene benefits: are the build tools truly gone from the production container?
 
-> [!TIP]
 > **Run these checks in the terminal:** Verify the compiler is absent, confirm the container user, and compare the production image history.
 
 ## Common Pitfalls & Anti-Patterns

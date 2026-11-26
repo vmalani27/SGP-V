@@ -104,14 +104,12 @@ Let's build and run the application. Notice:
 - `EXPOSE 3000` documents the port, but `-p 3000:3000` is what maps incoming host traffic to the container port.
 - `-d` runs the container in detached mode so your terminal stays free.
 
-> [!TIP]
 > **Try it in the terminal:** Inspect the project, build the image, run it with port publishing, and verify its logs and HTTP response.
 
 ## The Learning Loop (Cause & Effect)
 
 Now verify the real-world performance payoff of copying `package*.json` before application code. When you change `server.js`, Docker skips the expensive `npm install` layer and pulls it straight from cache.
 
-> [!TIP]
 > **Run the experiment in the terminal:** Change `server.js`, rebuild the image, and inspect its layer history to see Docker reuse the dependency layer.
 
 ## Key Takeaways

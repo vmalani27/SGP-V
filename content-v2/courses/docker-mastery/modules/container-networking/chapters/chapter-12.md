@@ -109,12 +109,10 @@ Allows a running container to attach to multiple networks on the fly (dual-homin
 
 Let's test all three network modes (`none`, `host`, and `bridge`) and experience user-defined DNS in action.
 
-> [!TIP]
 > **Try it in the terminal:** Test network modes, verify container DNS resolution, and inspect network bridge settings.
 
 ## The Learning Loop (Cause & Effect)
 
-> [!TIP]
 > Now observe the enforced boundary in the terminal: try resolving `cache-db` from outside `app-net`, inspect Docker's embedded DNS from inside the network, and clean up the demo resources.
 
 ## Common Pitfalls & Anti-Patterns

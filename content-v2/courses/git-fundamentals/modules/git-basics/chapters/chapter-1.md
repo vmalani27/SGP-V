@@ -151,8 +151,7 @@ cd ~/demo-repo
 git init
 ```
 
-> [!TIP]
-> Use the same email address associated with your GitHub or GitLab account so commits link to your developer profile during code reviews.
+> **Tip:** Use the same email address associated with your GitHub or GitLab account so commits link to your developer profile during code reviews.
 
 ## How Professionals Use Git Every Day
 
