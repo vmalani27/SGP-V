@@ -37,7 +37,7 @@ tasks:
       sets the working directory to `/app`, copies `deps.txt` into the image,
       records the contents of `deps.txt` into a file named `installed.txt`
       during the build (this stands in for installing dependencies), then copies
-      `app.sh` and prints it when a container starts.
+      `app.sh` and executes it when a container starts.
     type: terminal_action
     validation:
       command: >-

@@ -147,12 +147,13 @@ Example: `docker compose exec cache redis-cli ping` sends a ping directly to the
 
 Let's inspect, validate, and orchestrate a multi-tier application stack using Docker Compose.
 
-Try it â€” click **Run this next**, review each command, and press Enter:
+> [!TIP]
+> **Try it in the terminal:** Inspect, validate, and orchestrate a multi-tier application stack using Docker Compose.
 
 ## The Learning Loop (Cause & Effect)
 
-:::
-Now explore Compose's automatic network management and teardown semantics in the terminal: inspect the generated networks, test service-name DNS, tear down the stack, and confirm cleanup.
+> [!TIP]
+> Now explore Compose's automatic network management and teardown semantics in the terminal: inspect the generated networks, test service-name DNS, tear down the stack, and confirm cleanup.
 
 ## Common Pitfalls & Anti-Patterns
 
