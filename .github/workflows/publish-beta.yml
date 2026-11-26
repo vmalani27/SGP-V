@@ -158,7 +158,7 @@ jobs:
         run: |
           REG="${{ env.ECR_PUBLIC_REGISTRY }}"
           BETA_TAG="beta-${GITHUB_SHA::7}"
-          FORCE="${{ github.event.inputs.force_build_all == 'true' || needs.changes.outputs.workflow == 'true' }}"
+          FORCE="${{ github.event.inputs.force_build_all == 'true' }}"
 
           echo "Checking DynamoDB state for Beta environment..."
           python scripts/manage_image_registry.py check-missing > missing.json

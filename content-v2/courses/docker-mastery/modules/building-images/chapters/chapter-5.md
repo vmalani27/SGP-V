@@ -1,246 +1,113 @@
 # Chapter 5: Building Your Own Images
 
-## In this chapter, you will
+## Learning Objectives
 
-- See where images come from and why you need to build your own
-- Meet the Dockerfile and how it fits between your code and a container
-- Keep the three objects straight: Dockerfile, image, container
-- Build your first minimal image
-- Learn what `FROM`, `COPY`, and `CMD` do
-- Understand the build context
+- Understand the relationship between Dockerfiles, images, and containers
+- Write a minimal Dockerfile using `FROM`, `WORKDIR`, `COPY`, and `CMD`
+- Build images using `docker build` with a designated build context
+- Inspect built images in the local Docker image store
+- Distinguish between build-time operations (`RUN`) and container startup commands (`CMD`)
 
-## From Using Images to Building Images
+## The Build Pipeline: Dockerfile to Container
 
-So far you have been running images other people already built:
+Running existing registry images handles standard tooling and infrastructure services. Shipping custom applications requires packaging application code, dependencies, and runtime configuration into a new image.
+
+The container lifecycle follows three distinct stages:
+
+| Component | Type | Responsibility |
+| :--- | :--- | :--- |
+| **Dockerfile** | Text source file | Declarative build instructions describing how to construct the filesystem and default execution command. |
+| **Image** | Immutable artifact | Layered, packaged filesystem containing runtime dependencies and image metadata stored in the Docker engine cache. |
+| **Container** | Runtime instance | Isolated Linux process execution running an image. |
+
+The command pipeline connects them:
+
+```text
+Dockerfile  ──( docker build )──>  Image  ──( docker run )──>  Container
+```
+
+- `docker build` reads the Dockerfile, executes instructions against the build context, and writes a tagged image to the local store.
+- `docker run` instantiates that image into an active or stopped container process.
+
+## Writing a Minimal Dockerfile
+
+Create a project directory with a simple payload file:
 
 ```bash
-docker run nginx:alpine
-docker run alpine echo "hello"
+mkdir -p ~/my-image
+cd ~/my-image
+echo "hello from my image" > hello.txt
 ```
 
-Everything worked out of the box — but only because those images already existed. Somewhere, someone had to build them before you could run them.
-
-You already know the bottom half of the story:
-
-```text
-Docker image
-      ↓
-docker run
-      ↓
-Container
-```
-
-Now you have *your own* application, and there is no pre-built image waiting for it:
-
-```text
-Your application
-      ↓
-     ????
-      ↓
-Docker image
-      ↓
-Container
-```
-
-The missing question is:
-
-> **How do we turn an application into an image?**
-
-That is the problem this chapter solves.
-
-## The Dockerfile
-
-A **Dockerfile** is a text file containing instructions Docker uses to build an image.
+Create a file named `Dockerfile` (no file extension) in `~/my-image`:
 
 ```dockerfile
-FROM python:3.12-alpine
+FROM alpine:3.20
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY hello.txt .
 
-COPY app.py .
-
-CMD ["python", "app.py"]
+CMD ["cat", "hello.txt"]
 ```
 
-Do not worry about every instruction yet. For now, the important thing is the relationship the Dockerfile completes:
+### Core Instructions Breakdown
 
-```text
-Dockerfile
-    │
-    │ docker build
-    ▼
-Docker image
-    │
-    │ docker run
-    ▼
-Container
-```
+- **`FROM alpine:3.20`**: Specifies the starting parent image. Every Dockerfile begins with `FROM` to establish the base operating system and package environment.
+- **`WORKDIR /app`**: Sets the working directory inside the container filesystem. Subsequent `COPY`, `RUN`, and `CMD` instructions execute relative to this path. If the directory does not exist, Docker creates it automatically.
+- **`COPY hello.txt .`**: Copies `hello.txt` from the host build context into the container's current working directory (`/app`).
+- **`CMD ["cat", "hello.txt"]`**: Sets the default command executed when the container starts. Here, `cat` reads `/app/hello.txt` and writes it to standard output.
 
-`docker build` builds an image from a Dockerfile, and `docker run` creates a container from that image. That is the whole reason a Dockerfile exists: to describe, in plain text, what an image should contain and how it should start.
+## Building and Running the Image
 
-## Dockerfile, Image, Container
-
-These three objects are related, but they are not interchangeable.
-
-- The **Dockerfile** is instructions — a text document that describes *how to build*.
-- The **image** is the built artifact — the packaged result that contains everything the container needs.
-- The **container** is the runtime instance — a *runnable instance of an image*. It can be running or stopped.
-
-Put them in a row and the flow is one-way:
-
-```text
-Dockerfile
-   │
-   │ docker build
-   ▼
-Image
-   │
-   │ docker run
-   ▼
-Container
-```
-
-> **A Dockerfile is not an image. An image is not a container.**
-
-- The Dockerfile is the plan.
-- The image is the result of executing the plan.
-- The container is an instance of that result — created by `docker run`, and able to exist in either a running or a stopped state, exactly as you saw in Chapter 2.
-
-## Your First Dockerfile
-
-Build something real before any more theory. You will create a directory with a single file and a tiny Dockerfile that prints it.
-
-Create a directory and add one file:
-
-```text
-my-first-image/
-├── Dockerfile
-└── hello.txt
-```
-
-**Save the Dockerfile with no extension** — the filename is `Dockerfile`, exactly that. Docker uses this filename by default when you run `docker build`, so it does not need to be passed explicitly.
-
-Dockerfile:
-
-```dockerfile
-FROM alpine:latest
-
-COPY hello.txt /
-
-CMD ["cat", "/hello.txt"]
-```
-
-Build the image:
+Build the image from the project directory:
 
 ```bash
 docker build -t my-first-image .
 ```
 
-Then run it:
+The command parameters specify:
+- `-t my-first-image`: Tags the resulting image with the repository name `my-first-image`.
+- `.`: Sets the **build context** to the current working directory.
+
+Verify the image exists in the local image store:
 
 ```bash
-docker run --rm my-first-image
+docker image ls my-first-image
 ```
 
-You see the contents of `hello.txt` printed, and the container exits. Follow what you just did:
-
-```text
-hello.txt
-    +
-Dockerfile
-    │
-    │ docker build
-    ▼
-my-first-image   ← the image
-    │
-    │ docker run
-    ▼
-container
-    │
-    ▼
-cat /hello.txt
-```
-
-:::
-Try the build yourself in the terminal. Create the files, build the image, and run it to see the result.
-
-## What Happened During the Build?
-
-You just used three instructions. Here is what each one did:
-
-| Instruction | Job                                  |
-| ----------- | ------------------------------------ |
-| `FROM`      | Choose the starting image for the build. |
-| `COPY`      | Put files into the image.            |
-| `CMD`       | Define the default command for a container created from the image. |
-
-Your Dockerfile:
-
-```dockerfile
-FROM alpine:latest
-COPY hello.txt /
-CMD ["cat", "/hello.txt"]
-```
-
-- **`FROM alpine:latest`** — the build starts from an existing image; your own content is added on top of it.
-- **`COPY hello.txt /`** — copies `hello.txt` into the image's filesystem, at `/`.
-- **`CMD ["cat", "/hello.txt"]`** — the command a container runs when it starts. Because the file lives at `/hello.txt`, `cat` is able to print it.
-
-Inspect the result to make the separation concrete:
+Run a container from the new image:
 
 ```bash
-docker image ls
-docker image inspect my-first-image
+docker run --name hello my-first-image
 ```
 
-`docker image ls` lists images as stored artifacts; `docker image inspect` shows the metadata and configuration Docker recorded for yours. The image persists on disk independently of any container launched from it.
+The container starts, executes `cat hello.txt`, prints `hello from my image`, and exits cleanly. Inspect the completed container state:
 
-## Where Did `hello.txt` Come From?
+```bash
+docker ps -a --filter "name=hello"
+docker logs hello
+```
 
-Look back at the build command:
+## Understanding the Build Context
+
+The final argument in `docker build -t my-first-image .` specifies the build context:
 
 ```bash
 docker build -t my-first-image .
-```
-
-What does the `.` mean? It is the **build context** — the directory Docker reads from while building, so `COPY` and `ADD` can reference files inside it. A build can only see files that live within this directory; anything outside it is invisible to the builder.
-
-```text
-my-first-image/
-├── Dockerfile
-├── hello.txt   ← available to COPY
-└── src/        ← also inside the context
-```
-
-```bash
-docker build -t my-first-image .
-                              ↑
+                               ▲
                          build context
 ```
 
-The context is what Docker sends to the builder, and the builder turns it into an image:
+The build context is the directory tree sent to the Docker daemon or BuildKit engine at build time. 
 
-```text
-my-first-image/         (build context)
-   ├── Dockerfile
-   ├── hello.txt
-   └── src/
-        │
-        ▼
-      builder
-        │
-        ▼
-      image
-```
+- `COPY` and `ADD` instructions can only reference files and directories located inside this build context.
+- Files located in parent directories (such as `../secrets.txt`) cannot be copied into the image because the builder only has access to the transferred context directory.
+- Keeping the build context minimal improves build speed and prevents accidentally sending unnecessary files to the builder.
 
-That is why `COPY hello.txt /` was able to find the file: it was sitting in the same directory as the Dockerfile, inside the build context.
+## Packaging Application Services
 
-## From Tiny Image to Application
-
-You now understand the mechanics, so add the last missing pieces. An application image for a Python service uses a few more instructions:
+Real-world application images follow the same structure while adding dependency installation steps. Consider a Python web service:
 
 ```dockerfile
 FROM python:3.12-alpine
@@ -248,29 +115,25 @@ FROM python:3.12-alpine
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
 CMD ["python", "app.py"]
 ```
 
-Map every line:
+### Build-Time (`RUN`) vs. Run-Time (`CMD`)
 
-| Instruction | Job                                                  |
-| ----------- | ---------------------------------------------------- |
-| `FROM`      | Starting point — the base image.                     |
-| `WORKDIR`   | The directory inside the image where work happens.   |
-| `COPY`      | Application files into the image.                    |
-| `RUN`       | Run a command *while building* (here: install dependencies). |
-| `CMD`       | The command a container runs *at start*.             |
+Understanding the distinction between `RUN` and `CMD` is fundamental to image authoring:
 
-`RUN` runs at build time; `CMD` runs at run time. Together they express what a virtual environment can only approximate: an isolated Python environment, described as instructions and frozen into a portable image — buildable and runnable anywhere Docker is installed, with none of the setup steps repeated by hand.
+| Instruction | Execution Phase | Purpose | Example |
+| :--- | :--- | :--- | :--- |
+| **`RUN`** | Build time | Modifies the image filesystem during `docker build`. Installs packages, compiles binaries, or creates files. Cached as an immutable layer. | `RUN pip install -r requirements.txt` |
+| **`CMD`** | Run time | Defines the default entry point and arguments executed when `docker run` starts the container. Does not modify image layers. | `CMD ["python", "app.py"]` |
 
 ## Key Takeaways
 
-- Images do not appear by themselves — someone built every image you have been running.
-- A **Dockerfile** is a text file of instructions; `docker build` turns it into an **image**; `docker run` turns the image into a **container**.
-- The three objects are not interchangeable: Dockerfile = instructions, image = built artifact, container = runnable instance (running or stopped).
-- `.` at the end of `docker build -t name .` names the **build context** — the directory the builder can read, and the only place `COPY` can pull files from.
-- A tiny first image (copy a file, print it) teaches the pipeline faster than a full application does.
+- A **Dockerfile** contains build instructions; `docker build` converts it into an **image**; `docker run` launches that image as a **container**.
+- `FROM` sets the base image, `WORKDIR` sets the container working directory, `COPY` transfers files from the context, and `CMD` sets the default runtime command.
+- The **build context** (the `.` argument) defines the boundary of files accessible to `COPY` during the build process.
+- `RUN` executes during `docker build` to prepare dependencies and create image layers; `CMD` defines the process executed when a container starts.

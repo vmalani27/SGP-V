@@ -524,11 +524,89 @@ func PreloadImages(wslDistro string, images []managedImage, silent bool) {
 	}
 }
 
+// isWSLEnvironment checks if the execution is running inside Windows Subsystem for Linux (WSL).
+func isWSLEnvironment() bool {
+	if runtime.GOOS == "windows" {
+		return false
+	}
+	data, err := os.ReadFile("/proc/version")
+	if err == nil {
+		lower := strings.ToLower(string(data))
+		if strings.Contains(lower, "microsoft") || strings.Contains(lower, "wsl") {
+			return true
+		}
+	}
+	return false
+}
+
+// isSysboxAvailable checks if sysbox-runc is available and functional.
+func isSysboxAvailable(wslDistro string) bool {
+	if runtime.GOOS == "windows" && wslDistro != "" && wslDistro != "native" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "wsl.exe", "-d", wslDistro, "sh", "-c", "[ -x /usr/bin/sysbox-runc ] && [ $(grep -i 'seccomp_filters' /proc/1/status 2>/dev/null | awk '{print $2}') -eq 0 ]")
+		return cmd.Run() == nil
+	}
+
+	// If in WSL, verify PID 1 does not have conflicting seccomp filters (e.g. mirrored networking)
+	if isWSLEnvironment() {
+		statusData, err := os.ReadFile("/proc/1/status")
+		if err == nil {
+			for _, line := range strings.Split(string(statusData), "\n") {
+				if strings.HasPrefix(strings.ToLower(line), "seccomp_filters:") {
+					parts := strings.Fields(line)
+					if len(parts) >= 2 && parts[1] != "0" {
+						// Conflicting seccomp listener detected (e.g. WSL2 mirrored networking)
+						return false
+					}
+				}
+			}
+		}
+	}
+
+	// Check if sysbox-runc binary exists
+	if _, err := exec.LookPath("sysbox-runc"); err != nil {
+		if _, err := os.Stat("/usr/bin/sysbox-runc"); err != nil {
+			return false
+		}
+	}
+
+	// Check if Docker daemon has sysbox-runc registered in its runtimes
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", "info", "--format", "{{.Runtimes}}")
+	if out, err := cmd.Output(); err == nil && strings.Contains(string(out), "sysbox-runc") {
+		return true
+	}
+
+	return false
+}
+
 // StartNativeStack manages the container stack natively without docker-compose.
 func StartNativeStack(wslDistro string) bool {
-	modeName := "Docker Desktop / Local Mode"
-	if wslDistro != "" && wslDistro != "native" {
-		modeName = fmt.Sprintf("Native WSL2 Mode (%s)", wslDistro)
+	inWSL := isWSLEnvironment()
+	sysboxReady := isSysboxAvailable(wslDistro)
+
+	var modeName, runtimeMode string
+	if sysboxReady {
+		runtimeMode = "sysbox"
+		if inWSL {
+			modeName = "WSL2 Native Mode (Sysbox Runtime, Unprivileged)"
+		} else if wslDistro != "" && wslDistro != "native" {
+			modeName = fmt.Sprintf("WSL2 Mode (%s, Sysbox Runtime)", wslDistro)
+		} else {
+			modeName = "Native Linux Mode (Sysbox Runtime)"
+		}
+	} else if inWSL || (wslDistro != "" && wslDistro != "native") {
+		runtimeMode = "privileged"
+		if wslDistro != "" && wslDistro != "native" {
+			modeName = fmt.Sprintf("WSL2 Mode (%s, Privileged Fallback)", wslDistro)
+		} else {
+			modeName = "WSL2 Native Mode (Standard runc / Privileged Fallback)"
+		}
+	} else {
+		runtimeMode = "privileged"
+		modeName = "Docker Desktop / Local Mode (Privileged)"
 	}
 
 	Printf("\nStarting LabOps in %s...\n", modeName)
@@ -560,17 +638,15 @@ func StartNativeStack(wslDistro string) bool {
 	gitDataDir := filepath.Join(labopsDir, "git-data")
 	_ = os.MkdirAll(gitDataDir, 0755)
 
-	var labopsVol, contentVol, gitDataVol, runtimeMode string
-	if wslDistro != "" && wslDistro != "native" {
+	var labopsVol, contentVol, gitDataVol string
+	if runtime.GOOS == "windows" && wslDistro != "" && wslDistro != "native" {
 		labopsVol = ToWSLPath(labopsDir)
 		contentVol = ToWSLPath(contentDir)
 		gitDataVol = ToWSLPath(gitDataDir)
-		runtimeMode = "sysbox"
 	} else {
 		labopsVol = labopsDir
 		contentVol = contentDir
 		gitDataVol = gitDataDir
-		runtimeMode = "privileged"
 	}
 
 	reg := registryBase()

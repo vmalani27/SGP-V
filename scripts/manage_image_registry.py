@@ -39,6 +39,19 @@ def is_composite_key(table) -> bool:
     return any(k["KeyType"] == "RANGE" for k in table.key_schema)
 
 
+def check_base_changed(name: str, digest: str) -> bool:
+    """Check if upstream base image digest differs from what is in DynamoDB."""
+    ddb = get_dynamodb_resource()
+    table = ddb.Table(get_required_env("DYNAMODB_TABLE_BASE_IMAGES"))
+    res = table.get_item(Key={"image_name": name})
+    if "Item" not in res:
+        return True
+    current = res["Item"].get("image_digest", "")
+    if not digest.startswith("sha256:"):
+        digest = f"sha256:{digest}"
+    return current != digest
+
+
 def check_missing(slug: str | None) -> dict:
     """Check which images are missing from DynamoDB for the current slug/environment.
     
@@ -202,6 +215,11 @@ def main():
     p_check = subparsers.add_parser("check-missing", help="Check for missing images in DynamoDB")
     p_check.add_argument("--slug", default=None, help="Branch slug for composite tables")
 
+    # Subcommand: check-base-changed
+    p_base = subparsers.add_parser("check-base-changed", help="Check if upstream base image digest has changed")
+    p_base.add_argument("--name", required=True, help="Base image name (e.g., labops-ubuntu)")
+    p_base.add_argument("--digest", required=True, help="Upstream digest (sha256:...)")
+
     # Subcommand: record
     p_rec = subparsers.add_parser("record", help="Record a built image into DynamoDB")
     p_rec.add_argument("--category", required=True, choices=["app", "lab", "base"], help="Image category")
@@ -223,6 +241,9 @@ def main():
         if args.action == "check-missing":
             res = check_missing(args.slug)
             print(json.dumps(res, indent=2))
+        elif args.action == "check-base-changed":
+            changed = check_base_changed(args.name, args.digest)
+            print("true" if changed else "false")
         elif args.action == "record":
             record_image(
                 category=args.category,

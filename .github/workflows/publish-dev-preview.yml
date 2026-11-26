@@ -181,7 +181,7 @@ jobs:
           REG="${{ env.ECR_PUBLIC_REGISTRY }}"
           SLUG="${{ needs.setup-slug.outputs.slug }}"
           SHA_TAG="${SLUG}-${GITHUB_SHA::7}"
-          FORCE="${{ github.event.inputs.force_build_all == 'true' || needs.setup-slug.outputs.workflow == 'true' }}"
+          FORCE="${{ github.event.inputs.force_build_all == 'true' }}"
 
           echo "Checking DynamoDB state for branch slug: ${SLUG}..."
           python scripts/manage_image_registry.py check-missing --slug "${SLUG}" > missing.json

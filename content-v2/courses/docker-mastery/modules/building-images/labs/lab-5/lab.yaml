@@ -15,9 +15,8 @@ objectives:
 tasks:
   - id: create-project
     prompt: >-
-      You are going to build your first image. Create a project directory named
-      `my-image` in your home directory, and inside it create a file
-      `hello.txt` containing the text `hello from my image`.
+      Create a project directory named `my-image` in your home directory, and
+      inside it create a file `hello.txt` containing the text `hello from my image`.
     type: terminal_action
     validation:
       command: >-
@@ -80,11 +79,11 @@ tasks:
 
   - id: what-built
     prompt: >-
-      After this lab you have a Dockerfile, an image, and running containers.
-      Which statement correctly describes the relationship between them?
+      Which statement correctly describes the relationship between a Dockerfile,
+      an image, and a container?
     type: multiple_choice
     options:
-      - "docker build produces an image; docker run produces a container"
+      - "docker build produces an image from a Dockerfile; docker run produces a container from an image"
       - "docker build produces a container; docker run produces an image"
       - "The Dockerfile, the image, and the container are all the same thing"
     validation:
