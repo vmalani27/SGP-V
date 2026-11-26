@@ -15,67 +15,68 @@ objectives:
 tasks:
   - id: create-project
     prompt: >-
-      Create a project directory named `my-image` in your home directory, and
-      inside it create a file `hello.txt` containing the text `hello from my image`.
+      Create a project directory named `status-banner` in your home directory,
+      and inside it create a file `banner.txt` containing the text
+      `System Status: All Services Operational`.
     type: terminal_action
     validation:
       command: >-
-        test -f ~/my-image/hello.txt &&
-        grep -qx 'hello from my image' ~/my-image/hello.txt && echo PROJECT_OK
+        test -f ~/status-banner/banner.txt &&
+        grep -qx 'System Status: All Services Operational' ~/status-banner/banner.txt &&
+        echo PROJECT_OK
       match_type: exact
       expected_output: PROJECT_OK
     error_message: >-
-      The project file is missing or its contents do not match the required image payload.
+      The project directory or banner.txt is missing, or the file contents do not
+      match the required message.
 
   - id: write-dockerfile
     prompt: >-
-      In the `my-image` directory, write a `Dockerfile` that starts from the
-      `alpine:latest` base image, sets the working directory to `/app`, copies
-      `hello.txt` into that directory, and prints the file's contents when the
-      container starts.
+      In `~/status-banner`, author a `Dockerfile` that uses `alpine:latest` as
+      the base image, sets `/app` as the container working directory, copies
+      `banner.txt` into it, and prints the file's contents when a container starts.
     type: terminal_action
     validation:
       command: >-
-        cd ~/my-image &&
+        cd ~/status-banner &&
         docker build -q -t lab5-check . >/dev/null &&
-        docker run --rm lab5-check 2>/dev/null | grep -qx 'hello from my image' &&
+        docker run --rm lab5-check 2>/dev/null | grep -qx 'System Status: All Services Operational' &&
         docker rmi -f lab5-check >/dev/null 2>&1 &&
         echo DOCKERFILE_OK
       match_type: exact
       expected_output: DOCKERFILE_OK
     error_message: >-
-      The image could not be built or did not produce the required file output when
-      started. The Dockerfile does not yet describe the requested runtime behavior.
+      The image could not be built or failed to print the banner text upon container
+      startup. Verify the Dockerfile instructions and syntax.
 
   - id: build-image
     prompt: >-
-      Build an image from the Dockerfile in `~/my-image` and tag it
-      `my-first-image`. Confirm the image now exists on this system.
+      Build an image from the Dockerfile in `~/status-banner` and tag it
+      `status-banner:1.0`.
     type: terminal_action
     validation:
-      command: "docker image inspect my-first-image >/dev/null 2>&1 && echo IMAGE_BUILT"
+      command: "docker image inspect status-banner:1.0 >/dev/null 2>&1 && echo IMAGE_BUILT"
       match_type: exact
       expected_output: IMAGE_BUILT
     error_message: >-
-      The required image tag is not present in the local Docker image store.
+      The image tag status-banner:1.0 was not found in the local Docker image store.
 
   - id: run-image
     prompt: >-
-      Run the `my-first-image` image as a container named `hello`. The
-      container should print the contents of `hello.txt` and exit.
+      Run the `status-banner:1.0` image as a container named `status-runner`.
+      The container should print the banner message and exit.
     type: terminal_action
     validation:
       command: >-
-        docker inspect -f '{{.Config.Image}}' hello 2>/dev/null |
-        grep -qx 'my-first-image' &&
-        docker logs hello 2>/dev/null | grep -qx 'hello from my image' &&
+        docker inspect -f '{{.Config.Image}}' status-runner 2>/dev/null |
+        grep -qE 'status-banner(:1.0)?' &&
+        docker logs status-runner 2>/dev/null | grep -qx 'System Status: All Services Operational' &&
         echo RUN_OK
       match_type: exact
       expected_output: RUN_OK
     error_message: >-
-      The expected container is missing, uses a different image, or did not produce
-      the required output in its logs. A disposable container cannot be inspected
-      after it exits.
+      The status-runner container was not found, did not use the status-banner:1.0
+      image, or did not produce the expected banner in its logs.
 
   - id: what-built
     prompt: >-
