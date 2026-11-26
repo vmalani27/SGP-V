@@ -17,14 +17,14 @@
 ARG BASE_IMAGE=public.ecr.aws/i9t1l0m7/labops-ubuntu:latest
 FROM ${BASE_IMAGE}
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update -o Acquire::Retries=3 && apt-get install -y \
     ca-certificates \
     curl \
     gnupg \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu jammy stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update && apt-get install -y \
+    && apt-get update -o Acquire::Retries=3 && apt-get install -y \
     docker-ce \
     docker-ce-cli \
     containerd.io \

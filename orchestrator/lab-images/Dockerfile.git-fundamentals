@@ -31,7 +31,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV container=docker
 
 # Install git and supporting tools not already in the base
-RUN apt-get update && apt-get install -y \
+RUN apt-get update -o Acquire::Retries=3 && apt-get install -y \
     git \
     git-extras \
     curl \
