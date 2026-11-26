@@ -40,7 +40,7 @@ tasks:
       command: >-
         cd ~/status-banner &&
         docker build -q -t lab5-check . >/dev/null &&
-        docker run --rm lab5-check 2>/dev/null | grep -qx 'System Status: All Services Operational' &&
+        docker run --rm lab5-check 2>/dev/null | tr -d '\r' | grep -qx 'System Status: All Services Operational' &&
         docker rmi -f lab5-check >/dev/null 2>&1 &&
         echo DOCKERFILE_OK
       match_type: exact
@@ -70,7 +70,7 @@ tasks:
       command: >-
         docker inspect -f '{{.Config.Image}}' status-runner 2>/dev/null |
         grep -qE 'status-banner(:1.0)?' &&
-        docker logs status-runner 2>/dev/null | grep -qx 'System Status: All Services Operational' &&
+        docker logs status-runner 2>/dev/null | tr -d '\r' | grep -qx 'System Status: All Services Operational' &&
         echo RUN_OK
       match_type: exact
       expected_output: RUN_OK

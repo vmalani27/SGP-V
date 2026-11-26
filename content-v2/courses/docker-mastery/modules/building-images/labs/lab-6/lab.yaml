@@ -75,7 +75,7 @@ tasks:
       command: >-
         docker inspect -f '{{.Config.Image}}' greeter 2>/dev/null |
         grep -qx 'greeter-app' &&
-        docker logs greeter 2>/dev/null | grep -qx 'hello from the image' &&
+        docker logs greeter 2>/dev/null | tr -d '\r' | grep -qx 'hello from the image' &&
         echo RUN_OK
       match_type: exact
       expected_output: RUN_OK
