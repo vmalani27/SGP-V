@@ -29,20 +29,19 @@ You build an image from a directory that contains an application file and a file
 ## Objective
 
 1. Create `~/context-demo` with `app.txt` (containing `application data`) and `secret.txt` (containing `super secret`).
-2. Write a Dockerfile that `COPY . .` and lists `/app` on start.
-3. Build as `context-demo` and confirm both files reach the image.
-4. Add a `.dockerignore` excluding `secret.txt`.
-5. Rebuild and confirm `app.txt` is present but `secret.txt` is gone.
+2. Write a Dockerfile that copies the entire build context and lists `/app` on startup.
+3. Build the image as `context-demo` and run container `unfiltered-check` to confirm both files are included.
+4. Add a `.dockerignore` file excluding `secret.txt`.
+5. Rebuild `context-demo` and run container `filtered-check` to verify `secret.txt` is excluded while `app.txt` remains.
 6. Explain why `COPY` cannot reach paths outside the build context.
 
 ## Tasks
 
 - [ ] **create-project** — Create `~/context-demo` with `app.txt` and `secret.txt`.
 - [ ] **write-dockerfile** — Write a Dockerfile that copies the whole context and lists `/app`.
-- [ ] **build-included** — Build and confirm both files reach the image.
+- [ ] **build-included** — Build `context-demo` and run container `unfiltered-check` to observe context leak.
 - [ ] **add-dockerignore** — Add `.dockerignore` excluding `secret.txt`.
-- [ ] **rebuild-excluded** — Rebuild and confirm `secret.txt` is gone from the image.
-- [ ] **verify-excluded** — Confirm `app.txt` present, `secret.txt` absent.
+- [ ] **rebuild-and-verify** — Rebuild and run container `filtered-check` to verify exclusion.
 - [ ] **outside-context** — Explain why `COPY ../other/file.txt` fails.
 
 ## Reflection

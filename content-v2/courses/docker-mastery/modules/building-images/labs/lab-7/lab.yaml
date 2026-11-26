@@ -55,21 +55,21 @@ tasks:
   - id: build-included
     summary: Build and run the image to observe default context ingestion.
     prompt: >-
-      Build the image from `~/context-demo` with the tag `context-demo`. Run a
-      container from it to confirm that BOTH `app.txt` and `secret.txt` are
-      present inside the image.
+      Build an image from `~/context-demo` tagged `context-demo`. Run a
+      container named `unfiltered-check` from this image so that it lists the
+      directory contents and exits.
     type: terminal_action
     validation:
       command: >-
         docker image inspect context-demo >/dev/null 2>&1 &&
-        docker run --rm context-demo 2>/dev/null | grep -qx 'app.txt' &&
-        docker run --rm context-demo 2>/dev/null | grep -qx 'secret.txt' &&
+        docker inspect -f '{{.Config.Image}}' unfiltered-check 2>/dev/null | grep -q 'context-demo' &&
+        docker logs unfiltered-check 2>/dev/null | grep -q 'app.txt' &&
+        docker logs unfiltered-check 2>/dev/null | grep -q 'secret.txt' &&
         echo BOTH_INCLUDED
       match_type: exact
       expected_output: BOTH_INCLUDED
     error_message: >-
-      The built image is unavailable or does not contain both project files in its
-      runtime listing.
+      The context-demo image or unfiltered-check container is missing, or the container logs do not confirm that both app.txt and secret.txt were included.
 
   - id: add-dockerignore
     summary: Configure context exclusion rules.
@@ -89,19 +89,20 @@ tasks:
   - id: rebuild-and-verify
     summary: Rebuild the image and verify that the excluded file is absent.
     prompt: >-
-      Rebuild the `context-demo` image using the same tag. Run the container to
-      verify that `app.txt` is present while `secret.txt` is completely absent.
+      Rebuild the `context-demo` image using the same tag. Run a container
+      named `filtered-check` from it to verify that `app.txt` is present while
+      `secret.txt` is absent.
     type: terminal_action
     validation:
       command: >-
-        docker run --rm context-demo 2>/dev/null | grep -qx 'app.txt' &&
-        ! docker run --rm context-demo 2>/dev/null | grep -qx 'secret.txt' &&
+        docker inspect -f '{{.Config.Image}}' filtered-check 2>/dev/null | grep -q 'context-demo' &&
+        docker logs filtered-check 2>/dev/null | grep -q 'app.txt' &&
+        ! docker logs filtered-check 2>/dev/null | grep -q 'secret.txt' &&
         echo EXCLUDED_OK
       match_type: exact
       expected_output: EXCLUDED_OK
     error_message: >-
-      The rebuilt image still contains the file that should have been excluded, or
-      the required application file is no longer present.
+      The filtered-check container is missing, or its logs show that secret.txt was not excluded or app.txt is missing.
 
   - id: outside-context
     summary: Conceptual checkpoint on build context boundaries.
