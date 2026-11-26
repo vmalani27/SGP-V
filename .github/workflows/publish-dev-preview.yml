@@ -83,6 +83,7 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          base: ${{ github.ref_name }}
           filters: |
             workflow:
               - '.github/workflows/publish-dev-preview.yml'
