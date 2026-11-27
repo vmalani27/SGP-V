@@ -364,7 +364,9 @@ jobs:
           aws s3 cp landing/index.html "s3://${S3_BUCKET}/index.html" --content-type "text/html" --cache-control "public, max-age=300"
           aws s3 cp landing/assets/ "s3://${S3_BUCKET}/assets/" --recursive --cache-control "public, max-age=86400"
           if [ -f landing/install.sh ]; then
-            sed "s|__LABOPS_BASE_URL__|${{ env.CDN_URL }}|g" landing/install.sh > /tmp/install-root.sh
+            CLEAN_CDN=$(echo "${{ env.CDN_URL }}" | sed 's|/*$||')
+            [ -z "$CLEAN_CDN" ] && CLEAN_CDN="https://d3rqfqpemi0u1s.cloudfront.net"
+            sed "s|__LABOPS_TARGET_BASE_URL__|${CLEAN_CDN}|g" landing/install.sh > /tmp/install-root.sh
             aws s3 cp /tmp/install-root.sh "s3://${S3_BUCKET}/install.sh" --content-type "text/x-shellscript" --cache-control "public, max-age=60"
           fi
 
@@ -372,7 +374,9 @@ jobs:
           aws s3 cp landing/index.html "s3://${S3_BUCKET}/beta/index.html" --content-type "text/html" --cache-control "public, max-age=300"
           aws s3 cp landing/assets/ "s3://${S3_BUCKET}/beta/assets/" --recursive --cache-control "public, max-age=86400"
           if [ -f landing/install.sh ]; then
-            sed "s|__LABOPS_BASE_URL__|${{ env.CDN_URL }}/beta|g" landing/install.sh > /tmp/install-beta.sh
+            CLEAN_CDN=$(echo "${{ env.CDN_URL }}" | sed 's|/*$||')
+            [ -z "$CLEAN_CDN" ] && CLEAN_CDN="https://d3rqfqpemi0u1s.cloudfront.net"
+            sed "s|__LABOPS_TARGET_BASE_URL__|${CLEAN_CDN}/beta|g" landing/install.sh > /tmp/install-beta.sh
             aws s3 cp /tmp/install-beta.sh "s3://${S3_BUCKET}/beta/install.sh" --content-type "text/x-shellscript" --cache-control "public, max-age=60"
           fi
 

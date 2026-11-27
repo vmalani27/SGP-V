@@ -403,8 +403,10 @@ jobs:
           aws s3 cp landing/assets/ "${DEST}/assets/" --recursive --cache-control "public, max-age=86400"
           if [ -f landing/install.sh ]; then
             SLUG="${{ needs.setup-slug.outputs.slug }}"
-            PREVIEW_BASE="https://${CDN_HOST}/previews/${SLUG}"
-            sed "s|__LABOPS_BASE_URL__|${PREVIEW_BASE}|g" landing/install.sh > /tmp/install.sh
+            CLEAN_CDN=$(echo "${{ env.CDN_URL }}" | sed 's|/*$||')
+            [ -z "$CLEAN_CDN" ] && CLEAN_CDN="https://d3rqfqpemi0u1s.cloudfront.net"
+            PREVIEW_BASE="${CLEAN_CDN}/previews/${SLUG}"
+            sed "s|__LABOPS_TARGET_BASE_URL__|${PREVIEW_BASE}|g" landing/install.sh > /tmp/install.sh
             aws s3 cp /tmp/install.sh "${DEST}/install.sh" --content-type "text/x-shellscript" --cache-control "public, max-age=60"
           fi
 

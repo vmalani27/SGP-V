@@ -33,14 +33,14 @@ case "$ARCH" in
 esac
 
 # ── 2. BASE URL RESOLUTION ───────────────────────────────────────────────
-# __LABOPS_BASE_URL__ is replaced during CI release/preview upload.
 DEFAULT_CDN="https://d3rqfqpemi0u1s.cloudfront.net"
-TEMPLATE_URL="__LABOPS_BASE_URL__"
+# TARGET_BASE_URL is replaced with the exact preview/beta/release slug by CI at upload time.
+TARGET_BASE_URL="__LABOPS_TARGET_BASE_URL__"
 
 if [ -n "${LABOPS_BASE_URL:-}" ]; then
   BASE_URL="${LABOPS_BASE_URL}"
-elif [ "$TEMPLATE_URL" != "__LABOPS_BASE_URL__" ] && [ -n "$TEMPLATE_URL" ]; then
-  BASE_URL="$TEMPLATE_URL"
+elif [[ "$TARGET_BASE_URL" =~ ^https?:// ]]; then
+  BASE_URL="$TARGET_BASE_URL"
 else
   BASE_URL="$DEFAULT_CDN"
 fi
@@ -63,13 +63,28 @@ echo "==> Downloading LabOps CLI (${ARCH_SUFFIX}) from ${DOWNLOAD_URL}..."
 TMP_BIN="$(mktemp "${TARGET_BIN}.tmp.XXXXXX")"
 trap 'rm -f "$TMP_BIN"' EXIT
 
-if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "${DOWNLOAD_URL}" -o "${TMP_BIN}"
-elif command -v wget >/dev/null 2>&1; then
-  wget -qO "${TMP_BIN}" "${DOWNLOAD_URL}"
-else
-  echo "Error: Neither curl nor wget was found. Please install curl or wget." >&2
-  exit 1
+download_file() {
+  local url="$1"
+  local dest="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$dest"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$dest" "$url"
+  else
+    echo "Error: Neither curl nor wget was found. Please install curl or wget." >&2
+    exit 1
+  fi
+}
+
+if ! download_file "${DOWNLOAD_URL}" "${TMP_BIN}"; then
+  if [ "$BASE_URL" != "$DEFAULT_CDN" ]; then
+    FALLBACK_URL="${DEFAULT_CDN}/downloads/labops-linux-${ARCH_SUFFIX}"
+    echo "==> Slug download failed. Retrying from default CDN: ${FALLBACK_URL}..."
+    download_file "${FALLBACK_URL}" "${TMP_BIN}"
+  else
+    echo "Error: Failed to download LabOps binary from ${DOWNLOAD_URL}" >&2
+    exit 1
+  fi
 fi
 
 chmod +x "${TMP_BIN}"
