@@ -121,9 +121,10 @@ def main() -> int:
             # Root pointers
             (f"s3://{beta_bucket}/catalog.json", f"s3://{prod_bucket}/catalog.json", False, "public, max-age=60, s-maxage=60"),
             (f"s3://{beta_bucket}/latest.json", f"s3://{prod_bucket}/latest.json", False, "public, max-age=60, s-maxage=60"),
-            # Landing page
+            # Landing page & installer
             (f"s3://{beta_bucket}/index.html", f"s3://{prod_bucket}/index.html", False, "public, max-age=300"),
             (f"s3://{beta_bucket}/assets/", f"s3://{prod_bucket}/assets/", True, "public, max-age=86400"),
+            (f"s3://{beta_bucket}/install.sh", f"s3://{prod_bucket}/install.sh", False, "public, max-age=60"),
             # CLI Binaries
             (f"s3://{beta_bucket}/downloads/", f"s3://{prod_bucket}/downloads/", True, "public, max-age=300"),
         ]
@@ -235,7 +236,7 @@ def main() -> int:
             cmd = [
                 "aws", "cloudfront", "create-invalidation",
                 "--distribution-id", prod_dist_id,
-                "--paths", "/releases/*", "/latest.json", "/catalog.json", "/", "/index.html", "/assets/*", "/downloads/*"
+                "--paths", "/releases/*", "/latest.json", "/catalog.json", "/", "/index.html", "/assets/*", "/downloads/*", "/install.sh"
             ]
             if dry_run:
                 print(f"[dry-run] Would execute: {' '.join(cmd)}")

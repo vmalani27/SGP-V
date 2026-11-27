@@ -327,7 +327,7 @@
               <div class="flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-[#090a0f] border border-borderDim font-mono text-xs text-left">
                 <div class="flex items-center gap-2 overflow-x-auto text-slate-200 custom-scrollbar py-0.5">
                   <span class="text-emerald-400 font-semibold select-none">$</span>
-                  <code id="cmd-linux">curl -fsSL https://d3rqfqpemi0u1s.cloudfront.net/downloads/labops-linux-amd64 -o labops &amp;&amp; chmod +x labops &amp;&amp; ./labops start</code>
+                  <code id="cmd-linux">curl -fsSL https://d3rqfqpemi0u1s.cloudfront.net/install.sh | bash</code>
                 </div>
                 <button 
                   type="button"
@@ -339,7 +339,7 @@
               </div>
             </div>
 
-            <div class="flex items-center justify-center gap-2 text-xs text-slate-400">
+            <div class="flex items-center justify-center gap-3 text-xs text-slate-400">
               <span>Or download binary:</span>
               <a 
                 id="btn-linux"
@@ -348,6 +348,15 @@
                 class="text-blue-400 hover:text-blue-300 font-mono underline underline-offset-4 transition"
               >
                 <span id="btn-linux-label">labops-linux-amd64</span>
+              </a>
+              <span>&bull;</span>
+              <a 
+                id="link-install-sh"
+                href="install.sh" 
+                target="_blank"
+                class="text-slate-400 hover:text-slate-300 font-mono underline underline-offset-4 transition"
+              >
+                view install.sh
               </a>
             </div>
           </div>
@@ -615,14 +624,23 @@
 
           function updateLinuxCmd() {
             const cmdLinux = document.getElementById('cmd-linux');
-            const btnLinux = document.getElementById('btn-linux');
-            if (!cmdLinux || !btnLinux) return;
+            if (!cmdLinux) return;
 
-            let url = btnLinux.href;
-            if (!url || !url.startsWith('http')) {
-              url = `https://d3rqfqpemi0u1s.cloudfront.net/downloads/${isBeta ? 'beta/' : ''}labops-linux-amd64`;
+            let baseUrl = window.location.origin.startsWith('http')
+              ? window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '')
+              : 'https://d3rqfqpemi0u1s.cloudfront.net';
+
+            baseUrl = baseUrl.replace(/\/+$/, '');
+            if (isBeta && !baseUrl.endsWith('/beta')) {
+              baseUrl += '/beta';
             }
-            cmdLinux.innerText = `curl -fsSL ${url} -o labops && chmod +x labops && ./labops start`;
+
+            cmdLinux.innerText = `curl -fsSL ${baseUrl}/install.sh | bash`;
+
+            const linkInstall = document.getElementById('link-install-sh');
+            if (linkInstall) {
+              linkInstall.href = `${baseUrl}/install.sh`;
+            }
           }
 
           window.addEventListener('DOMContentLoaded', () => {
