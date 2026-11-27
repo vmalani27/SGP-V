@@ -132,11 +132,6 @@ echo "    Version: $("${TARGET_BIN}" version 2>/dev/null || echo 'installed')"
 echo ""
 
 # ── 6. EXECUTE LABOPS ────────────────────────────────────────────────────
-# Restore stdin from /dev/tty if running piped (curl ... | bash)
-if [ -t 1 ] && [ -e /dev/tty ]; then
-  exec < /dev/tty
-fi
-
 if [ $# -gt 0 ]; then
   echo "==> Running: labops $*"
   exec "$TARGET_BIN" "$@"
