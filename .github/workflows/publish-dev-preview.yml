@@ -401,6 +401,7 @@ jobs:
           # Landing page & assets
           aws s3 cp landing/index.html "${DEST}/index.html" --content-type "text/html" --cache-control "public, max-age=300"
           aws s3 cp landing/assets/ "${DEST}/assets/" --recursive --cache-control "public, max-age=86400"
+          [ -f landing/install.sh ] && aws s3 cp landing/install.sh "${DEST}/install.sh" --content-type "text/x-shellscript" --cache-control "public, max-age=300"
 
       - name: Invalidate CloudFront Preview Cache
         run: |

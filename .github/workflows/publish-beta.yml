@@ -363,10 +363,12 @@ jobs:
           # 3. Landing page & assets (Root for Beta CDN)
           aws s3 cp landing/index.html "s3://${S3_BUCKET}/index.html" --content-type "text/html" --cache-control "public, max-age=300"
           aws s3 cp landing/assets/ "s3://${S3_BUCKET}/assets/" --recursive --cache-control "public, max-age=86400"
+          [ -f landing/install.sh ] && aws s3 cp landing/install.sh "s3://${S3_BUCKET}/install.sh" --content-type "text/x-shellscript" --cache-control "public, max-age=300"
 
           # 4. Also publish under /beta/ prefix for multi-channel Prod CDN routing
           aws s3 cp landing/index.html "s3://${S3_BUCKET}/beta/index.html" --content-type "text/html" --cache-control "public, max-age=300"
           aws s3 cp landing/assets/ "s3://${S3_BUCKET}/beta/assets/" --recursive --cache-control "public, max-age=86400"
+          [ -f landing/install.sh ] && aws s3 cp landing/install.sh "s3://${S3_BUCKET}/beta/install.sh" --content-type "text/x-shellscript" --cache-control "public, max-age=300"
 
       - name: Invalidate CloudFront Beta CDN Cache
         run: |
